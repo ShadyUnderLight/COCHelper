@@ -3,9 +3,12 @@
  */
 
 import type {
+  CapitalRaidPageWire,
+  ClanWarWire,
   OfficialClanSummaryDto,
   OfficialEndpointStateDto,
   OfficialPlayerSummaryDto,
+  WarLogPageWire,
 } from '@coc-helper/contracts';
 import {
   encodeClanAPIStateWire,
@@ -73,12 +76,16 @@ export function toClanSummaryDto(state: ClanAPIState): OfficialClanSummaryDto | 
   };
 }
 
-export function toClanWarEndpointDto(state: ClanWarAPIState): OfficialEndpointStateDto {
-  return encodeClanWarAPIStateWire(state) as OfficialEndpointStateDto;
+export function toClanWarEndpointDto(
+  state: ClanWarAPIState,
+): OfficialEndpointStateDto<ClanWarWire> {
+  return encodeClanWarAPIStateWire(state) as OfficialEndpointStateDto<ClanWarWire>;
 }
 
-export function toWarLogEndpointDto(state: ClanWarLogAPIState): OfficialEndpointStateDto {
-  const wire = encodeClanWarLogAPIStateWire(state) as OfficialEndpointStateDto;
+export function toWarLogEndpointDto(
+  state: ClanWarLogAPIState,
+): OfficialEndpointStateDto<WarLogPageWire> {
+  const wire = encodeClanWarLogAPIStateWire(state) as OfficialEndpointStateDto<WarLogPageWire>;
   const items = state.lastGood?.page.items.length ?? 0;
   const after = state.lastGood?.page.after;
   return {
@@ -87,8 +94,12 @@ export function toWarLogEndpointDto(state: ClanWarLogAPIState): OfficialEndpoint
   };
 }
 
-export function toCapitalRaidEndpointDto(state: ClanCapitalAPIState): OfficialEndpointStateDto {
-  const wire = encodeClanCapitalAPIStateWire(state) as OfficialEndpointStateDto;
+export function toCapitalRaidEndpointDto(
+  state: ClanCapitalAPIState,
+): OfficialEndpointStateDto<CapitalRaidPageWire> {
+  const wire = encodeClanCapitalAPIStateWire(
+    state,
+  ) as OfficialEndpointStateDto<CapitalRaidPageWire>;
   const items = state.lastGood?.page.items.length ?? 0;
   const after = state.lastGood?.page.after;
   return {

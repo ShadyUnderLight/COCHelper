@@ -31,10 +31,14 @@ export function CapitalRaidCard({ api }: CapitalRaidCardProps) {
         <p className={officialStatusClass(displayView.refreshStatus)}>{statusLine}</p>
       ) : null}
       {displayView.lastQueryError !== null ? (
-        <p className="error-text" role="alert">{displayView.lastQueryError}</p>
+        <p className="error-text" role="alert">
+          {displayView.lastQueryError}
+        </p>
       ) : null}
       {displayView.commandError !== null ? (
-        <p className="error-text" role="alert">{displayView.commandError}</p>
+        <p className="error-text" role="alert">
+          {displayView.commandError}
+        </p>
       ) : null}
       {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
@@ -45,7 +49,9 @@ export function CapitalRaidCard({ api }: CapitalRaidCardProps) {
       {displayView.seasons.length > 0 ? (
         <ul className="official-list">
           {displayView.seasons.map((season, index) => (
-            <li key={`${season.startTime ?? 'unknown'}-${index}`}>{capitalRaidSeasonLabel(season)}</li>
+            <li key={`${season.startTime ?? 'unknown'}-${index}`}>
+              {capitalRaidSeasonLabel(season)}
+            </li>
           ))}
         </ul>
       ) : null}
@@ -54,12 +60,12 @@ export function CapitalRaidCard({ api }: CapitalRaidCardProps) {
       ) : null}
       <div className="action-row">
         {displayView.canRefresh ? (
-          <button type="button" disabled={refreshing} onClick={() => void refresh()}>
+          <button type="button" disabled={api.remoteBusy} onClick={() => void refresh()}>
             {refreshing ? '正在刷新…' : '刷新突袭周末'}
           </button>
         ) : null}
         {displayView.canLoadMore ? (
-          <button type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+          <button type="button" disabled={api.remoteBusy} onClick={() => void loadMore()}>
             {loadingMore ? '正在加载更多…' : '加载更多'}
           </button>
         ) : null}

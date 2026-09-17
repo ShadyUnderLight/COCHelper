@@ -86,9 +86,7 @@ describe('useOfficialClanWar（#277-E2）', () => {
 
   it('有 clanTag 时查询缓存，用户 refresh 才发 api.refresh', async () => {
     const { bridge, resolve, resolveRefresh } = createBridge();
-    const { result } = renderHook(() =>
-      useOfficialClanWar(bridge, snapshot(), '#CLAN01', 'v1'),
-    );
+    const { result } = renderHook(() => useOfficialClanWar(bridge, snapshot(), '#CLAN01', 'v1'));
     resolve(
       ok({
         generation: 1,

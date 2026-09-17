@@ -1,0 +1,184 @@
+/** @vitest-environment jsdom */
+
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type {
+  ApiRefreshPayload,
+  OperationProgressListener,
+  Result,
+  WarLogLoadMorePayload,
+  WarLogStatePayload,
+} from '@coc-helper/contracts';
+
+import { resetClockStoreForTests } from './clock-store';
+import { useOfficialWarLog, type BridgeWarLogClient } from './use-official-war-log';
+
+function snapshot() {
+  return {
+    sessionId: 'session-a',
+    generation: 1,
+    availability: 'available' as const,
+    villageStatus: 'available' as const,
+    villageError: null,
+    canWrite: true,
+    hasPendingJournal: false,
+    recoveryNotice: null,
+    selectedVillageId: 'v1',
+    villages: [{ id: 'v1', name: '主村', tag: '#AAA', hasImportedData: true }],
+    pendingImport: null,
+  };
+}
+
+function ok<T>(value: T): Result<T> {
+  return { ok: true, value };
+}
+
+function warLogPayload(overrides: Partial<WarLogStatePayload> = {}): WarLogStatePayload {
+  return {
+    generation: 1,
+    clanTag: '#CLAN01',
+    state: {
+      status: 'success',
+      parserVersion: 'war-log-0.1',
+      fetchedAt: 1_700_000_000_000,
+      unrecognizedKeys: [],
+      hasMore: true,
+      lastGood: {
+        page: {
+          items: Array.from({ length: 12 }, (_, index) => ({
+            endTime: `2024-01-${String(index + 1).padStart(2, '0')}`,
+            result: 'win',
+          })),
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
+function createBridge() {
+  const resolvers: Array<(value: Result<WarLogStatePayload>) => void> = [];
+  const refreshResolvers: Array<(value: Result<ApiRefreshPayload>) => void> = [];
+  const loadMoreResolvers: Array<(value: Result<WarLogLoadMorePayload>) => void> = [];
+  const progressListeners = new Set<OperationProgressListener>();
+  const bridge: BridgeWarLogClient = {
+    warLogState: vi.fn(
+      async () =>
+        await new Promise<Result<WarLogStatePayload>>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    ),
+    apiRefresh: vi.fn(
+      async () =>
+        await new Promise<Result<ApiRefreshPayload>>((resolve) => {
+          refreshResolvers.push(resolve);
+        }),
+    ),
+    warLogLoadMore: vi.fn(
+      async () =>
+        await new Promise<Result<WarLogLoadMorePayload>>((resolve) => {
+          loadMoreResolvers.push(resolve);
+        }),
+    ),
+    onOperationProgress: (listener) => {
+      progressListeners.add(listener);
+      return () => {
+        progressListeners.delete(listener);
+      };
+    },
+    cancel: vi.fn(),
+  };
+  return {
+    bridge,
+    resolve(value: Result<WarLogStatePayload>) {
+      resolvers.shift()?.(value);
+    },
+    resolveRefresh(value: Result<ApiRefreshPayload>) {
+      refreshResolvers.shift()?.(value);
+    },
+    resolveLoadMore(value: Result<WarLogLoadMorePayload>) {
+      loadMoreResolvers.shift()?.(value);
+    },
+    emitProgress: progressListeners,
+  };
+}
+
+afterEach(() => {
+  resetClockStoreForTests();
+});
+
+describe('useOfficialWarLog（#277-E2）', () => {
+  it('knownNotPublic 时不查询', async () => {
+    const { bridge } = createBridge();
+    renderHook(() => useOfficialWarLog(bridge, snapshot(), '#CLAN01', 'v1', true));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(bridge.warLogState).not.toHaveBeenCalled();
+  });
+
+  it('refresh 完成前保持 remoteBusy，state 重查后才结束', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.entries).toHaveLength(12);
+    });
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(true);
+    });
+
+    const requestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
+    act(() => {
+      for (const listener of harness.emitProgress) {
+        listener({ operationId: requestId as string, phase: 'completed', generation: 2 });
+      }
+    });
+    expect(result.current.remoteBusy).toBe(true);
+
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+    });
+  });
+
+  it('refresh 进行中禁止 loadMore', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('localHidden');
+    });
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(harness.bridge.warLogLoadMore).not.toHaveBeenCalled();
+  });
+});

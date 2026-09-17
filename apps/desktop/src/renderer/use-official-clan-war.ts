@@ -58,13 +58,7 @@ export function useOfficialClanWar(
 
   const [commandState, setCommandState, opRef, epochRef] = useOfficialCommandState();
   useOfficialCommandLifecycle(bridge, subjectKey, opRef, epochRef, setCommandState);
-  useOfficialCommandProgress(
-    bridge,
-    opRef,
-    subjectRef,
-    setCommandState,
-    '当前部落对战刷新失败',
-  );
+  useOfficialCommandProgress(bridge, opRef, subjectRef, setCommandState, '当前部落对战刷新失败');
 
   const refresh = useRunOfficialCommand({
     bridge,
@@ -102,7 +96,11 @@ export function useOfficialClanWar(
   });
 
   const view = useMemo((): OfficialClanWarView => {
-    const projected = toOfficialClanWarView(clanTag, query.state, OFFICIAL_VIEW_WITHOUT_STALE_CLOCK);
+    const projected = toOfficialClanWarView(
+      clanTag,
+      query.state,
+      OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
+    );
     return {
       ...projected,
       commandError: commandErrorFor(commandState.commandError, subjectKey),

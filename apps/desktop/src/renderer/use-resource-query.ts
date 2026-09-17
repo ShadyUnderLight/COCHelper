@@ -66,6 +66,22 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   const onSessionResetRef = useRef(onSessionReset);
   onSessionResetRef.current = onSessionReset;
   const prevSubjectKeyRef = useRef<string | null>(subjectKey);
+  const refreshWaitersRef = useRef(
+    new Map<number, { readonly resolve: () => void; readonly reject: (error: Error) => void }>(),
+  );
+
+  const settleRefreshWaiter = useCallback((seq: number, error?: Error): void => {
+    const waiter = refreshWaitersRef.current.get(seq);
+    if (waiter === undefined) {
+      return;
+    }
+    refreshWaitersRef.current.delete(seq);
+    if (error !== undefined) {
+      waiter.reject(error);
+    } else {
+      waiter.resolve();
+    }
+  }, []);
 
   useEffect(() => {
     const prevSubjectKey = prevSubjectKeyRef.current;
@@ -115,6 +131,9 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
     if (planned.kind === 'skip') {
       lastKeyRef.current = planned.fetchKey;
+      if (forced) {
+        settleRefreshWaiter(refreshSeq);
+      }
       return;
     }
 
@@ -154,10 +173,12 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
             shouldAcceptGeneration,
           })
         ) {
+          settleRefreshWaiter(refreshSeq);
           return;
         }
         setState((prev) => resourceFailure(prev, message));
         stateSubjectRef.current = subjectKey;
+        settleRefreshWaiter(refreshSeq);
         return;
       }
 
@@ -176,12 +197,14 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
           shouldAcceptGeneration,
         })
       ) {
+        settleRefreshWaiter(refreshSeq);
         return;
       }
 
       if (!result.ok) {
         setState((prev) => resourceFailure(prev, formatIpcError(result.error)));
         stateSubjectRef.current = subjectKey;
+        settleRefreshWaiter(refreshSeq);
         return;
       }
 
@@ -190,17 +213,27 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       payloadSubjectRef.current = subjectKey;
       stateSubjectRef.current = subjectKey;
       setState(resourceSuccess(result.value));
+      settleRefreshWaiter(refreshSeq);
     })();
-  }, [snapshot, subjectKey, refreshSeq]);
+  }, [snapshot, subjectKey, refreshSeq, settleRefreshWaiter]);
 
   useEffect(() => {
     return () => {
       epochRef.current += 1;
+      for (const seq of refreshWaitersRef.current.keys()) {
+        settleRefreshWaiter(seq, new Error('资源查询已卸载'));
+      }
     };
-  }, []);
+  }, [settleRefreshWaiter]);
 
-  const refresh = useCallback(async () => {
-    setRefreshSeq((n) => n + 1);
+  const refresh = useCallback((): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
+      setRefreshSeq((current) => {
+        const next = current + 1;
+        refreshWaitersRef.current.set(next, { resolve, reject });
+        return next;
+      });
+    });
   }, []);
 
   return {

@@ -5,6 +5,7 @@ import type { ClanWarStatePayload, WarLogStatePayload } from '@coc-helper/contra
 import { resourceSuccess } from './resource-state';
 import {
   clanWarPhase,
+  clanWarScoreLine,
   toOfficialClanWarView,
   toOfficialWarLogView,
   warLogMoreState,
@@ -29,6 +30,16 @@ describe('official-war-session（#277-E2）', () => {
     expect(view.knownNotPublic).toBe(true);
     expect(view.canRefresh).toBe(false);
     expect(view.entries).toEqual([]);
+  });
+
+  it('clanWarScoreLine 缺失星数时不伪造 0★', () => {
+    const line = clanWarScoreLine({
+      state: 'inWar',
+      unrecognizedKeys: [],
+      clan: { name: '我方' },
+      opponent: { name: '对方', stars: 10, destructionPercentage: 80 },
+    });
+    expect(line).toBe('我方 vs 对方 10★ 80%');
   });
 
   it('toOfficialClanWarView 投影 last-good 战争', () => {

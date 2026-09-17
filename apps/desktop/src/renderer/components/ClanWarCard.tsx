@@ -33,10 +33,14 @@ export function ClanWarCard({ api }: ClanWarCardProps) {
         <p className={officialStatusClass(displayView.refreshStatus)}>{statusLine}</p>
       ) : null}
       {displayView.lastQueryError !== null ? (
-        <p className="error-text" role="alert">{displayView.lastQueryError}</p>
+        <p className="error-text" role="alert">
+          {displayView.lastQueryError}
+        </p>
       ) : null}
       {displayView.commandError !== null ? (
-        <p className="error-text" role="alert">{displayView.commandError}</p>
+        <p className="error-text" role="alert">
+          {displayView.commandError}
+        </p>
       ) : null}
       {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>

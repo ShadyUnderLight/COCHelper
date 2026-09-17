@@ -3,6 +3,7 @@ import type { AppSnapshotPayload, DesktopBridge } from '@coc-helper/contracts';
 import type { OfficialClanView } from './official-session';
 import { useOfficialCapitalRaid, type OfficialCapitalRaidApi } from './use-official-capital-raid';
 import { useOfficialClanWar, type OfficialClanWarApi } from './use-official-clan-war';
+import { type BridgeOfficialClient } from './use-official-village';
 import { useOfficialWarLog, type OfficialWarLogApi } from './use-official-war-log';
 
 export type BridgeOfficialClanWarClient = Pick<
@@ -16,6 +17,9 @@ export type BridgeOfficialClanWarClient = Pick<
   | 'onOperationProgress'
   | 'cancel'
 >;
+
+/** 村庄详情页 Official 卡片所需的完整 bridge（Player/Clan + War 族）。 */
+export type BridgeOfficialVillageClient = BridgeOfficialClient & BridgeOfficialClanWarClient;
 
 export type OfficialClanWarBundleApi = {
   readonly clanWar: OfficialClanWarApi;

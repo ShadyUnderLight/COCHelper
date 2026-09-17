@@ -39,15 +39,21 @@ export function WarLogCard({ api }: WarLogCardProps) {
         <p className={officialStatusClass(displayView.refreshStatus)}>{statusLine}</p>
       ) : null}
       {displayView.lastQueryError !== null ? (
-        <p className="error-text" role="alert">{displayView.lastQueryError}</p>
+        <p className="error-text" role="alert">
+          {displayView.lastQueryError}
+        </p>
       ) : null}
       {displayView.commandError !== null ? (
-        <p className="error-text" role="alert">{displayView.commandError}</p>
+        <p className="error-text" role="alert">
+          {displayView.commandError}
+        </p>
       ) : null}
       {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
       ) : null}
-      {!displayView.knownNotPublic && displayView.entries.length === 0 && displayView.queryStatus === 'ready' ? (
+      {!displayView.knownNotPublic &&
+      displayView.entries.length === 0 &&
+      displayView.queryStatus === 'ready' ? (
         <p className="muted">没有历史部落对战记录</p>
       ) : null}
       {displayView.visibleEntries.length > 0 ? (
@@ -62,14 +68,14 @@ export function WarLogCard({ api }: WarLogCardProps) {
       ) : null}
       <div className="action-row">
         {displayView.canRefresh ? (
-          <button type="button" disabled={refreshing} onClick={() => void refresh()}>
+          <button type="button" disabled={api.remoteBusy} onClick={() => void refresh()}>
             {refreshing ? '正在刷新…' : '刷新部落对战日志'}
           </button>
         ) : null}
         {moreLabel !== null ? (
           <button
             type="button"
-            disabled={loadingMore}
+            disabled={displayView.moreState === 'serverMore' ? api.remoteBusy : false}
             onClick={() => void loadMore()}
           >
             {moreLabel}

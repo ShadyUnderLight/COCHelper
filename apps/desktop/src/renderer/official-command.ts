@@ -38,7 +38,11 @@ export function commandErrorFor(
   return error.message;
 }
 
-export function officialClanSubjectKey(sessionId: string, clanTag: string, resource: string): string {
+export function officialClanSubjectKey(
+  sessionId: string,
+  clanTag: string,
+  resource: string,
+): string {
   return JSON.stringify([sessionId, clanTag, resource]);
 }
 
@@ -58,6 +62,20 @@ type RunOfficialCommandOptions = {
   readonly onSuccess: () => Promise<void>;
   readonly defaultFailureMessage: string;
 };
+
+export function cancelOfficialOp(
+  bridge: OfficialCommandBridge,
+  opRef: React.MutableRefObject<OfficialOp | null>,
+  setState: React.Dispatch<React.SetStateAction<CommandState>>,
+): void {
+  const op = opRef.current;
+  if (op === null) {
+    return;
+  }
+  bridge.cancel({ requestId: op.requestId });
+  opRef.current = null;
+  setState({ refreshing: false, commandError: null });
+}
 
 export function useOfficialCommandState(): [
   CommandState,
@@ -114,15 +132,12 @@ export function useOfficialCommandProgress(
       if (op === null || payload.operationId !== op.requestId) {
         return;
       }
-      if (
-        payload.phase !== 'completed' &&
-        payload.phase !== 'cancelled' &&
-        payload.phase !== 'failed'
-      ) {
+      // completed 由 invoke + onSuccess（含 await query.refresh）收尾；此处只处理取消/失败。
+      if (payload.phase !== 'cancelled' && payload.phase !== 'failed') {
         return;
       }
       opRef.current = null;
-      setState((prev) => ({ ...prev, refreshing: false }));
+      setState({ refreshing: false, commandError: null });
       if (payload.phase === 'failed' && subjectRef.current === op.subjectKey) {
         setState({
           refreshing: false,

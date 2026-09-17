@@ -643,16 +643,20 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('Hero');
     });
-    await act(async () => {
-      const pending = result.current.refreshPlayer();
-      harness.resolveRefresh(ok({ generation: 2, results: [] }));
-      await pending;
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.refreshPlayer();
     });
-    expect(result.current.playerRefreshing).toBe(false);
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
     await waitFor(() => {
       expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
     });
-    act(() => {
+    await act(async () => {
       harness.resolvePlayer(
         ok(
           playerFixture({
@@ -661,7 +665,10 @@ describe('useOfficialVillage（#277-E1）', () => {
           }),
         ),
       );
+      await pending;
     });
+    expect(result.current.playerRefreshing).toBe(false);
+    expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('NewHero');
     });
@@ -686,16 +693,20 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.clan.summary?.name).toBe('测试部落');
     });
-    await act(async () => {
-      const pending = result.current.refreshClan();
-      harness.resolveRefresh(ok({ generation: 2, results: [] }));
-      await pending;
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.refreshClan();
     });
-    expect(result.current.clanRefreshing).toBe(false);
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
     await waitFor(() => {
       expect(harness.bridge.clanState).toHaveBeenCalledTimes(2);
     });
-    act(() => {
+    await act(async () => {
       harness.resolveClan(
         ok(
           clanFixture({
@@ -704,7 +715,10 @@ describe('useOfficialVillage（#277-E1）', () => {
           }),
         ),
       );
+      await pending;
     });
+    expect(result.current.clanRefreshing).toBe(false);
+    expect(harness.bridge.clanState).toHaveBeenCalledTimes(2);
     await waitFor(() => {
       expect(result.current.clan.summary?.name).toBe('新部落');
     });
@@ -738,11 +752,19 @@ describe('useOfficialVillage（#277-E1）', () => {
         generation: 2,
       });
     });
-    expect(result.current.playerRefreshing).toBe(false);
+    expect(result.current.playerRefreshing).toBe(true);
     await act(async () => {
       harness.resolveRefresh(ok({ generation: 2, results: [] }));
     });
-    expect(result.current.playerRefreshing).toBe(false);
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.playerRefreshing).toBe(false);
+    });
   });
 
   it('旧 refresh Promise 在新 refresh 开始后返回，不得 settle 新 op', async () => {
@@ -781,6 +803,12 @@ describe('useOfficialVillage（#277-E1）', () => {
     expect(result.current.playerRefreshing).toBe(true);
     await act(async () => {
       harness.resolveRefresh(ok({ generation: 3, results: [] }));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 3 })));
       await secondRefresh;
     });
     expect(result.current.playerRefreshing).toBe(false);

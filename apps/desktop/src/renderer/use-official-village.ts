@@ -132,11 +132,7 @@ export function useOfficialVillage(
       ) {
         return;
       }
-      if (
-        payload.phase !== 'completed' &&
-        payload.phase !== 'cancelled' &&
-        payload.phase !== 'failed'
-      ) {
+      if (payload.phase !== 'cancelled' && payload.phase !== 'failed') {
         return;
       }
       const failedMessage =

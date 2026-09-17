@@ -7,7 +7,7 @@ import type { VillageDetailApi } from '../use-village-detail';
 import {
   useOfficialClanWarBundle,
   warLogKnownNotPublic,
-  type BridgeOfficialClanWarClient,
+  type BridgeOfficialVillageClient,
   type OfficialClanWarBundleApi,
 } from '../use-official-clan-war-bundle';
 import {
@@ -34,7 +34,7 @@ type AppShellProps = {
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
   readonly official?: OfficialVillageApi;
-  readonly officialBridge?: BridgeOfficialClient;
+  readonly officialBridge?: BridgeOfficialVillageClient;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
   readonly route?: AppRoute;
@@ -323,7 +323,7 @@ function OfficialVillageDetail(props: {
   readonly onBaseChange: (base: TrackerBaseDto) => void;
   readonly onRetry: () => void;
   readonly official?: OfficialVillageApi;
-  readonly officialBridge?: BridgeOfficialClient;
+  readonly officialBridge?: BridgeOfficialVillageClient;
   readonly snapshot: AppSnapshotPayload;
   readonly villageId: string;
   readonly quick?: QuickImportApi;
@@ -349,7 +349,7 @@ function OfficialVillageDetail(props: {
   if (props.officialBridge === undefined) {
     return detail(props.official, undefined);
   }
-  const bridge = props.officialBridge as BridgeOfficialClient & BridgeOfficialClanWarClient;
+  const bridge = props.officialBridge;
   return (
     <OfficialVillageHost bridge={bridge} snapshot={props.snapshot} villageId={props.villageId}>
       {(official) => (
@@ -368,7 +368,7 @@ function OfficialVillageDetail(props: {
 }
 
 function OfficialClanWarHost(props: {
-  readonly bridge: BridgeOfficialClanWarClient;
+  readonly bridge: BridgeOfficialVillageClient;
   readonly snapshot: AppSnapshotPayload | null;
   readonly clanTag: string | null;
   readonly villageId: string | null;

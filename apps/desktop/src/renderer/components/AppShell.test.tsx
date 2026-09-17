@@ -21,7 +21,7 @@ import {
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { VillageDetailApi } from '../use-village-detail';
-import type { BridgeOfficialClient } from '../use-official-village';
+import type { BridgeOfficialVillageClient } from '../use-official-clan-war-bundle';
 
 function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPayload {
   return {
@@ -694,7 +694,7 @@ function readySession(overrides: Partial<AppSnapshotPayload> = {}) {
 function createOfficialBridge() {
   const playerResolvers: Array<(value: Result<ReturnType<typeof playerFixture>>) => void> = [];
   const refreshResolvers: Array<(value: Result<ApiRefreshPayload>) => void> = [];
-  const bridge: BridgeOfficialClient = {
+  const bridge: BridgeOfficialVillageClient = {
     playerState: vi.fn(
       async () =>
         await new Promise<Result<ReturnType<typeof playerFixture>>>((resolve) => {
@@ -705,12 +705,48 @@ function createOfficialBridge() {
       ok: true as const,
       value: { generation: 1, clanTag: '#CLAN01', summary: null, state: null },
     })),
+    clanWarState: vi.fn(async () => ({
+      ok: true as const,
+      value: { generation: 1, clanTag: '#CLAN01', state: null },
+    })),
+    warLogState: vi.fn(async () => ({
+      ok: true as const,
+      value: { generation: 1, clanTag: '#CLAN01', state: null },
+    })),
+    capitalRaidState: vi.fn(async () => ({
+      ok: true as const,
+      value: { generation: 1, clanTag: '#CLAN01', state: null },
+    })),
     apiRefresh: vi.fn(
       async () =>
         await new Promise<Result<ApiRefreshPayload>>((resolve) => {
           refreshResolvers.push(resolve);
         }),
     ),
+    warLogLoadMore: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        generation: 1,
+        clanTag: '#CLAN01',
+        state: {
+          status: 'success' as const,
+          parserVersion: 'war-log-0.1',
+          unrecognizedKeys: [] as const,
+        },
+      },
+    })),
+    capitalRaidLoadMore: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        generation: 1,
+        clanTag: '#CLAN01',
+        state: {
+          status: 'success' as const,
+          parserVersion: 'capital-raid-0.1',
+          unrecognizedKeys: [] as const,
+        },
+      },
+    })),
     onOperationProgress: () => () => undefined,
     cancel: vi.fn(),
   };

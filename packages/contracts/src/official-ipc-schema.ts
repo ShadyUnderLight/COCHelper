@@ -37,6 +37,12 @@ const requestIdSchema = z
 
 const endpointKindSchema = z.enum(OFFICIAL_ENDPOINT_KINDS);
 
+function officialEndpointStateDtoSchemaFor<Snapshot>(): z.ZodType<
+  OfficialEndpointStateDto<Snapshot>
+> {
+  return officialEndpointStateDtoSchema as z.ZodType<OfficialEndpointStateDto<Snapshot>>;
+}
+
 const officialEndpointStateDtoSchema: z.ZodType<OfficialEndpointStateDto> = z
   .object({
     status: z.enum(OFFICIAL_API_REQUEST_STATUSES),
@@ -125,7 +131,7 @@ export const clanWarStatePayloadSchema: z.ZodType<ClanWarStatePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchema.nullable(),
+    state: officialEndpointStateDtoSchemaFor<import('./official-wire').ClanWarWire>().nullable(),
   })
   .strict();
 
@@ -139,7 +145,7 @@ export const warLogStatePayloadSchema: z.ZodType<WarLogStatePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchema.nullable(),
+    state: officialEndpointStateDtoSchemaFor<import('./official-wire').WarLogPageWire>().nullable(),
   })
   .strict();
 
@@ -153,7 +159,8 @@ export const capitalRaidStatePayloadSchema: z.ZodType<CapitalRaidStatePayload> =
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchema.nullable(),
+    state:
+      officialEndpointStateDtoSchemaFor<import('./official-wire').CapitalRaidPageWire>().nullable(),
   })
   .strict();
 
@@ -194,7 +201,7 @@ export const warLogLoadMorePayloadSchema: z.ZodType<WarLogLoadMorePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchema,
+    state: officialEndpointStateDtoSchemaFor<import('./official-wire').WarLogPageWire>(),
   })
   .strict();
 
@@ -209,7 +216,7 @@ export const capitalRaidLoadMorePayloadSchema: z.ZodType<CapitalRaidLoadMorePayl
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchema,
+    state: officialEndpointStateDtoSchemaFor<import('./official-wire').CapitalRaidPageWire>(),
   })
   .strict();
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import type {
   ApiRefreshRequest,
@@ -8,6 +8,7 @@ import type {
 } from '@coc-helper/contracts';
 
 import {
+  cancelOfficialOp,
   commandErrorFor,
   officialClanSubjectKey,
   useOfficialCommandLifecycle,
@@ -31,6 +32,7 @@ export type OfficialCapitalRaidApi = {
   readonly loadMore: () => Promise<void>;
   readonly refreshing: boolean;
   readonly loadingMore: boolean;
+  readonly remoteBusy: boolean;
 };
 
 export function useOfficialCapitalRaid(
@@ -59,17 +61,18 @@ export function useOfficialCapitalRaid(
   });
 
   const [refreshState, setRefreshState, refreshOpRef, refreshEpochRef] = useOfficialCommandState();
-  const [loadMoreState, setLoadMoreState, loadMoreOpRef, loadMoreEpochRef] = useOfficialCommandState();
+  const [loadMoreState, setLoadMoreState, loadMoreOpRef, loadMoreEpochRef] =
+    useOfficialCommandState();
 
   useOfficialCommandLifecycle(bridge, subjectKey, refreshOpRef, refreshEpochRef, setRefreshState);
-  useOfficialCommandLifecycle(bridge, subjectKey, loadMoreOpRef, loadMoreEpochRef, setLoadMoreState);
-  useOfficialCommandProgress(
+  useOfficialCommandLifecycle(
     bridge,
-    refreshOpRef,
-    subjectRef,
-    setRefreshState,
-    '突袭周末刷新失败',
+    subjectKey,
+    loadMoreOpRef,
+    loadMoreEpochRef,
+    setLoadMoreState,
   );
+  useOfficialCommandProgress(bridge, refreshOpRef, subjectRef, setRefreshState, '突袭周末刷新失败');
   useOfficialCommandProgress(
     bridge,
     loadMoreOpRef,
@@ -78,7 +81,7 @@ export function useOfficialCapitalRaid(
     '突袭周末加载更多失败',
   );
 
-  const refresh = useRunOfficialCommand({
+  const refreshCommand = useRunOfficialCommand({
     bridge,
     subjectKey: subjectKey ?? '',
     subjectRef,
@@ -155,21 +158,40 @@ export function useOfficialCapitalRaid(
     };
   }, [clanTag, query.state, refreshState.commandError, loadMoreState.commandError, subjectKey]);
 
+  const refreshing = refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey;
+  const loadingMore = loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey;
+  const remoteBusy = refreshing || loadingMore;
+
+  const refresh = useCallback(async () => {
+    if (subjectKey === null || remoteBusy) {
+      return;
+    }
+    cancelOfficialOp(bridge, loadMoreOpRef, setLoadMoreState);
+    await refreshCommand();
+  }, [bridge, loadMoreOpRef, refreshCommand, remoteBusy, setLoadMoreState, subjectKey]);
+
+  const loadMore = useCallback(async () => {
+    if (subjectKey === null || !view.hasMore || remoteBusy) {
+      return;
+    }
+    cancelOfficialOp(bridge, refreshOpRef, setRefreshState);
+    await loadMoreCommand();
+  }, [
+    bridge,
+    loadMoreCommand,
+    refreshOpRef,
+    remoteBusy,
+    setRefreshState,
+    subjectKey,
+    view.hasMore,
+  ]);
+
   return {
     view,
-    refresh: async () => {
-      if (subjectKey === null) {
-        return;
-      }
-      await refresh();
-    },
-    loadMore: async () => {
-      if (subjectKey === null || !view.hasMore) {
-        return;
-      }
-      await loadMoreCommand();
-    },
-    refreshing: refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey,
-    loadingMore: loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey,
+    refresh,
+    loadMore,
+    refreshing,
+    loadingMore,
+    remoteBusy,
   };
 }

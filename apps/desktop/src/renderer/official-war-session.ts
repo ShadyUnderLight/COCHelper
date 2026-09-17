@@ -3,12 +3,14 @@
  * 纯函数，只消费 Official IPC wire DTO。
  */
 import type {
+  CapitalRaidPageWire,
   CapitalRaidSeasonWire,
+  CapitalRaidStatePayload,
   ClanWarStatePayload,
   ClanWarWire,
-  CapitalRaidStatePayload,
   OfficialEndpointStateDto,
   WarLogEntryWire,
+  WarLogPageWire,
   WarLogStatePayload,
 } from '@coc-helper/contracts';
 
@@ -192,33 +194,23 @@ export function visibleWarLogEntries(
   return entries.slice(0, Math.max(0, visibleCount));
 }
 
-function clanWarLastGood(state: OfficialEndpointStateDto | null): ClanWarWire | null {
-  if (state?.lastGood === undefined) {
-    return null;
-  }
-  return state.lastGood as ClanWarWire;
+function clanWarLastGood(state: OfficialEndpointStateDto<ClanWarWire> | null): ClanWarWire | null {
+  return state?.lastGood ?? null;
 }
 
-function warLogEntries(state: OfficialEndpointStateDto | null): readonly WarLogEntryWire[] {
-  if (state?.lastGood === undefined) {
-    return [];
-  }
-  const page = (state.lastGood as { readonly page?: { readonly items?: readonly WarLogEntryWire[] } })
-    .page;
-  return page?.items ?? [];
+function warLogEntries(
+  state: OfficialEndpointStateDto<WarLogPageWire> | null,
+): readonly WarLogEntryWire[] {
+  return state?.lastGood?.page.items ?? [];
 }
 
-function capitalRaidSeasons(state: OfficialEndpointStateDto | null): readonly CapitalRaidSeasonWire[] {
-  if (state?.lastGood === undefined) {
-    return [];
-  }
-  const page = (
-    state.lastGood as { readonly page?: { readonly items?: readonly CapitalRaidSeasonWire[] } }
-  ).page;
-  return page?.items ?? [];
+function capitalRaidSeasons(
+  state: OfficialEndpointStateDto<CapitalRaidPageWire> | null,
+): readonly CapitalRaidSeasonWire[] {
+  return state?.lastGood?.page.items ?? [];
 }
 
-function endpointHasMore(state: OfficialEndpointStateDto | null): boolean {
+function endpointHasMore(state: OfficialEndpointStateDto<unknown> | null): boolean {
   return state?.hasMore === true;
 }
 
@@ -235,11 +227,9 @@ type TaggedEndpointBase = Pick<
   | 'canRefresh'
 >;
 
-function toTaggedEndpointView<TPayload extends { readonly clanTag: string; readonly state: OfficialEndpointStateDto | null }>(
-  clanTag: string | null,
-  resource: ResourceState<TPayload>,
-  nowMs: number,
-): TaggedEndpointBase {
+function toTaggedEndpointView<
+  TPayload extends { readonly clanTag: string; readonly state: OfficialEndpointStateDto | null },
+>(clanTag: string | null, resource: ResourceState<TPayload>, nowMs: number): TaggedEndpointBase {
   if (clanTag === null) {
     return {
       queryStatus: 'idle',
@@ -409,7 +399,12 @@ export function warLogRefreshStatusLine(view: OfficialWarLogView): string | null
   if (view.queryStatus === 'error' && view.entries.length === 0) {
     return '部落对战日志读取失败';
   }
-  return endpointStatusLine('部落对战日志', view.refreshStatus, view.fetchedAtMs, view.lastErrorReason);
+  return endpointStatusLine(
+    '部落对战日志',
+    view.refreshStatus,
+    view.fetchedAtMs,
+    view.lastErrorReason,
+  );
 }
 
 export function capitalRaidRefreshStatusLine(view: OfficialCapitalRaidView): string | null {
@@ -478,13 +473,38 @@ export function capitalRaidSeasonLabel(season: CapitalRaidSeasonWire): string {
   return `${start} — ${end}${lootText}`;
 }
 
+function formatWarSideScore(
+  label: string,
+  stars: number | undefined,
+  destructionPercentage: number | undefined,
+): string | null {
+  const starText = stars === undefined ? null : `${stars}★`;
+  const destructionText = destructionPercentage === undefined ? null : `${destructionPercentage}%`;
+  if (starText === null && destructionText === null) {
+    return label;
+  }
+  const metrics = [starText, destructionText].filter((part) => part !== null).join(' ');
+  return metrics === '' ? label : `${label} ${metrics}`;
+}
+
 export function clanWarScoreLine(war: ClanWarWire): string | null {
   const clan = war.clan;
   const opponent = war.opponent;
   if (clan === undefined && opponent === undefined) {
     return null;
   }
-  const left = `${clan?.name ?? clan?.tag ?? '我方'} ${clan?.stars ?? 0}★ ${clan?.destructionPercentage ?? 0}%`;
-  const right = `${opponent?.name ?? opponent?.tag ?? '对方'} ${opponent?.stars ?? 0}★ ${opponent?.destructionPercentage ?? 0}%`;
+  const left = formatWarSideScore(
+    clan?.name ?? clan?.tag ?? '我方',
+    clan?.stars,
+    clan?.destructionPercentage,
+  );
+  const right = formatWarSideScore(
+    opponent?.name ?? opponent?.tag ?? '对方',
+    opponent?.stars,
+    opponent?.destructionPercentage,
+  );
+  if (left === null || right === null) {
+    return null;
+  }
   return `${left} vs ${right}`;
 }

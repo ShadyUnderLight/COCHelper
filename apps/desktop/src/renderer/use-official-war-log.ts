@@ -8,6 +8,7 @@ import type {
 } from '@coc-helper/contracts';
 
 import {
+  cancelOfficialOp,
   commandErrorFor,
   officialClanSubjectKey,
   useOfficialCommandLifecycle,
@@ -36,6 +37,7 @@ export type OfficialWarLogApi = {
   readonly loadMore: () => Promise<void>;
   readonly refreshing: boolean;
   readonly loadingMore: boolean;
+  readonly remoteBusy: boolean;
 };
 
 export function useOfficialWarLog(
@@ -70,10 +72,17 @@ export function useOfficialWarLog(
   });
 
   const [refreshState, setRefreshState, refreshOpRef, refreshEpochRef] = useOfficialCommandState();
-  const [loadMoreState, setLoadMoreState, loadMoreOpRef, loadMoreEpochRef] = useOfficialCommandState();
+  const [loadMoreState, setLoadMoreState, loadMoreOpRef, loadMoreEpochRef] =
+    useOfficialCommandState();
 
   useOfficialCommandLifecycle(bridge, subjectKey, refreshOpRef, refreshEpochRef, setRefreshState);
-  useOfficialCommandLifecycle(bridge, subjectKey, loadMoreOpRef, loadMoreEpochRef, setLoadMoreState);
+  useOfficialCommandLifecycle(
+    bridge,
+    subjectKey,
+    loadMoreOpRef,
+    loadMoreEpochRef,
+    setLoadMoreState,
+  );
   useOfficialCommandProgress(
     bridge,
     refreshOpRef,
@@ -89,7 +98,7 @@ export function useOfficialWarLog(
     '部落对战日志加载更多失败',
   );
 
-  const refresh = useRunOfficialCommand({
+  const refreshCommand = useRunOfficialCommand({
     bridge,
     subjectKey: subjectKey ?? '',
     subjectRef,
@@ -176,6 +185,18 @@ export function useOfficialWarLog(
     subjectKey,
   ]);
 
+  const refreshing = refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey;
+  const loadingMore = loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey;
+  const remoteBusy = refreshing || loadingMore;
+
+  const refresh = useCallback(async () => {
+    if (subjectKey === null || remoteBusy) {
+      return;
+    }
+    cancelOfficialOp(bridge, loadMoreOpRef, setLoadMoreState);
+    await refreshCommand();
+  }, [bridge, loadMoreOpRef, refreshCommand, remoteBusy, setLoadMoreState, subjectKey]);
+
   const loadMore = useCallback(async () => {
     if (knownNotPublic || subjectKey === null) {
       return;
@@ -185,21 +206,30 @@ export function useOfficialWarLog(
       return;
     }
     if (view.moreState === 'serverMore') {
+      if (remoteBusy) {
+        return;
+      }
+      cancelOfficialOp(bridge, refreshOpRef, setRefreshState);
       setVisibleCount((count) => count + WAR_LOG_VISIBLE_INCREMENT);
       await loadMoreCommand();
     }
-  }, [knownNotPublic, subjectKey, view.moreState, loadMoreCommand]);
+  }, [
+    bridge,
+    knownNotPublic,
+    loadMoreCommand,
+    refreshOpRef,
+    remoteBusy,
+    setRefreshState,
+    subjectKey,
+    view.moreState,
+  ]);
 
   return {
     view,
-    refresh: async () => {
-      if (subjectKey === null) {
-        return;
-      }
-      await refresh();
-    },
+    refresh,
     loadMore,
-    refreshing: refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey,
-    loadingMore: loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey,
+    refreshing,
+    loadingMore,
+    remoteBusy,
   };
 }

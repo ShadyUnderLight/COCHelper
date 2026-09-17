@@ -244,6 +244,125 @@ describe('useOfficialWarLog（#277-E2）', () => {
     expect(result.current.view.commandError).toBeNull();
   });
 
+  it('loadMore 失败后 refresh 成功会清除旧 commandError', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('localHidden');
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('serverMore');
+    });
+
+    act(() => {
+      void result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      harness.resolveLoadMore(err('加载更多失败'));
+    });
+    await waitFor(() => {
+      expect(result.current.view.commandError).toBe('加载更多失败');
+    });
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.apiRefresh).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+      expect(result.current.view.commandError).toBeNull();
+    });
+  });
+
+  it('refresh 失败后 loadMore 成功会清除旧 commandError', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('localHidden');
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(result.current.view.moreState).toBe('serverMore');
+    });
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.apiRefresh).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      harness.resolveRefresh(err('刷新失败'));
+    });
+    await waitFor(() => {
+      expect(result.current.view.commandError).toBe('刷新失败');
+    });
+
+    act(() => {
+      void result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      harness.resolveLoadMore(
+        ok({
+          generation: 2,
+          clanTag: '#CLAN01',
+          state: {
+            status: 'success',
+            parserVersion: 'war-log-0.1',
+            fetchedAt: 1_700_000_000_000,
+            unrecognizedKeys: [],
+            hasMore: true,
+            lastGood: warLogPayload().state?.lastGood,
+          },
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+      expect(result.current.view.commandError).toBeNull();
+    });
+  });
+
   it('loadMore 失败后可正常重试', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>

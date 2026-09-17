@@ -70,12 +70,12 @@ export function cancelOfficialOp(
   setState: React.Dispatch<React.SetStateAction<CommandState>>,
 ): void {
   const op = opRef.current;
-  if (op === null) {
-    return;
+  if (op !== null) {
+    epochRef.current += 1;
+    bridge.cancel({ requestId: op.requestId });
+    opRef.current = null;
   }
-  epochRef.current += 1;
-  bridge.cancel({ requestId: op.requestId });
-  opRef.current = null;
+  // 即使已无在途 op，也要清掉上一次失败留下的 commandError。
   setState({ refreshing: false, commandError: null });
 }
 

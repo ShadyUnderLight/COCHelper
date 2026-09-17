@@ -3,6 +3,9 @@
  * 纯函数，只消费 Official IPC wire DTO。
  */
 import type {
+  CapitalRaidAttackLogEntryWire,
+  CapitalRaidDefenseLogEntryWire,
+  CapitalRaidDistrictWire,
   CapitalRaidPageWire,
   CapitalRaidSeasonWire,
   CapitalRaidStatePayload,
@@ -466,17 +469,30 @@ function formatOptionalMetric(label: string, value: number | undefined): string 
   return value === undefined ? null : `${label} ${value}`;
 }
 
-function aggregateMemberAttacks(attacks: readonly ClanWarAttackWire[]): {
-  readonly stars: number;
-  readonly destruction: number;
-} {
-  let stars = 0;
-  let destruction = 0;
-  for (const attack of attacks) {
-    stars += attack.stars ?? 0;
-    destruction += attack.destructionPercentage ?? 0;
+function sumAttackStars(attacks: readonly ClanWarAttackWire[]): number {
+  return attacks.reduce((sum, attack) => sum + (attack.stars ?? 0), 0);
+}
+
+function formatAttackDestructionValues(attacks: readonly ClanWarAttackWire[]): string {
+  return attacks
+    .map((attack) =>
+      attack.destructionPercentage === undefined ? '—' : `${attack.destructionPercentage}%`,
+    )
+    .join('/');
+}
+
+export function formatMemberAttackSummary(
+  attacks: readonly ClanWarAttackWire[] | undefined,
+): string | null {
+  if (attacks === undefined) {
+    return null;
   }
-  return { stars, destruction };
+  if (attacks.length === 0) {
+    return '0 次进攻';
+  }
+  const stars = sumAttackStars(attacks);
+  const destruction = formatAttackDestructionValues(attacks);
+  return `${attacks.length} 次进攻 · ${stars}★ · 摧毁 ${destruction}`;
 }
 
 export function clanWarMetaLine(war: ClanWarWire): string | null {
@@ -493,14 +509,7 @@ export function clanWarMemberRowLabel(member: ClanWarMemberWire): string {
   const name = member.name ?? member.tag ?? '未知成员';
   const townHall = member.townhallLevel === undefined ? null : `TH${member.townhallLevel}`;
   const position = member.mapPosition === undefined ? null : `位置 ${member.mapPosition}`;
-  const attacks = member.attacks ?? [];
-  const attackSummary =
-    attacks.length === 0
-      ? null
-      : (() => {
-          const totals = aggregateMemberAttacks(attacks);
-          return `${attacks.length} 次进攻 · ${totals.stars}★ · ${totals.destruction}%`;
-        })();
+  const attackSummary = formatMemberAttackSummary(member.attacks);
   const opponentAttacks =
     member.opponentAttacks === undefined ? null : `被进攻 ${member.opponentAttacks} 次`;
   return [name, townHall, position, attackSummary, opponentAttacks]
@@ -552,6 +561,82 @@ export function warLogEntryLabel(entry: WarLogEntryWire): string {
     clanScore === null || opponentScore === null ? null : `${clanScore} vs ${opponentScore}`;
   const parts = [end, result, teamSize, score, `对手 ${opponent}`].filter((part) => part !== null);
   return parts.join(' · ');
+}
+
+export function capitalRaidDistrictRowLabel(district: CapitalRaidDistrictWire): string {
+  const name = district.name ?? (district.id === undefined ? '未知城区' : `城区 ${district.id}`);
+  const parts = [
+    name,
+    district.districtHallLevel === undefined ? null : `大厅 ${district.districtHallLevel}`,
+    district.stars === undefined ? null : `${district.stars}★`,
+    district.destructionPercent === undefined ? null : `${district.destructionPercent}%`,
+    district.attackCount === undefined ? null : `进攻 ${district.attackCount} 次`,
+    district.totalLooted === undefined ? null : `掠夺 ${district.totalLooted}`,
+  ].filter((part) => part !== null);
+  return parts.join(' · ');
+}
+
+export type CapitalRaidLogRow = {
+  readonly kind: 'entry' | 'district';
+  readonly label: string;
+};
+
+function capitalRaidAttackLogHeader(entry: CapitalRaidAttackLogEntryWire): string {
+  const defender = entry.defender?.name ?? entry.defender?.tag ?? '未知部落';
+  const parts = [
+    `防守方 ${defender}`,
+    entry.attackCount === undefined ? null : `进攻 ${entry.attackCount} 次`,
+    entry.districtCount === undefined ? null : `城区 ${entry.districtCount}`,
+    entry.districtsDestroyed === undefined ? null : `摧毁 ${entry.districtsDestroyed}`,
+  ].filter((part) => part !== null);
+  return parts.join(' · ');
+}
+
+function capitalRaidDefenseLogHeader(entry: CapitalRaidDefenseLogEntryWire): string {
+  const attacker = entry.attacker?.name ?? entry.attacker?.tag ?? '未知部落';
+  const parts = [
+    `进攻方 ${attacker}`,
+    entry.attackCount === undefined ? null : `进攻 ${entry.attackCount} 次`,
+    entry.districtCount === undefined ? null : `城区 ${entry.districtCount}`,
+    entry.districtsDestroyed === undefined ? null : `被摧毁 ${entry.districtsDestroyed}`,
+  ].filter((part) => part !== null);
+  return parts.join(' · ');
+}
+
+function capitalRaidLogRowsFromEntries<T extends CapitalRaidAttackLogEntryWire>(
+  entries: readonly T[] | undefined,
+  header: (entry: T) => string,
+): readonly CapitalRaidLogRow[] {
+  const rows: CapitalRaidLogRow[] = [];
+  for (const entry of entries ?? []) {
+    rows.push({ kind: 'entry', label: header(entry) });
+    for (const district of entry.districts ?? []) {
+      rows.push({ kind: 'district', label: capitalRaidDistrictRowLabel(district) });
+    }
+  }
+  return rows;
+}
+
+export function capitalRaidAttackLogRows(
+  season: CapitalRaidSeasonWire,
+): readonly CapitalRaidLogRow[] {
+  return capitalRaidLogRowsFromEntries(season.attackLog, capitalRaidAttackLogHeader);
+}
+
+export function capitalRaidDefenseLogRows(
+  season: CapitalRaidSeasonWire,
+): readonly CapitalRaidLogRow[] {
+  return capitalRaidLogRowsFromEntries(season.defenseLog, capitalRaidDefenseLogHeader);
+}
+
+export function capitalRaidMemberRows(season: CapitalRaidSeasonWire): readonly string[] {
+  return (season.members ?? []).map((member) => {
+    const name = member.name ?? member.tag ?? '未知成员';
+    const loot =
+      member.capitalResourcesLooted === undefined ? null : `掠夺 ${member.capitalResourcesLooted}`;
+    const attacks = member.attacks === undefined ? null : `进攻 ${member.attacks} 次`;
+    return [name, loot, attacks].filter((part) => part !== null).join(' · ');
+  });
 }
 
 export function capitalRaidSeasonLabel(season: CapitalRaidSeasonWire): string {

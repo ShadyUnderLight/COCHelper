@@ -7,9 +7,13 @@ import type {
 } from '@coc-helper/contracts';
 
 import {
+  capitalRaidAttackLogRows,
+  capitalRaidDefenseLogRows,
+  capitalRaidMemberRows,
   clanWarMemberRowLabel,
   clanWarParticipantHasMembers,
   OFFICIAL_DETAIL_ROW_LIMIT,
+  type CapitalRaidLogRow,
 } from '../official-war-session';
 
 function limitedRows<T>(items: readonly T[] | undefined): readonly T[] {
@@ -96,42 +100,33 @@ function SimpleRowList(props: { readonly title: string; readonly rows: readonly 
   );
 }
 
-function capitalRaidMemberRows(season: CapitalRaidSeasonWire): readonly string[] {
-  return (season.members ?? []).map((member) => {
-    const name = member.name ?? member.tag ?? '未知成员';
-    const loot =
-      member.capitalResourcesLooted === undefined ? null : `掠夺 ${member.capitalResourcesLooted}`;
-    const attacks = member.attacks === undefined ? null : `进攻 ${member.attacks} 次`;
-    return [name, loot, attacks].filter((part) => part !== null).join(' · ');
-  });
-}
-
-function capitalRaidAttackLogRows(season: CapitalRaidSeasonWire): readonly string[] {
-  return (season.attackLog ?? []).map((entry) => {
-    const defender = entry.defender?.name ?? entry.defender?.tag ?? '未知部落';
-    const districts = entry.districtsDestroyed ?? entry.districtCount;
-    const attacks = entry.attackCount;
-    const parts = [
-      `防守方 ${defender}`,
-      attacks === undefined ? null : `进攻 ${attacks} 次`,
-      districts === undefined ? null : `摧毁城区 ${districts}`,
-    ].filter((part) => part !== null);
-    return parts.join(' · ');
-  });
-}
-
-function capitalRaidDefenseLogRows(season: CapitalRaidSeasonWire): readonly string[] {
-  return (season.defenseLog ?? []).map((entry) => {
-    const attacker = entry.attacker?.name ?? entry.attacker?.tag ?? '未知部落';
-    const districts = entry.districtsDestroyed ?? entry.districtCount;
-    const attacks = entry.attackCount;
-    const parts = [
-      `进攻方 ${attacker}`,
-      attacks === undefined ? null : `进攻 ${attacks} 次`,
-      districts === undefined ? null : `被摧毁城区 ${districts}`,
-    ].filter((part) => part !== null);
-    return parts.join(' · ');
-  });
+function CapitalRaidLogList(props: {
+  readonly title: string;
+  readonly rows: readonly CapitalRaidLogRow[];
+}) {
+  if (props.rows.length === 0) {
+    return null;
+  }
+  const visible = props.rows.slice(0, OFFICIAL_DETAIL_ROW_LIMIT);
+  const truncated = props.rows.length > visible.length;
+  return (
+    <details className="official-details">
+      <summary>
+        {props.title}（{props.rows.length}）
+      </summary>
+      <ul className="official-list">
+        {visible.map((row, index) => (
+          <li
+            key={`${props.title}-${index}`}
+            className={row.kind === 'district' ? 'official-detail-subrow' : undefined}
+          >
+            {row.label}
+          </li>
+        ))}
+      </ul>
+      {truncated ? <p className="muted">仅显示前 {OFFICIAL_DETAIL_ROW_LIMIT} 条记录</p> : null}
+    </details>
+  );
 }
 
 export function OfficialCapitalRaidSeasonDetails(props: {
@@ -141,8 +136,8 @@ export function OfficialCapitalRaidSeasonDetails(props: {
   return (
     <>
       <SimpleRowList title="成员突袭" rows={capitalRaidMemberRows(season)} />
-      <SimpleRowList title="进攻日志" rows={capitalRaidAttackLogRows(season)} />
-      <SimpleRowList title="防守日志" rows={capitalRaidDefenseLogRows(season)} />
+      <CapitalRaidLogList title="进攻日志" rows={capitalRaidAttackLogRows(season)} />
+      <CapitalRaidLogList title="防守日志" rows={capitalRaidDefenseLogRows(season)} />
     </>
   );
 }

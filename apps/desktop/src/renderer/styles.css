@@ -484,3 +484,8 @@ button.danger {
 .official-capital-raid-list > li > p {
   margin: 0;
 }
+
+.official-detail-subrow {
+  margin-left: 1rem;
+  color: #aeaeb2;
+}

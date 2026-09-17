@@ -77,15 +77,39 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     waiter.resolve();
   }, []);
 
+  /** seq=K 的 fetch 完成/取消时，同时满足所有 seq<=K 的 batched refresh 请求。 */
+  const settleRefreshWaitersUpTo = useCallback(
+    (seq: number): void => {
+      for (const key of [...refreshWaitersRef.current.keys()]) {
+        if (key <= seq) {
+          settleRefreshWaiter(key);
+        }
+      }
+    },
+    [settleRefreshWaiter],
+  );
+
   const settleAllRefreshWaiters = useCallback((): void => {
     for (const seq of refreshWaitersRef.current.keys()) {
       settleRefreshWaiter(seq);
     }
   }, [settleRefreshWaiter]);
 
+  const prevSessionIdRef = useRef<string | null>(snapshot?.sessionId ?? null);
+
   useEffect(() => {
     const prevSubjectKey = prevSubjectKeyRef.current;
     prevSubjectKeyRef.current = subjectKey;
+    const prevSessionId = prevSessionIdRef.current;
+    const currentSessionId = snapshot?.sessionId ?? null;
+    prevSessionIdRef.current = currentSessionId;
+
+    if (
+      (prevSubjectKey !== null && subjectKey !== null && prevSubjectKey !== subjectKey) ||
+      (prevSessionId !== null && currentSessionId !== null && prevSessionId !== currentSessionId)
+    ) {
+      settleAllRefreshWaiters();
+    }
 
     if (snapshot === null || subjectKey === null) {
       // subject 离开有效态：作废在途请求，避免同 key 在重新进入时被 beginFetch skip。
@@ -134,7 +158,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     if (planned.kind === 'skip') {
       lastKeyRef.current = planned.fetchKey;
       if (forced) {
-        settleRefreshWaiter(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq);
       }
       return;
     }
@@ -175,12 +199,12 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
             shouldAcceptGeneration,
           })
         ) {
-          settleRefreshWaiter(refreshSeq);
+          settleRefreshWaitersUpTo(refreshSeq);
           return;
         }
         setState((prev) => resourceFailure(prev, message));
         stateSubjectRef.current = subjectKey;
-        settleRefreshWaiter(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 
@@ -199,14 +223,14 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
           shouldAcceptGeneration,
         })
       ) {
-        settleRefreshWaiter(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 
       if (!result.ok) {
         setState((prev) => resourceFailure(prev, formatIpcError(result.error)));
         stateSubjectRef.current = subjectKey;
-        settleRefreshWaiter(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 
@@ -215,9 +239,9 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       payloadSubjectRef.current = subjectKey;
       stateSubjectRef.current = subjectKey;
       setState(resourceSuccess(result.value));
-      settleRefreshWaiter(refreshSeq);
+      settleRefreshWaitersUpTo(refreshSeq);
     })();
-  }, [snapshot, subjectKey, refreshSeq, settleAllRefreshWaiters, settleRefreshWaiter]);
+  }, [snapshot, subjectKey, refreshSeq, settleAllRefreshWaiters, settleRefreshWaitersUpTo]);
 
   useEffect(() => {
     return () => {

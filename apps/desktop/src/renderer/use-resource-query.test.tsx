@@ -138,4 +138,95 @@ describe('useResourceQuery', () => {
     window.removeEventListener('unhandledrejection', onUnhandled);
     expect(rejections).toEqual([]);
   });
+
+  it('同一 React batch 内连续 refresh 会同时 resolve 两个 waiter', async () => {
+    const harness = createFetchHarness();
+    const { result } = renderHook(() =>
+      useResourceQuery<Payload>({
+        snapshot: snapshot(),
+        subjectKey: 'subject-a',
+        fetch: harness.fetch,
+        extractGeneration: (payload) => payload.generation,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(harness.fetch).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolve(ok({ generation: 1, value: 'a' }));
+    });
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe('ready');
+    });
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = result.current.refresh();
+      second = result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.pending()).toBe(1);
+    });
+    expect(harness.fetch).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      harness.resolve(ok({ generation: 2, value: 'b' }));
+      await Promise.all([first, second]);
+    });
+    expect(result.current.state.kind).toBe('ready');
+    if (result.current.state.kind === 'ready') {
+      expect(result.current.state.data.value).toBe('b');
+    }
+  });
+
+  it('refresh pending 时 subject A→B 会 resolve waiter', async () => {
+    const harness = createFetchHarness();
+    const { result, rerender } = renderHook(
+      ({ subjectKey }: { readonly subjectKey: string | null }) =>
+        useResourceQuery<Payload>({
+          snapshot: snapshot(),
+          subjectKey,
+          fetch: harness.fetch,
+          extractGeneration: (payload) => payload.generation,
+        }),
+      { initialProps: { subjectKey: 'subject-a' as string | null } },
+    );
+
+    await waitFor(() => {
+      expect(harness.fetch).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolve(ok({ generation: 1, value: 'a' }));
+    });
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe('ready');
+    });
+
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.pending()).toBe(1);
+    });
+
+    rerender({ subjectKey: 'subject-b' });
+    await act(async () => {
+      await pending;
+    });
+
+    while (harness.pending() > 0) {
+      await act(async () => {
+        harness.resolve(ok({ generation: 2, value: 'b' }));
+      });
+    }
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe('ready');
+    });
+    if (result.current.state.kind === 'ready') {
+      expect(result.current.state.data.value).toBe('b');
+    }
+  });
 });

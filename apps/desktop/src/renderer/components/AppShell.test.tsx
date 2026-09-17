@@ -703,7 +703,20 @@ function createOfficialBridge() {
     ),
     clanState: vi.fn(async () => ({
       ok: true as const,
-      value: { generation: 1, clanTag: '#CLAN01', summary: null, state: null },
+      value: {
+        generation: 1,
+        clanTag: '#CLAN01',
+        summary: {
+          name: '测试部落',
+          tag: '#CLAN01',
+          clanLevel: 12,
+          members: 40,
+          type: 'open',
+          isWarLogPublic: true,
+          warWins: 0,
+        },
+        state: null,
+      },
     })),
     clanWarState: vi.fn(async () => ({
       ok: true as const,
@@ -812,6 +825,87 @@ describe('AppShell Official 接线（#277-E1）', () => {
     expect(harness.bridge.playerState).not.toHaveBeenCalled();
     vi.advanceTimersByTime(3000);
     expect(clockStore.getSnapshot()).toBe(1000);
+  });
+
+  it('详情页玩家查询未完成时不显示不在部落中', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        officialBridge={harness.bridge}
+        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('该玩家当前不在部落中')).toBeNull();
+    expect(screen.getAllByText('尚未确认部落归属').length).toBeGreaterThan(0);
+  });
+
+  it('详情页玩家确认无部落时显示不在部落中', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        officialBridge={harness.bridge}
+        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalled();
+    });
+    act(() => {
+      harness.resolvePlayer(
+        ok(
+          playerFixture({
+            currentClanTag: null,
+            summary: {
+              name: 'Hero',
+              tag: '#AAA',
+              townHallLevel: 16,
+              builderHallLevel: 10,
+              expLevel: 200,
+              trophies: 5000,
+              bestTrophies: 5200,
+              clanName: null,
+              clanTag: null,
+            },
+          }),
+        ),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('该玩家当前不在部落中').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('详情页 War Log never 状态不显示没有历史记录', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        officialBridge={harness.bridge}
+        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalled();
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalled();
+    });
+    expect(screen.queryByText('没有历史部落对战记录')).toBeNull();
+    expect(screen.getByText('尚未获取部落对战日志')).toBeTruthy();
   });
 
   it('pending refresh 时切走 Official 页会 cancel', async () => {

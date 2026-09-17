@@ -13,7 +13,7 @@ import {
   clanWarMemberRowLabel,
   clanWarParticipantHasMembers,
   OFFICIAL_DETAIL_ROW_LIMIT,
-  type CapitalRaidLogRow,
+  type CapitalRaidLogRowsResult,
 } from '../official-war-session';
 
 function limitedRows<T>(items: readonly T[] | undefined): readonly T[] {
@@ -102,21 +102,18 @@ function SimpleRowList(props: { readonly title: string; readonly rows: readonly 
 
 function CapitalRaidLogList(props: {
   readonly title: string;
-  readonly rows: readonly CapitalRaidLogRow[];
+  readonly log: CapitalRaidLogRowsResult;
 }) {
-  if (props.rows.length === 0) {
+  if (props.log.entryCount === 0) {
     return null;
   }
-  const entryCount = props.rows.filter((row) => row.kind === 'entry').length;
-  const visible = props.rows.slice(0, OFFICIAL_DETAIL_ROW_LIMIT);
-  const truncated = props.rows.length > visible.length;
   return (
     <details className="official-details">
       <summary>
-        {props.title}（{entryCount}）
+        {props.title}（{props.log.entryCount}）
       </summary>
       <ul className="official-list">
-        {visible.map((row, index) => (
+        {props.log.rows.map((row, index) => (
           <li
             key={`${props.title}-${index}`}
             className={row.kind === 'district' ? 'official-detail-subrow' : undefined}
@@ -125,7 +122,9 @@ function CapitalRaidLogList(props: {
           </li>
         ))}
       </ul>
-      {truncated ? <p className="muted">仅显示前 {OFFICIAL_DETAIL_ROW_LIMIT} 条记录</p> : null}
+      {props.log.truncated ? (
+        <p className="muted">仅显示前 {OFFICIAL_DETAIL_ROW_LIMIT} 条记录</p>
+      ) : null}
     </details>
   );
 }
@@ -137,8 +136,8 @@ export function OfficialCapitalRaidSeasonDetails(props: {
   return (
     <>
       <SimpleRowList title="成员突袭" rows={capitalRaidMemberRows(season)} />
-      <CapitalRaidLogList title="进攻日志" rows={capitalRaidAttackLogRows(season)} />
-      <CapitalRaidLogList title="防守日志" rows={capitalRaidDefenseLogRows(season)} />
+      <CapitalRaidLogList title="进攻日志" log={capitalRaidAttackLogRows(season)} />
+      <CapitalRaidLogList title="防守日志" log={capitalRaidDefenseLogRows(season)} />
     </>
   );
 }

@@ -143,9 +143,9 @@ afterEach(() => {
 });
 
 describe('useOfficialWarLog（#277-E2）', () => {
-  it('knownNotPublic 时不查询', async () => {
+  it('warLog 不公开时不查询', async () => {
     const { bridge } = createBridge();
-    renderHook(() => useOfficialWarLog(bridge, snapshot(), '#CLAN01', 'v1', true));
+    renderHook(() => useOfficialWarLog(bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'private'));
     await act(async () => {
       await Promise.resolve();
     });
@@ -155,7 +155,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('refresh 完成前保持 remoteBusy，state 重查后才结束', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -192,7 +192,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('refresh 进行中禁止 loadMore', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -217,7 +217,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('refresh cross-cancel 后旧 loadMore 不得回写 commandError', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -266,7 +266,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('loadMore failed progress 先于 invoke settle 时，refresh 不得被迟到结果重写 error', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -325,7 +325,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('loadMore 失败后 refresh 成功会清除旧 commandError', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -378,7 +378,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('refresh 失败后 loadMore 成功会清除旧 commandError', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));
@@ -444,7 +444,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
   it('loadMore 失败后可正常重试', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+      useOfficialWarLog(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1', 'public'),
     );
     act(() => {
       harness.resolve(ok(warLogPayload()));

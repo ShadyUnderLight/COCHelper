@@ -166,11 +166,29 @@ export function clanTypeLabel(raw: string | null): string | null {
   }
 }
 
+export type WarLogPublicity = 'unknown' | 'public' | 'private';
+
 export function warLogPublicLabel(value: boolean | null): string | null {
   if (value === null) {
     return null;
   }
   return value ? '公开' : '不公开';
+}
+
+export function warLogPublicityOf(clan: OfficialClanView): WarLogPublicity {
+  if (clan.affiliation !== 'tagged') {
+    return 'unknown';
+  }
+  if (clan.summary === null) {
+    return 'unknown';
+  }
+  if (clan.summary.isWarLogPublic === true) {
+    return 'public';
+  }
+  if (clan.summary.isWarLogPublic === false) {
+    return 'private';
+  }
+  return 'unknown';
 }
 
 export function formatFetchedAt(fetchedAtMs: number | null): string | null {

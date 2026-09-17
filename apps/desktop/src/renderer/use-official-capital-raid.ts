@@ -17,7 +17,7 @@ import {
   useRunOfficialCommand,
   type OfficialCommandBridge,
 } from './official-command';
-import { OFFICIAL_VIEW_WITHOUT_STALE_CLOCK } from './official-session';
+import { OFFICIAL_VIEW_WITHOUT_STALE_CLOCK, type ClanAffiliation } from './official-session';
 import { toOfficialCapitalRaidView, type OfficialCapitalRaidView } from './official-war-session';
 import { useResourceQuery } from './use-resource-query';
 
@@ -38,11 +38,12 @@ export type OfficialCapitalRaidApi = {
 export function useOfficialCapitalRaid(
   bridge: BridgeCapitalRaidClient & OfficialCommandBridge,
   snapshot: AppSnapshotPayload | null,
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   villageId: string | null,
 ): OfficialCapitalRaidApi {
   const subjectKey =
-    snapshot === null || clanTag === null
+    snapshot === null || affiliation !== 'tagged' || clanTag === null
       ? null
       : officialClanSubjectKey(snapshot.sessionId, clanTag, 'capitalRaid');
   const subjectRef = useRef<string | null>(null);
@@ -146,6 +147,7 @@ export function useOfficialCapitalRaid(
 
   const view = useMemo((): OfficialCapitalRaidView => {
     const projected = toOfficialCapitalRaidView(
+      affiliation,
       clanTag,
       query.state,
       OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
@@ -156,7 +158,7 @@ export function useOfficialCapitalRaid(
         commandErrorFor(refreshState.commandError, subjectKey) ??
         commandErrorFor(loadMoreState.commandError, subjectKey),
     };
-  }, [clanTag, query.state, refreshState.commandError, loadMoreState.commandError, subjectKey]);
+  }, [affiliation, clanTag, query.state, refreshState.commandError, loadMoreState.commandError, subjectKey]);
 
   const refreshing = refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey;
   const loadingMore = loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey;

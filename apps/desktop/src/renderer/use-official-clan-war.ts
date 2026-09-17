@@ -16,7 +16,7 @@ import {
   useRunOfficialCommand,
   type OfficialCommandBridge,
 } from './official-command';
-import { OFFICIAL_VIEW_WITHOUT_STALE_CLOCK } from './official-session';
+import { OFFICIAL_VIEW_WITHOUT_STALE_CLOCK, type ClanAffiliation } from './official-session';
 import { toOfficialClanWarView, type OfficialClanWarView } from './official-war-session';
 import { useResourceQuery } from './use-resource-query';
 
@@ -34,11 +34,12 @@ export type OfficialClanWarApi = {
 export function useOfficialClanWar(
   bridge: BridgeClanWarClient & OfficialCommandBridge,
   snapshot: AppSnapshotPayload | null,
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   villageId: string | null,
 ): OfficialClanWarApi {
   const subjectKey =
-    snapshot === null || clanTag === null
+    snapshot === null || affiliation !== 'tagged' || clanTag === null
       ? null
       : officialClanSubjectKey(snapshot.sessionId, clanTag, 'clanWar');
   const subjectRef = useRef<string | null>(null);
@@ -97,6 +98,7 @@ export function useOfficialClanWar(
 
   const view = useMemo((): OfficialClanWarView => {
     const projected = toOfficialClanWarView(
+      affiliation,
       clanTag,
       query.state,
       OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
@@ -105,7 +107,7 @@ export function useOfficialClanWar(
       ...projected,
       commandError: commandErrorFor(commandState.commandError, subjectKey),
     };
-  }, [clanTag, query.state, commandState.commandError, subjectKey]);
+  }, [affiliation, clanTag, query.state, commandState.commandError, subjectKey]);
 
   return {
     view,

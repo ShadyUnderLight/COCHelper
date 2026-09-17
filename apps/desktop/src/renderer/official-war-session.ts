@@ -24,13 +24,16 @@ import {
   OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
   officialRefreshStatus,
   officialSourceLabel,
+  type ClanAffiliation,
   type OfficialRefreshStatus,
+  type WarLogPublicity,
 } from './official-session';
 import { resourceData, resourceLastError, type ResourceState } from './resource-state';
 
 export type ClanWarPhase = 'notInWar' | 'preparation' | 'inWar' | 'warEnded' | 'unknown';
 
 export type OfficialClanWarView = {
+  readonly affiliation: ClanAffiliation;
   readonly queryStatus: 'idle' | 'loading' | 'ready' | 'error';
   readonly lastQueryError: string | null;
   readonly clanTag: string | null;
@@ -46,6 +49,7 @@ export type OfficialClanWarView = {
 };
 
 export type OfficialWarLogView = {
+  readonly affiliation: ClanAffiliation;
   readonly queryStatus: 'idle' | 'loading' | 'ready' | 'error';
   readonly lastQueryError: string | null;
   readonly clanTag: string | null;
@@ -58,13 +62,14 @@ export type OfficialWarLogView = {
   readonly visibleEntries: readonly WarLogEntryWire[];
   readonly visibleCount: number;
   readonly moreState: WarLogMoreState;
-  readonly knownNotPublic: boolean;
+  readonly warLogPublicity: WarLogPublicity;
   readonly canRefresh: boolean;
   readonly canLoadMore: boolean;
   readonly commandError: string | null;
 };
 
 export type OfficialCapitalRaidView = {
+  readonly affiliation: ClanAffiliation;
   readonly queryStatus: 'idle' | 'loading' | 'ready' | 'error';
   readonly lastQueryError: string | null;
   readonly clanTag: string | null;
@@ -87,6 +92,7 @@ export const WAR_LOG_VISIBLE_INCREMENT = 10;
 export const OFFICIAL_DETAIL_ROW_LIMIT = 30;
 
 export const IDLE_OFFICIAL_CLAN_WAR_VIEW: OfficialClanWarView = {
+  affiliation: 'unknown',
   queryStatus: 'idle',
   lastQueryError: null,
   clanTag: null,
@@ -102,6 +108,7 @@ export const IDLE_OFFICIAL_CLAN_WAR_VIEW: OfficialClanWarView = {
 };
 
 export const IDLE_OFFICIAL_WAR_LOG_VIEW: OfficialWarLogView = {
+  affiliation: 'unknown',
   queryStatus: 'idle',
   lastQueryError: null,
   clanTag: null,
@@ -114,13 +121,14 @@ export const IDLE_OFFICIAL_WAR_LOG_VIEW: OfficialWarLogView = {
   visibleEntries: [],
   visibleCount: WAR_LOG_DEFAULT_VISIBLE_COUNT,
   moreState: 'none',
-  knownNotPublic: false,
+  warLogPublicity: 'unknown',
   canRefresh: false,
   canLoadMore: false,
   commandError: null,
 };
 
 export const IDLE_OFFICIAL_CAPITAL_RAID_VIEW: OfficialCapitalRaidView = {
+  affiliation: 'unknown',
   queryStatus: 'idle',
   lastQueryError: null,
   clanTag: null,
@@ -223,6 +231,7 @@ function endpointHasMore(state: OfficialEndpointStateDto<unknown> | null): boole
 
 type TaggedEndpointBase = Pick<
   OfficialClanWarView,
+  | 'affiliation'
   | 'queryStatus'
   | 'lastQueryError'
   | 'clanTag'
@@ -234,66 +243,70 @@ type TaggedEndpointBase = Pick<
   | 'canRefresh'
 >;
 
+function idleTaggedEndpoint(
+  affiliation: ClanAffiliation,
+  clanTag: string | null = null,
+  overrides: Partial<TaggedEndpointBase> = {},
+): TaggedEndpointBase {
+  return {
+    affiliation,
+    queryStatus: 'idle',
+    lastQueryError: null,
+    clanTag,
+    refreshStatus: null,
+    sourceLabel: null,
+    fetchedAtMs: null,
+    lastErrorReason: null,
+    unrecognizedKeys: [],
+    canRefresh: false,
+    ...overrides,
+  };
+}
+
 function toTaggedEndpointView<
   TPayload extends { readonly clanTag: string; readonly state: OfficialEndpointStateDto | null },
->(clanTag: string | null, resource: ResourceState<TPayload>, nowMs: number): TaggedEndpointBase {
+>(
+  affiliation: ClanAffiliation,
+  clanTag: string | null,
+  resource: ResourceState<TPayload>,
+  nowMs: number,
+): TaggedEndpointBase {
+  if (affiliation === 'unknown') {
+    return idleTaggedEndpoint('unknown', null, {
+      queryStatus: resource.kind === 'idle' ? 'idle' : 'loading',
+    });
+  }
+  if (affiliation === 'none') {
+    return idleTaggedEndpoint('none', null, { queryStatus: 'ready' });
+  }
   if (clanTag === null) {
-    return {
-      queryStatus: 'idle',
-      lastQueryError: null,
-      clanTag: null,
-      refreshStatus: null,
-      sourceLabel: null,
-      fetchedAtMs: null,
-      lastErrorReason: null,
-      unrecognizedKeys: [],
-      canRefresh: false,
-    };
+    return idleTaggedEndpoint('unknown', null, { queryStatus: 'loading' });
   }
   const lastQueryError = resourceLastError(resource);
   const payload = resourceData(resource);
   if (payload !== null && payload.clanTag !== clanTag) {
-    return {
+    return idleTaggedEndpoint('tagged', clanTag, {
       queryStatus: 'loading',
-      lastQueryError: null,
-      clanTag,
-      refreshStatus: null,
-      sourceLabel: null,
-      fetchedAtMs: null,
-      lastErrorReason: null,
-      unrecognizedKeys: [],
       canRefresh: true,
-    };
+    });
   }
   if (payload === null) {
     if (lastQueryError !== null) {
-      return {
+      return idleTaggedEndpoint('tagged', clanTag, {
         queryStatus: 'error',
         lastQueryError,
-        clanTag,
-        refreshStatus: null,
-        sourceLabel: null,
-        fetchedAtMs: null,
-        lastErrorReason: null,
-        unrecognizedKeys: [],
         canRefresh: true,
-      };
+      });
     }
-    return {
+    return idleTaggedEndpoint('tagged', clanTag, {
       queryStatus: resource.kind === 'idle' ? 'idle' : 'loading',
-      lastQueryError: null,
-      clanTag,
-      refreshStatus: null,
-      sourceLabel: null,
-      fetchedAtMs: null,
-      lastErrorReason: null,
-      unrecognizedKeys: [],
       canRefresh: true,
-    };
+    });
   }
   const state = payload.state;
   const hasLastGood = state?.lastGood !== undefined;
   return {
+    affiliation: 'tagged',
     queryStatus: lastQueryError !== null ? 'error' : 'ready',
     lastQueryError,
     clanTag,
@@ -310,12 +323,16 @@ function toTaggedEndpointView<
 }
 
 export function toOfficialClanWarView(
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   resource: ResourceState<ClanWarStatePayload>,
   nowMs: number = OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
 ): OfficialClanWarView {
-  const base = toTaggedEndpointView(clanTag, resource, nowMs);
-  const war = clanTag === null ? null : clanWarLastGood(resourceData(resource)?.state ?? null);
+  const base = toTaggedEndpointView(affiliation, clanTag, resource, nowMs);
+  const war =
+    affiliation === 'tagged' && clanTag !== null
+      ? clanWarLastGood(resourceData(resource)?.state ?? null)
+      : null;
   return {
     ...base,
     war,
@@ -325,26 +342,48 @@ export function toOfficialClanWarView(
 }
 
 export function toOfficialWarLogView(
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   resource: ResourceState<WarLogStatePayload>,
   visibleCount: number,
-  knownNotPublic: boolean,
+  warLogPublicity: WarLogPublicity,
   nowMs: number = OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
 ): OfficialWarLogView {
-  if (knownNotPublic) {
+  if (affiliation !== 'tagged' || clanTag === null) {
     return {
       ...IDLE_OFFICIAL_WAR_LOG_VIEW,
+      affiliation,
       clanTag,
-      knownNotPublic: true,
+      warLogPublicity,
+      queryStatus: affiliation === 'none' ? 'ready' : IDLE_OFFICIAL_WAR_LOG_VIEW.queryStatus,
+    };
+  }
+  if (warLogPublicity === 'private') {
+    return {
+      ...IDLE_OFFICIAL_WAR_LOG_VIEW,
+      affiliation,
+      clanTag,
+      warLogPublicity: 'private',
       queryStatus: 'ready',
       canRefresh: false,
       canLoadMore: false,
     };
   }
-  const base = toTaggedEndpointView(clanTag, resource, nowMs);
-  const entries = clanTag === null ? [] : warLogEntries(resourceData(resource)?.state ?? null);
-  const hasServerMore =
-    clanTag === null ? false : endpointHasMore(resourceData(resource)?.state ?? null);
+  if (warLogPublicity === 'unknown') {
+    const base = toTaggedEndpointView(affiliation, clanTag, resource, nowMs);
+    return {
+      ...IDLE_OFFICIAL_WAR_LOG_VIEW,
+      ...base,
+      affiliation,
+      clanTag,
+      warLogPublicity: 'unknown',
+      canRefresh: false,
+      canLoadMore: false,
+    };
+  }
+  const base = toTaggedEndpointView(affiliation, clanTag, resource, nowMs);
+  const entries = warLogEntries(resourceData(resource)?.state ?? null);
+  const hasServerMore = endpointHasMore(resourceData(resource)?.state ?? null);
   const moreState = warLogMoreState(entries.length, visibleCount, hasServerMore);
   return {
     ...base,
@@ -352,20 +391,27 @@ export function toOfficialWarLogView(
     visibleEntries: visibleWarLogEntries(entries, visibleCount),
     visibleCount,
     moreState,
-    knownNotPublic: false,
+    warLogPublicity: 'public',
     canLoadMore: moreState !== 'none',
     commandError: null,
   };
 }
 
 export function toOfficialCapitalRaidView(
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   resource: ResourceState<CapitalRaidStatePayload>,
   nowMs: number = OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
 ): OfficialCapitalRaidView {
-  const base = toTaggedEndpointView(clanTag, resource, nowMs);
-  const seasons = clanTag === null ? [] : capitalRaidSeasons(resourceData(resource)?.state ?? null);
-  const hasMore = clanTag === null ? false : endpointHasMore(resourceData(resource)?.state ?? null);
+  const base = toTaggedEndpointView(affiliation, clanTag, resource, nowMs);
+  const seasons =
+    affiliation === 'tagged' && clanTag !== null
+      ? capitalRaidSeasons(resourceData(resource)?.state ?? null)
+      : [];
+  const hasMore =
+    affiliation === 'tagged' && clanTag !== null
+      ? endpointHasMore(resourceData(resource)?.state ?? null)
+      : false;
   return {
     ...base,
     seasons,
@@ -375,9 +421,20 @@ export function toOfficialCapitalRaidView(
   };
 }
 
-export function clanWarRefreshStatusLine(view: OfficialClanWarView): string | null {
-  if (view.clanTag === null) {
+function affiliationStatusLine(affiliation: ClanAffiliation, queryStatus: string): string | null {
+  if (affiliation === 'unknown') {
+    return queryStatus === 'loading' ? '正在确认部落归属…' : '尚未确认部落归属';
+  }
+  if (affiliation === 'none') {
     return '该玩家当前不在部落中';
+  }
+  return null;
+}
+
+export function clanWarRefreshStatusLine(view: OfficialClanWarView): string | null {
+  const affiliationLine = affiliationStatusLine(view.affiliation, view.queryStatus);
+  if (affiliationLine !== null) {
+    return affiliationLine;
   }
   if (view.queryStatus === 'loading') {
     return '正在加载当前部落对战…';
@@ -394,11 +451,15 @@ export function clanWarRefreshStatusLine(view: OfficialClanWarView): string | nu
 }
 
 export function warLogRefreshStatusLine(view: OfficialWarLogView): string | null {
-  if (view.knownNotPublic) {
+  const affiliationLine = affiliationStatusLine(view.affiliation, view.queryStatus);
+  if (affiliationLine !== null) {
+    return affiliationLine;
+  }
+  if (view.warLogPublicity === 'private') {
     return '部落对战日志不公开';
   }
-  if (view.clanTag === null) {
-    return '该玩家当前不在部落中';
+  if (view.warLogPublicity === 'unknown') {
+    return '尚未确认部落对战日志是否公开';
   }
   if (view.queryStatus === 'loading') {
     return '正在加载部落对战日志…';
@@ -415,8 +476,9 @@ export function warLogRefreshStatusLine(view: OfficialWarLogView): string | null
 }
 
 export function capitalRaidRefreshStatusLine(view: OfficialCapitalRaidView): string | null {
-  if (view.clanTag === null) {
-    return '该玩家当前不在部落中';
+  const affiliationLine = affiliationStatusLine(view.affiliation, view.queryStatus);
+  if (affiliationLine !== null) {
+    return affiliationLine;
   }
   if (view.queryStatus === 'loading') {
     return '正在加载突袭周末数据…';
@@ -469,8 +531,27 @@ function formatOptionalMetric(label: string, value: number | undefined): string 
   return value === undefined ? null : `${label} ${value}`;
 }
 
-function sumAttackStars(attacks: readonly ClanWarAttackWire[]): number {
-  return attacks.reduce((sum, attack) => sum + (attack.stars ?? 0), 0);
+function clampAttackStars(value: number): number {
+  return Math.min(3, Math.max(0, value));
+}
+
+function memberAttackStarsLabel(attacks: readonly ClanWarAttackWire[]): string {
+  let knownStars = 0;
+  let missingCount = 0;
+  for (const attack of attacks) {
+    if (attack.stars === undefined) {
+      missingCount += 1;
+    } else {
+      knownStars += clampAttackStars(attack.stars);
+    }
+  }
+  if (missingCount === 0) {
+    return `${knownStars}★`;
+  }
+  if (missingCount === attacks.length) {
+    return '星数未知';
+  }
+  return `已知 ${knownStars}★ · ${missingCount} 次星数未知`;
 }
 
 function formatAttackDestructionValues(attacks: readonly ClanWarAttackWire[]): string {
@@ -490,9 +571,9 @@ export function formatMemberAttackSummary(
   if (attacks.length === 0) {
     return '0 次进攻';
   }
-  const stars = sumAttackStars(attacks);
+  const stars = memberAttackStarsLabel(attacks);
   const destruction = formatAttackDestructionValues(attacks);
-  return `${attacks.length} 次进攻 · ${stars}★ · 摧毁 ${destruction}`;
+  return `${attacks.length} 次进攻 · ${stars} · 摧毁 ${destruction}`;
 }
 
 export function clanWarMetaLine(war: ClanWarWire): string | null {
@@ -523,22 +604,26 @@ export function clanWarParticipantHasMembers(
   return (participant?.members?.length ?? 0) > 0;
 }
 
+function endpointHasSuccessfulEmptyResult(status: OfficialRefreshStatus | null): boolean {
+  return status === 'success' || status === 'stale' || status === 'failedWithLastGood';
+}
+
 export function warLogShowsEmptyHistory(view: OfficialWarLogView): boolean {
   return (
-    !view.knownNotPublic &&
+    view.affiliation === 'tagged' &&
+    view.warLogPublicity === 'public' &&
     view.entries.length === 0 &&
     view.queryStatus === 'ready' &&
-    view.refreshStatus !== 'failedWithoutLastGood' &&
-    view.refreshStatus !== 'loading'
+    endpointHasSuccessfulEmptyResult(view.refreshStatus)
   );
 }
 
 export function capitalRaidShowsEmptyHistory(view: OfficialCapitalRaidView): boolean {
   return (
+    view.affiliation === 'tagged' &&
     view.seasons.length === 0 &&
     view.queryStatus === 'ready' &&
-    view.refreshStatus !== 'failedWithoutLastGood' &&
-    view.refreshStatus !== 'loading'
+    endpointHasSuccessfulEmptyResult(view.refreshStatus)
   );
 }
 
@@ -603,29 +688,47 @@ function capitalRaidDefenseLogHeader(entry: CapitalRaidDefenseLogEntryWire): str
   return parts.join(' · ');
 }
 
+export type CapitalRaidLogRowsResult = {
+  readonly rows: readonly CapitalRaidLogRow[];
+  readonly entryCount: number;
+  readonly truncated: boolean;
+};
+
 function capitalRaidLogRowsFromEntries<T extends CapitalRaidAttackLogEntryWire>(
   entries: readonly T[] | undefined,
   header: (entry: T) => string,
-): readonly CapitalRaidLogRow[] {
+  rowLimit: number = OFFICIAL_DETAIL_ROW_LIMIT,
+): CapitalRaidLogRowsResult {
   const rows: CapitalRaidLogRow[] = [];
+  let entryCount = 0;
+  let truncated = false;
   for (const entry of entries ?? []) {
+    entryCount += 1;
+    if (rows.length >= rowLimit) {
+      truncated = true;
+      continue;
+    }
     rows.push({ kind: 'entry', label: header(entry) });
     for (const district of entry.districts ?? []) {
+      if (rows.length >= rowLimit) {
+        truncated = true;
+        break;
+      }
       rows.push({ kind: 'district', label: capitalRaidDistrictRowLabel(district) });
     }
   }
-  return rows;
+  return { rows, entryCount, truncated };
 }
 
 export function capitalRaidAttackLogRows(
   season: CapitalRaidSeasonWire,
-): readonly CapitalRaidLogRow[] {
+): CapitalRaidLogRowsResult {
   return capitalRaidLogRowsFromEntries(season.attackLog, capitalRaidAttackLogHeader);
 }
 
 export function capitalRaidDefenseLogRows(
   season: CapitalRaidSeasonWire,
-): readonly CapitalRaidLogRow[] {
+): CapitalRaidLogRowsResult {
   return capitalRaidLogRowsFromEntries(season.defenseLog, capitalRaidDefenseLogHeader);
 }
 

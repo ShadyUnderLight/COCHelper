@@ -4,9 +4,10 @@ import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
+import type { ClanAffiliation, WarLogPublicity } from '../official-session';
 import {
   useOfficialClanWarBundle,
-  warLogKnownNotPublic,
+  warLogPublicityOf,
   type BridgeOfficialVillageClient,
   type OfficialClanWarBundleApi,
 } from '../use-official-clan-war-bundle';
@@ -356,9 +357,10 @@ function OfficialVillageDetail(props: {
         <OfficialClanWarHost
           bridge={bridge}
           snapshot={props.snapshot}
-          clanTag={official.player.currentClanTag}
+          affiliation={official.clan.affiliation}
+          clanTag={official.clan.clanTag}
           villageId={props.villageId}
-          knownNotPublic={warLogKnownNotPublic(official.clan)}
+          warLogPublicity={warLogPublicityOf(official.clan)}
         >
           {(officialWar) => detail(official, officialWar)}
         </OfficialClanWarHost>
@@ -370,17 +372,19 @@ function OfficialVillageDetail(props: {
 function OfficialClanWarHost(props: {
   readonly bridge: BridgeOfficialVillageClient;
   readonly snapshot: AppSnapshotPayload | null;
+  readonly affiliation: ClanAffiliation;
   readonly clanTag: string | null;
   readonly villageId: string | null;
-  readonly knownNotPublic: boolean;
+  readonly warLogPublicity: WarLogPublicity;
   readonly children: (officialWar: OfficialClanWarBundleApi) => ReactNode;
 }) {
   const officialWar = useOfficialClanWarBundle(
     props.bridge,
     props.snapshot,
+    props.affiliation,
     props.clanTag,
     props.villageId,
-    props.knownNotPublic,
+    props.warLogPublicity,
   );
   return props.children(officialWar);
 }

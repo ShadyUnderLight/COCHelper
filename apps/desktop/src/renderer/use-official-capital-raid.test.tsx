@@ -133,7 +133,7 @@ describe('useOfficialCapitalRaid（#277-E2）', () => {
   it('loadMore failed progress 先于 invoke settle 时，refresh 不得被迟到结果重写 error', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialCapitalRaid(harness.bridge, snapshot(), '#CLAN01', 'v1'),
+      useOfficialCapitalRaid(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1'),
     );
     act(() => {
       harness.resolve(ok(capitalRaidPayload()));
@@ -194,7 +194,7 @@ describe('useOfficialCapitalRaid（#277-E2）', () => {
   it('loadMore 失败后 refresh 成功会清除旧 commandError', async () => {
     const harness = createBridge();
     const { result } = renderHook(() =>
-      useOfficialCapitalRaid(harness.bridge, snapshot(), '#CLAN01', 'v1'),
+      useOfficialCapitalRaid(harness.bridge, snapshot(), 'tagged', '#CLAN01', 'v1'),
     );
     act(() => {
       harness.resolve(ok(capitalRaidPayload()));

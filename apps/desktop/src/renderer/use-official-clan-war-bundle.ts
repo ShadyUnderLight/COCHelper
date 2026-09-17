@@ -1,6 +1,7 @@
 import type { AppSnapshotPayload, DesktopBridge } from '@coc-helper/contracts';
 
-import type { OfficialClanView } from './official-session';
+import type { ClanAffiliation, WarLogPublicity } from './official-session';
+import { warLogPublicityOf } from './official-session';
 import { useOfficialCapitalRaid, type OfficialCapitalRaidApi } from './use-official-capital-raid';
 import { useOfficialClanWar, type OfficialClanWarApi } from './use-official-clan-war';
 import { type BridgeOfficialClient } from './use-official-village';
@@ -27,19 +28,25 @@ export type OfficialClanWarBundleApi = {
   readonly capitalRaid: OfficialCapitalRaidApi;
 };
 
-export function warLogKnownNotPublic(clan: OfficialClanView): boolean {
-  return clan.summary?.isWarLogPublic === false;
-}
+export { warLogPublicityOf };
 
 export function useOfficialClanWarBundle(
   bridge: BridgeOfficialClanWarClient,
   snapshot: AppSnapshotPayload | null,
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   villageId: string | null,
-  knownNotPublic: boolean,
+  warLogPublicity: WarLogPublicity,
 ): OfficialClanWarBundleApi {
-  const clanWar = useOfficialClanWar(bridge, snapshot, clanTag, villageId);
-  const warLog = useOfficialWarLog(bridge, snapshot, clanTag, villageId, knownNotPublic);
-  const capitalRaid = useOfficialCapitalRaid(bridge, snapshot, clanTag, villageId);
+  const clanWar = useOfficialClanWar(bridge, snapshot, affiliation, clanTag, villageId);
+  const warLog = useOfficialWarLog(
+    bridge,
+    snapshot,
+    affiliation,
+    clanTag,
+    villageId,
+    warLogPublicity,
+  );
+  const capitalRaid = useOfficialCapitalRaid(bridge, snapshot, affiliation, clanTag, villageId);
   return { clanWar, warLog, capitalRaid };
 }

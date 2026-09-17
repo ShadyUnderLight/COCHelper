@@ -76,7 +76,7 @@ afterEach(() => {
 describe('useOfficialClanWar（#277-E2）', () => {
   it('clanTag 为 null 时不查询且不自动 refresh', async () => {
     const { bridge } = createBridge();
-    renderHook(() => useOfficialClanWar(bridge, snapshot(), null, 'v1'));
+    renderHook(() => useOfficialClanWar(bridge, snapshot(), 'none', null, 'v1'));
     await act(async () => {
       await Promise.resolve();
     });
@@ -86,7 +86,9 @@ describe('useOfficialClanWar（#277-E2）', () => {
 
   it('有 clanTag 时查询缓存，用户 refresh 才发 api.refresh', async () => {
     const { bridge, resolve, resolveRefresh } = createBridge();
-    const { result } = renderHook(() => useOfficialClanWar(bridge, snapshot(), '#CLAN01', 'v1'));
+    const { result } = renderHook(() =>
+      useOfficialClanWar(bridge, snapshot(), 'tagged', '#CLAN01', 'v1'),
+    );
     resolve(
       ok({
         generation: 1,

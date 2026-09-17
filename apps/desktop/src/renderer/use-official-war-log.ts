@@ -17,7 +17,11 @@ import {
   useRunOfficialCommand,
   type OfficialCommandBridge,
 } from './official-command';
-import { OFFICIAL_VIEW_WITHOUT_STALE_CLOCK } from './official-session';
+import {
+  OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
+  type ClanAffiliation,
+  type WarLogPublicity,
+} from './official-session';
 import {
   toOfficialWarLogView,
   WAR_LOG_DEFAULT_VISIBLE_COUNT,
@@ -43,12 +47,16 @@ export type OfficialWarLogApi = {
 export function useOfficialWarLog(
   bridge: BridgeWarLogClient & OfficialCommandBridge,
   snapshot: AppSnapshotPayload | null,
+  affiliation: ClanAffiliation,
   clanTag: string | null,
   villageId: string | null,
-  knownNotPublic: boolean,
+  warLogPublicity: WarLogPublicity,
 ): OfficialWarLogApi {
   const subjectKey =
-    snapshot === null || clanTag === null || knownNotPublic
+    snapshot === null ||
+    affiliation !== 'tagged' ||
+    clanTag === null ||
+    warLogPublicity !== 'public'
       ? null
       : officialClanSubjectKey(snapshot.sessionId, clanTag, 'warLog');
   const subjectRef = useRef<string | null>(null);
@@ -61,7 +69,7 @@ export function useOfficialWarLog(
   const [visibleCount, setVisibleCount] = useState(WAR_LOG_DEFAULT_VISIBLE_COUNT);
   useEffect(() => {
     setVisibleCount(WAR_LOG_DEFAULT_VISIBLE_COUNT);
-  }, [snapshot?.sessionId, clanTag, knownNotPublic]);
+  }, [snapshot?.sessionId, affiliation, clanTag, warLogPublicity]);
 
   const query = useResourceQuery<WarLogStatePayload>({
     snapshot,
@@ -163,10 +171,11 @@ export function useOfficialWarLog(
 
   const view = useMemo((): OfficialWarLogView => {
     const projected = toOfficialWarLogView(
+      affiliation,
       clanTag,
       query.state,
       visibleCount,
-      knownNotPublic,
+      warLogPublicity,
       OFFICIAL_VIEW_WITHOUT_STALE_CLOCK,
     );
     return {
@@ -176,10 +185,11 @@ export function useOfficialWarLog(
         commandErrorFor(loadMoreState.commandError, subjectKey),
     };
   }, [
+    affiliation,
     clanTag,
     query.state,
     visibleCount,
-    knownNotPublic,
+    warLogPublicity,
     refreshState.commandError,
     loadMoreState.commandError,
     subjectKey,
@@ -198,7 +208,7 @@ export function useOfficialWarLog(
   }, [bridge, loadMoreOpRef, refreshCommand, remoteBusy, setLoadMoreState, subjectKey]);
 
   const loadMore = useCallback(async () => {
-    if (knownNotPublic || subjectKey === null) {
+    if (warLogPublicity !== 'public' || subjectKey === null) {
       return;
     }
     if (view.moreState === 'localHidden') {
@@ -215,7 +225,7 @@ export function useOfficialWarLog(
     }
   }, [
     bridge,
-    knownNotPublic,
+    warLogPublicity,
     loadMoreCommand,
     refreshOpRef,
     remoteBusy,

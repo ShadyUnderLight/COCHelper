@@ -70,12 +70,12 @@ export function cancelOfficialOp(
   setState: React.Dispatch<React.SetStateAction<CommandState>>,
 ): void {
   const op = opRef.current;
+  // progress 可能已把 opRef 清空，但 invoke 仍未 settle；始终 bump epoch 以 fencing 迟到结果。
+  epochRef.current += 1;
   if (op !== null) {
-    epochRef.current += 1;
     bridge.cancel({ requestId: op.requestId });
     opRef.current = null;
   }
-  // 即使已无在途 op，也要清掉上一次失败留下的 commandError。
   setState({ refreshing: false, commandError: null });
 }
 

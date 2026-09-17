@@ -113,8 +113,31 @@ function createBridge() {
     resolveLoadMore(value: Result<WarLogLoadMorePayload>) {
       loadMoreResolvers.shift()?.(value);
     },
-    emitProgress: progressListeners,
+    emitProgress(payload: {
+      operationId: string;
+      phase: 'failed' | 'cancelled' | 'completed';
+      generation: number;
+      message?: string;
+    }) {
+      for (const listener of progressListeners) {
+        listener(payload);
+      }
+    },
   };
+}
+
+async function expandWarLogToServerMore(result: {
+  current: ReturnType<typeof useOfficialWarLog>;
+}) {
+  await waitFor(() => {
+    expect(result.current.view.moreState).toBe('localHidden');
+  });
+  await act(async () => {
+    await result.current.loadMore();
+  });
+  await waitFor(() => {
+    expect(result.current.view.moreState).toBe('serverMore');
+  });
 }
 
 afterEach(() => {
@@ -152,9 +175,7 @@ describe('useOfficialWarLog（#277-E2）', () => {
 
     const requestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
     act(() => {
-      for (const listener of harness.emitProgress) {
-        listener({ operationId: requestId as string, phase: 'completed', generation: 2 });
-      }
+      harness.emitProgress({ operationId: requestId as string, phase: 'completed', generation: 2 });
     });
     expect(result.current.remoteBusy).toBe(true);
 
@@ -242,6 +263,65 @@ describe('useOfficialWarLog（#277-E2）', () => {
       expect(result.current.remoteBusy).toBe(false);
     });
     expect(result.current.view.commandError).toBeNull();
+  });
+
+  it('loadMore failed progress 先于 invoke settle 时，refresh 不得被迟到结果重写 error', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() =>
+      useOfficialWarLog(harness.bridge, snapshot(), '#CLAN01', 'v1', false),
+    );
+    act(() => {
+      harness.resolve(ok(warLogPayload()));
+    });
+    await expandWarLogToServerMore(result);
+
+    act(() => {
+      void result.current.loadMore();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogLoadMore).toHaveBeenCalledTimes(1);
+    });
+    const loadMoreRequestId = vi.mocked(harness.bridge.warLogLoadMore).mock.calls[0]?.[0]
+      ?.requestId as string;
+
+    act(() => {
+      harness.emitProgress({
+        operationId: loadMoreRequestId,
+        phase: 'failed',
+        generation: 2,
+        message: '加载更多失败',
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.view.commandError).toBe('加载更多失败');
+      expect(result.current.remoteBusy).toBe(false);
+    });
+
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.bridge.apiRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      harness.resolveLoadMore(err('加载更多失败'));
+    });
+    expect(result.current.view.commandError).toBeNull();
+
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.warLogState).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      harness.resolve(ok(warLogPayload({ generation: 2 })));
+    });
+    await waitFor(() => {
+      expect(result.current.remoteBusy).toBe(false);
+      expect(result.current.view.commandError).toBeNull();
+    });
   });
 
   it('loadMore 失败后 refresh 成功会清除旧 commandError', async () => {

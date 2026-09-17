@@ -107,12 +107,13 @@ function CapitalRaidLogList(props: {
   if (props.rows.length === 0) {
     return null;
   }
+  const entryCount = props.rows.filter((row) => row.kind === 'entry').length;
   const visible = props.rows.slice(0, OFFICIAL_DETAIL_ROW_LIMIT);
   const truncated = props.rows.length > visible.length;
   return (
     <details className="official-details">
       <summary>
-        {props.title}（{props.rows.length}）
+        {props.title}（{entryCount}）
       </summary>
       <ul className="official-list">
         {visible.map((row, index) => (

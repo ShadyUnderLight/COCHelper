@@ -455,3 +455,17 @@ button.danger {
   font-weight: 500;
   overflow-wrap: anywhere;
 }
+
+.official-list {
+  margin: 12px 0 0;
+  padding-left: 1.25rem;
+}
+
+.official-list li {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+}
+
+.official-war-body p {
+  margin: 0.35rem 0;
+}

@@ -5,6 +5,12 @@ import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
 import {
+  useOfficialClanWarBundle,
+  warLogKnownNotPublic,
+  type BridgeOfficialClanWarClient,
+  type OfficialClanWarBundleApi,
+} from '../use-official-clan-war-bundle';
+import {
   useOfficialVillage,
   type BridgeOfficialClient,
   type OfficialVillageApi,
@@ -324,30 +330,59 @@ function OfficialVillageDetail(props: {
   readonly canQuick: boolean;
   readonly onNavigateToImport: () => void;
 }) {
-  const detail = (official: OfficialVillageApi | undefined) => (
+  const detail = (
+    official: OfficialVillageApi | undefined,
+    officialWar: OfficialClanWarBundleApi | undefined,
+  ) => (
     <VillageDetail
       state={props.state}
       base={props.base}
       onBaseChange={props.onBaseChange}
       onRetry={props.onRetry}
       official={official}
+      officialWar={officialWar}
       quick={props.quick}
       canQuick={props.canQuick}
       onNavigateToImport={props.onNavigateToImport}
     />
   );
   if (props.officialBridge === undefined) {
-    return detail(props.official);
+    return detail(props.official, undefined);
   }
+  const bridge = props.officialBridge as BridgeOfficialClient & BridgeOfficialClanWarClient;
   return (
-    <OfficialVillageHost
-      bridge={props.officialBridge}
-      snapshot={props.snapshot}
-      villageId={props.villageId}
-    >
-      {detail}
+    <OfficialVillageHost bridge={bridge} snapshot={props.snapshot} villageId={props.villageId}>
+      {(official) => (
+        <OfficialClanWarHost
+          bridge={bridge}
+          snapshot={props.snapshot}
+          clanTag={official.player.currentClanTag}
+          villageId={props.villageId}
+          knownNotPublic={warLogKnownNotPublic(official.clan)}
+        >
+          {(officialWar) => detail(official, officialWar)}
+        </OfficialClanWarHost>
+      )}
     </OfficialVillageHost>
   );
+}
+
+function OfficialClanWarHost(props: {
+  readonly bridge: BridgeOfficialClanWarClient;
+  readonly snapshot: AppSnapshotPayload | null;
+  readonly clanTag: string | null;
+  readonly villageId: string | null;
+  readonly knownNotPublic: boolean;
+  readonly children: (officialWar: OfficialClanWarBundleApi) => ReactNode;
+}) {
+  const officialWar = useOfficialClanWarBundle(
+    props.bridge,
+    props.snapshot,
+    props.clanTag,
+    props.villageId,
+    props.knownNotPublic,
+  );
+  return props.children(officialWar);
 }
 
 function TabNav(props: {

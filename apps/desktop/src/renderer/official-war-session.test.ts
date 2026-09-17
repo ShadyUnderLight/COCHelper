@@ -85,6 +85,7 @@ function warLogPayload(): WarLogStatePayload {
             result: 'win',
           })),
         },
+        unrecognizedKeys: [],
       },
     },
   };

@@ -61,7 +61,7 @@ export function useOfficialWarLog(
   const [visibleCount, setVisibleCount] = useState(WAR_LOG_DEFAULT_VISIBLE_COUNT);
   useEffect(() => {
     setVisibleCount(WAR_LOG_DEFAULT_VISIBLE_COUNT);
-  }, [clanTag, knownNotPublic]);
+  }, [snapshot?.sessionId, clanTag, knownNotPublic]);
 
   const query = useResourceQuery<WarLogStatePayload>({
     snapshot,

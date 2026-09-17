@@ -5,6 +5,11 @@
 import { z } from 'zod';
 
 import { OFFICIAL_API_REQUEST_STATUSES, OFFICIAL_ENDPOINT_FAILURE_KINDS } from './official-wire';
+import {
+  capitalRaidPageWireSchema,
+  clanWarWireSchema,
+  warLogPageWireSchema,
+} from './official-wire-schema';
 import type {
   ApiRefreshPayload,
   CapitalRaidLoadMorePayload,
@@ -37,28 +42,28 @@ const requestIdSchema = z
 
 const endpointKindSchema = z.enum(OFFICIAL_ENDPOINT_KINDS);
 
-function officialEndpointStateDtoSchemaFor<Snapshot>(): z.ZodType<
-  OfficialEndpointStateDto<Snapshot>
-> {
-  return officialEndpointStateDtoSchema as z.ZodType<OfficialEndpointStateDto<Snapshot>>;
+export function officialEndpointStateDtoSchema<Snapshot>(
+  lastGoodSchema: z.ZodType<Snapshot>,
+): z.ZodType<OfficialEndpointStateDto<Snapshot>> {
+  return z
+    .object({
+      status: z.enum(OFFICIAL_API_REQUEST_STATUSES),
+      clanTag: z.string().max(32).optional(),
+      playerTag: z.string().max(32).optional(),
+      fetchedAt: z.number().finite().optional(),
+      lastAttemptAt: z.number().finite().optional(),
+      lastErrorReason: z.string().max(500).optional(),
+      lastHTTPStatus: z.number().int().safe().optional(),
+      failureKind: z.enum(OFFICIAL_ENDPOINT_FAILURE_KINDS).optional(),
+      parserVersion: z.string().min(1).max(64),
+      lastGood: lastGoodSchema.optional(),
+      unrecognizedKeys: z.array(z.string().max(256)).max(500),
+      hasMore: z.boolean().optional(),
+    })
+    .strict();
 }
 
-const officialEndpointStateDtoSchema: z.ZodType<OfficialEndpointStateDto> = z
-  .object({
-    status: z.enum(OFFICIAL_API_REQUEST_STATUSES),
-    clanTag: z.string().max(32).optional(),
-    playerTag: z.string().max(32).optional(),
-    fetchedAt: z.number().finite().optional(),
-    lastAttemptAt: z.number().finite().optional(),
-    lastErrorReason: z.string().max(500).optional(),
-    lastHTTPStatus: z.number().int().safe().optional(),
-    failureKind: z.enum(OFFICIAL_ENDPOINT_FAILURE_KINDS).optional(),
-    parserVersion: z.string().min(1).max(64),
-    lastGood: z.unknown().optional(),
-    unrecognizedKeys: z.array(z.string().max(256)).max(500),
-    hasMore: z.boolean().optional(),
-  })
-  .strict();
+const officialEndpointStateDtoUntypedSchema = officialEndpointStateDtoSchema(z.unknown());
 
 const nullableString = z.string().max(128).nullable();
 const nullableInt = z.number().int().safe().nullable();
@@ -102,7 +107,7 @@ export const playerStatePayloadSchema: z.ZodType<PlayerStatePayload> = z
     playerTag: z.string().max(32).nullable(),
     currentClanTag: z.string().max(32).nullable(),
     summary: officialPlayerSummarySchema.nullable(),
-    state: officialEndpointStateDtoSchema.nullable(),
+    state: officialEndpointStateDtoUntypedSchema.nullable(),
   })
   .strict();
 
@@ -117,7 +122,7 @@ export const clanStatePayloadSchema: z.ZodType<ClanStatePayload> = z
     generation: generationSchema,
     clanTag: clanTagSchema,
     summary: officialClanSummarySchema.nullable(),
-    state: officialEndpointStateDtoSchema.nullable(),
+    state: officialEndpointStateDtoUntypedSchema.nullable(),
   })
   .strict();
 
@@ -131,7 +136,7 @@ export const clanWarStatePayloadSchema: z.ZodType<ClanWarStatePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchemaFor<import('./official-wire').ClanWarWire>().nullable(),
+    state: officialEndpointStateDtoSchema(clanWarWireSchema).nullable(),
   })
   .strict();
 
@@ -145,7 +150,7 @@ export const warLogStatePayloadSchema: z.ZodType<WarLogStatePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchemaFor<import('./official-wire').WarLogPageWire>().nullable(),
+    state: officialEndpointStateDtoSchema(warLogPageWireSchema).nullable(),
   })
   .strict();
 
@@ -159,8 +164,7 @@ export const capitalRaidStatePayloadSchema: z.ZodType<CapitalRaidStatePayload> =
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state:
-      officialEndpointStateDtoSchemaFor<import('./official-wire').CapitalRaidPageWire>().nullable(),
+    state: officialEndpointStateDtoSchema(capitalRaidPageWireSchema).nullable(),
   })
   .strict();
 
@@ -201,7 +205,7 @@ export const warLogLoadMorePayloadSchema: z.ZodType<WarLogLoadMorePayload> = z
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchemaFor<import('./official-wire').WarLogPageWire>(),
+    state: officialEndpointStateDtoSchema(warLogPageWireSchema),
   })
   .strict();
 
@@ -216,7 +220,7 @@ export const capitalRaidLoadMorePayloadSchema: z.ZodType<CapitalRaidLoadMorePayl
   .object({
     generation: generationSchema,
     clanTag: clanTagSchema,
-    state: officialEndpointStateDtoSchemaFor<import('./official-wire').CapitalRaidPageWire>(),
+    state: officialEndpointStateDtoSchema(capitalRaidPageWireSchema),
   })
   .strict();
 

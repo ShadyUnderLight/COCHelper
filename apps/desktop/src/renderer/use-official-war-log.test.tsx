@@ -63,6 +63,7 @@ function warLogPayload(overrides: Partial<WarLogStatePayload> = {}): WarLogState
             result: 'win',
           })),
         },
+        unrecognizedKeys: [],
       },
     },
     ...overrides,

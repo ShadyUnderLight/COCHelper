@@ -112,13 +112,14 @@ export function useOfficialCommandLifecycle(
 
   useEffect(() => {
     return () => {
+      epochRef.current += 1;
       const op = opRef.current;
       opRef.current = null;
       if (op !== null) {
         bridge.cancel({ requestId: op.requestId });
       }
     };
-  }, [bridge, opRef]);
+  }, [bridge, epochRef, opRef]);
 }
 
 export function useOfficialCommandProgress(

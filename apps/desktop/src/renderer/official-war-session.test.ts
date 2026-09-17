@@ -4,11 +4,16 @@ import type { ClanWarStatePayload, WarLogStatePayload } from '@coc-helper/contra
 
 import { resourceSuccess } from './resource-state';
 import {
+  clanWarMetaLine,
   clanWarPhase,
   clanWarScoreLine,
+  capitalRaidShowsEmptyHistory,
+  toOfficialCapitalRaidView,
   toOfficialClanWarView,
   toOfficialWarLogView,
+  warLogEntryLabel,
   warLogMoreState,
+  warLogShowsEmptyHistory,
   WAR_LOG_DEFAULT_VISIBLE_COUNT,
 } from './official-war-session';
 
@@ -46,6 +51,64 @@ describe('official-war-session（#277-E2）', () => {
     const view = toOfficialClanWarView('#CLAN', resourceSuccess(clanWarPayload()));
     expect(view.phase).toBe('inWar');
     expect(view.war?.clan?.name).toBe('我方');
+  });
+
+  it('clanWarMetaLine 展示规模与进攻次数', () => {
+    const line = clanWarMetaLine({
+      state: 'inWar',
+      teamSize: 15,
+      attacksPerMember: 2,
+      unrecognizedKeys: [],
+      clan: { attacks: 20 },
+      opponent: { attacks: 18 },
+    });
+    expect(line).toContain('15v15');
+    expect(line).toContain('每人 2 次进攻');
+  });
+
+  it('warLogEntryLabel 包含比分摘要', () => {
+    const label = warLogEntryLabel({
+      endTime: '2024-01-01',
+      result: 'win',
+      clan: { stars: 45, destructionPercentage: 95 },
+      opponent: { stars: 40, destructionPercentage: 90 },
+    });
+    expect(label).toContain('45★');
+    expect(label).toContain('40★');
+  });
+
+  it('failedWithoutLastGood 时不展示空历史文案', () => {
+    const warLogView = toOfficialWarLogView(
+      '#CLAN',
+      resourceSuccess({
+        generation: 1,
+        clanTag: '#CLAN',
+        state: {
+          status: 'failed',
+          parserVersion: 'war-log-0.1',
+          unrecognizedKeys: [],
+          lastErrorReason: '网络错误',
+        },
+      }),
+      10,
+      false,
+    );
+    expect(warLogShowsEmptyHistory(warLogView)).toBe(false);
+
+    const capitalView = toOfficialCapitalRaidView(
+      '#CLAN',
+      resourceSuccess({
+        generation: 1,
+        clanTag: '#CLAN',
+        state: {
+          status: 'failed',
+          parserVersion: 'capital-raid-0.1',
+          unrecognizedKeys: [],
+          lastErrorReason: '网络错误',
+        },
+      }),
+    );
+    expect(capitalRaidShowsEmptyHistory(capitalView)).toBe(false);
   });
 });
 

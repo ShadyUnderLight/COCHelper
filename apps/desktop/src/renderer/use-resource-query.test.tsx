@@ -12,7 +12,7 @@ type Payload = {
   readonly value: string;
 };
 
-function snapshot(): AppSnapshotPayload {
+function snapshot(overrides: Partial<AppSnapshotPayload> = {}): AppSnapshotPayload {
   return {
     sessionId: 'session-a',
     generation: 1,
@@ -25,6 +25,7 @@ function snapshot(): AppSnapshotPayload {
     selectedVillageId: 'v1',
     villages: [{ id: 'v1', name: '主村', tag: '#AAA', hasImportedData: true }],
     pendingImport: null,
+    ...overrides,
   };
 }
 
@@ -178,6 +179,63 @@ describe('useResourceQuery', () => {
     expect(result.current.state.kind).toBe('ready');
     if (result.current.state.kind === 'ready') {
       expect(result.current.state.data.value).toBe('b');
+    }
+  });
+
+  it('generation 变化触发新查询时，旧请求返回不得提前 resolve refresh', async () => {
+    const harness = createFetchHarness();
+    const { result, rerender } = renderHook(
+      ({ snap }: { snap: AppSnapshotPayload }) =>
+        useResourceQuery<Payload>({
+          snapshot: snap,
+          subjectKey: 'subject-a',
+          fetch: harness.fetch,
+          extractGeneration: (payload) => payload.generation,
+        }),
+      { initialProps: { snap: snapshot() } },
+    );
+
+    await waitFor(() => {
+      expect(harness.fetch).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolve(ok({ generation: 1, value: 'v1' }));
+    });
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe('ready');
+    });
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.refresh();
+    });
+    await waitFor(() => {
+      expect(harness.pending()).toBe(1);
+    });
+
+    rerender({ snap: snapshot({ generation: 2 }) });
+    await waitFor(() => {
+      expect(harness.pending()).toBeGreaterThanOrEqual(1);
+    });
+
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    while (harness.pending() > 1) {
+      await act(async () => {
+        harness.resolve(ok({ generation: 1, value: 'stale' }));
+      });
+      expect(settled).toBe(false);
+    }
+
+    await act(async () => {
+      harness.resolve(ok({ generation: 2, value: 'v2' }));
+      await pending;
+    });
+    expect(result.current.state.kind).toBe('ready');
+    if (result.current.state.kind === 'ready') {
+      expect(result.current.state.data.value).toBe('v2');
     }
   });
 

@@ -3,10 +3,12 @@ import { clockedRefreshStatus } from '../official-session';
 import {
   capitalRaidRefreshStatusLine,
   capitalRaidSeasonLabel,
+  capitalRaidShowsEmptyHistory,
   type OfficialCapitalRaidView,
 } from '../official-war-session';
 import type { OfficialCapitalRaidApi } from '../use-official-capital-raid';
 import { officialStatusClass } from './official-card-shared';
+import { OfficialCapitalRaidSeasonDetails } from './official-war-details';
 
 export type CapitalRaidCardProps = {
   readonly api: OfficialCapitalRaidApi;
@@ -43,14 +45,13 @@ export function CapitalRaidCard({ api }: CapitalRaidCardProps) {
       {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
       ) : null}
-      {displayView.seasons.length === 0 && displayView.queryStatus === 'ready' ? (
-        <p className="muted">暂无突袭周末记录</p>
-      ) : null}
+      {capitalRaidShowsEmptyHistory(displayView) ? <p className="muted">暂无突袭周末记录</p> : null}
       {displayView.seasons.length > 0 ? (
-        <ul className="official-list">
+        <ul className="official-list official-capital-raid-list">
           {displayView.seasons.map((season, index) => (
             <li key={`${season.startTime ?? 'unknown'}-${index}`}>
-              {capitalRaidSeasonLabel(season)}
+              <p>{capitalRaidSeasonLabel(season)}</p>
+              <OfficialCapitalRaidSeasonDetails season={season} />
             </li>
           ))}
         </ul>

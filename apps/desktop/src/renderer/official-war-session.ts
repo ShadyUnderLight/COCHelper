@@ -6,6 +6,9 @@ import type {
   CapitalRaidPageWire,
   CapitalRaidSeasonWire,
   CapitalRaidStatePayload,
+  ClanWarAttackWire,
+  ClanWarMemberWire,
+  ClanWarParticipantWire,
   ClanWarStatePayload,
   ClanWarWire,
   OfficialEndpointStateDto,
@@ -78,6 +81,7 @@ export type WarLogMoreState = 'none' | 'localHidden' | 'serverMore';
 
 export const WAR_LOG_DEFAULT_VISIBLE_COUNT = 10;
 export const WAR_LOG_VISIBLE_INCREMENT = 10;
+export const OFFICIAL_DETAIL_ROW_LIMIT = 30;
 
 export const IDLE_OFFICIAL_CLAN_WAR_VIEW: OfficialClanWarView = {
   queryStatus: 'idle',
@@ -458,19 +462,111 @@ function endpointStatusLine(
   }
 }
 
+function formatOptionalMetric(label: string, value: number | undefined): string | null {
+  return value === undefined ? null : `${label} ${value}`;
+}
+
+function aggregateMemberAttacks(attacks: readonly ClanWarAttackWire[]): {
+  readonly stars: number;
+  readonly destruction: number;
+} {
+  let stars = 0;
+  let destruction = 0;
+  for (const attack of attacks) {
+    stars += attack.stars ?? 0;
+    destruction += attack.destructionPercentage ?? 0;
+  }
+  return { stars, destruction };
+}
+
+export function clanWarMetaLine(war: ClanWarWire): string | null {
+  const parts = [
+    war.teamSize === undefined ? null : `规模 ${war.teamSize}v${war.teamSize}`,
+    war.attacksPerMember === undefined ? null : `每人 ${war.attacksPerMember} 次进攻`,
+    formatOptionalMetric('我方进攻', war.clan?.attacks),
+    formatOptionalMetric('对方进攻', war.opponent?.attacks),
+  ].filter((part) => part !== null);
+  return parts.length === 0 ? null : parts.join(' · ');
+}
+
+export function clanWarMemberRowLabel(member: ClanWarMemberWire): string {
+  const name = member.name ?? member.tag ?? '未知成员';
+  const townHall = member.townhallLevel === undefined ? null : `TH${member.townhallLevel}`;
+  const position = member.mapPosition === undefined ? null : `位置 ${member.mapPosition}`;
+  const attacks = member.attacks ?? [];
+  const attackSummary =
+    attacks.length === 0
+      ? null
+      : (() => {
+          const totals = aggregateMemberAttacks(attacks);
+          return `${attacks.length} 次进攻 · ${totals.stars}★ · ${totals.destruction}%`;
+        })();
+  const opponentAttacks =
+    member.opponentAttacks === undefined ? null : `被进攻 ${member.opponentAttacks} 次`;
+  return [name, townHall, position, attackSummary, opponentAttacks]
+    .filter((part) => part !== null)
+    .join(' · ');
+}
+
+export function clanWarParticipantHasMembers(
+  participant: ClanWarParticipantWire | undefined,
+): boolean {
+  return (participant?.members?.length ?? 0) > 0;
+}
+
+export function warLogShowsEmptyHistory(view: OfficialWarLogView): boolean {
+  return (
+    !view.knownNotPublic &&
+    view.entries.length === 0 &&
+    view.queryStatus === 'ready' &&
+    view.refreshStatus !== 'failedWithoutLastGood' &&
+    view.refreshStatus !== 'loading'
+  );
+}
+
+export function capitalRaidShowsEmptyHistory(view: OfficialCapitalRaidView): boolean {
+  return (
+    view.seasons.length === 0 &&
+    view.queryStatus === 'ready' &&
+    view.refreshStatus !== 'failedWithoutLastGood' &&
+    view.refreshStatus !== 'loading'
+  );
+}
+
 export function warLogEntryLabel(entry: WarLogEntryWire): string {
   const result = entry.result ?? '未知结果';
   const end = entry.endTime ?? '未知时间';
   const opponent = entry.opponent?.name ?? entry.opponent?.tag ?? '未知对手';
-  return `${end} · ${result} · 对手 ${opponent}`;
+  const teamSize = entry.teamSize === undefined ? null : `${entry.teamSize}v${entry.teamSize}`;
+  const clanScore = formatWarSideScore(
+    '我方',
+    entry.clan?.stars,
+    entry.clan?.destructionPercentage,
+  );
+  const opponentScore = formatWarSideScore(
+    '对方',
+    entry.opponent?.stars,
+    entry.opponent?.destructionPercentage,
+  );
+  const score =
+    clanScore === null || opponentScore === null ? null : `${clanScore} vs ${opponentScore}`;
+  const parts = [end, result, teamSize, score, `对手 ${opponent}`].filter((part) => part !== null);
+  return parts.join(' · ');
 }
 
 export function capitalRaidSeasonLabel(season: CapitalRaidSeasonWire): string {
   const start = season.startTime ?? '未知开始';
   const end = season.endTime ?? '未知结束';
-  const loot = season.capitalTotalLoot;
-  const lootText = loot === undefined ? '' : ` · 都城金币 ${loot}`;
-  return `${start} — ${end}${lootText}`;
+  const parts = [
+    `${start} — ${end}`,
+    formatOptionalMetric('都城金币', season.capitalTotalLoot),
+    formatOptionalMetric('已完成突袭', season.raidsCompleted),
+    formatOptionalMetric('总进攻', season.totalAttacks),
+    formatOptionalMetric('进攻奖励', season.offensiveReward),
+    formatOptionalMetric('防守奖励', season.defensiveReward),
+    formatOptionalMetric('摧毁城区', season.enemyDistrictsDestroyed),
+  ].filter((part) => part !== null);
+  return parts.join(' · ');
 }
 
 function formatWarSideScore(

@@ -199,7 +199,6 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
             shouldAcceptGeneration,
           })
         ) {
-          settleRefreshWaitersUpTo(refreshSeq);
           return;
         }
         setState((prev) => resourceFailure(prev, message));
@@ -223,7 +222,6 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
           shouldAcceptGeneration,
         })
       ) {
-        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 

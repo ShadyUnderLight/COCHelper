@@ -126,9 +126,7 @@ function createBridge() {
   };
 }
 
-async function expandWarLogToServerMore(result: {
-  current: ReturnType<typeof useOfficialWarLog>;
-}) {
+async function expandWarLogToServerMore(result: { current: ReturnType<typeof useOfficialWarLog> }) {
   await waitFor(() => {
     expect(result.current.view.moreState).toBe('localHidden');
   });

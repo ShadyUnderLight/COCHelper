@@ -3,10 +3,12 @@ import { clockedRefreshStatus } from '../official-session';
 import {
   warLogEntryLabel,
   warLogRefreshStatusLine,
+  warLogShowsEmptyHistory,
   type OfficialWarLogView,
 } from '../official-war-session';
 import type { OfficialWarLogApi } from '../use-official-war-log';
 import { officialStatusClass } from './official-card-shared';
+import { OfficialWarLogEntryDetails } from './official-war-details';
 
 export type WarLogCardProps = {
   readonly api: OfficialWarLogApi;
@@ -51,15 +53,14 @@ export function WarLogCard({ api }: WarLogCardProps) {
       {displayView.refreshStatus === 'failedWithLastGood' ? (
         <p className="muted">已保留上次成功数据</p>
       ) : null}
-      {!displayView.knownNotPublic &&
-      displayView.entries.length === 0 &&
-      displayView.queryStatus === 'ready' ? (
-        <p className="muted">没有历史部落对战记录</p>
-      ) : null}
+      {warLogShowsEmptyHistory(displayView) ? <p className="muted">没有历史部落对战记录</p> : null}
       {displayView.visibleEntries.length > 0 ? (
-        <ul className="official-list">
+        <ul className="official-list official-war-log-list">
           {displayView.visibleEntries.map((entry, index) => (
-            <li key={`${entry.endTime ?? 'unknown'}-${index}`}>{warLogEntryLabel(entry)}</li>
+            <li key={`${entry.endTime ?? 'unknown'}-${index}`}>
+              <p>{warLogEntryLabel(entry)}</p>
+              <OfficialWarLogEntryDetails entry={entry} />
+            </li>
           ))}
         </ul>
       ) : null}

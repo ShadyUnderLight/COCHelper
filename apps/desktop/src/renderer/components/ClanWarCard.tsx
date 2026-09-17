@@ -1,6 +1,7 @@
 import { useClock } from '../use-clock';
 import { clockedRefreshStatus } from '../official-session';
 import {
+  clanWarMetaLine,
   clanWarPhaseLabel,
   clanWarRefreshStatusLine,
   clanWarScoreLine,
@@ -8,6 +9,7 @@ import {
 } from '../official-war-session';
 import type { OfficialClanWarApi } from '../use-official-clan-war';
 import { officialStatusClass } from './official-card-shared';
+import { OfficialClanWarDetails } from './official-war-details';
 
 export type ClanWarCardProps = {
   readonly api: OfficialClanWarApi;
@@ -20,6 +22,7 @@ export function ClanWarCard({ api }: ClanWarCardProps) {
   const displayView: OfficialClanWarView = { ...view, refreshStatus };
   const statusLine = clanWarRefreshStatusLine(displayView);
   const scoreLine = displayView.war === null ? null : clanWarScoreLine(displayView.war);
+  const metaLine = displayView.war === null ? null : clanWarMetaLine(displayView.war);
 
   return (
     <section className="official-card" aria-label="当前部落对战">
@@ -48,7 +51,9 @@ export function ClanWarCard({ api }: ClanWarCardProps) {
       {displayView.war !== null ? (
         <div className="official-war-body">
           <p>{clanWarPhaseLabel(displayView.phase, displayView.war.state)}</p>
+          {metaLine !== null ? <p className="muted">{metaLine}</p> : null}
           {scoreLine !== null ? <p className="muted">{scoreLine}</p> : null}
+          <OfficialClanWarDetails war={displayView.war} />
         </div>
       ) : null}
       {displayView.unrecognizedKeys.length > 0 ? (

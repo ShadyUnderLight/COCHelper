@@ -30,13 +30,22 @@ const accountText = readFileSync(path.join(fixtureRoot, scenario.account), 'utf8
 const binary = resolvePackagedBinary(root);
 const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'coc-helper-packaged-e2e-'));
 const homeDirectory = path.join(tempRoot, 'home');
+const electronDataRoot = path.join(tempRoot, 'electron-data');
+const electronUserDataDirectory = path.join(tempRoot, 'electron-user-data');
 mkdirSync(homeDirectory, { recursive: true });
+mkdirSync(electronDataRoot, { recursive: true });
+mkdirSync(electronUserDataDirectory, { recursive: true });
 
 const environment = {
   ...process.env,
-  HOME: homeDirectory,
-  XDG_CONFIG_HOME: path.join(homeDirectory, 'config'),
+  COCHELPER_E2E_DATA_ROOT: electronDataRoot,
   ELECTRON_ENABLE_LOGGING: '1',
+  ...(process.platform !== 'darwin'
+    ? {
+        HOME: homeDirectory,
+        XDG_CONFIG_HOME: path.join(homeDirectory, 'config'),
+      }
+    : {}),
   ...(process.platform === 'win32'
     ? { APPDATA: path.join(homeDirectory, 'AppData', 'Roaming') }
     : {}),
@@ -62,12 +71,19 @@ function sleep(milliseconds) {
 }
 
 async function withTimeout(task, timeoutMs, fallback) {
-  return Promise.race([
-    task,
-    new Promise((resolve) => {
-      setTimeout(() => resolve(fallback), timeoutMs);
-    }),
-  ]);
+  let timer;
+  try {
+    return await Promise.race([
+      task,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 async function findFreePort() {
@@ -90,11 +106,13 @@ async function waitForDevTools(child, port) {
   const deadline = Date.now() + 20_000;
   let lastError = null;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`packaged app 在 CDP 可用前退出，exit code=${child.exitCode}`);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `packaged app 在 CDP 可用前退出，exit code=${child.exitCode} signal=${child.signalCode}`,
+      );
     }
     try {
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, { signal: AbortSignal.timeout(1_000) });
       if (response.ok) {
         return `http://127.0.0.1:${port}`;
       }
@@ -165,6 +183,7 @@ function collectOutput(child) {
 async function launchApp() {
   const port = await findFreePort();
   const args = [
+    `--user-data-dir=${electronUserDataDirectory}`,
     `--remote-debugging-address=127.0.0.1`,
     `--remote-debugging-port=${port}`,
     ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
@@ -183,36 +202,48 @@ async function launchApp() {
   currentSession = session;
 
   const endpoint = await waitForDevTools(child, port);
-  session.browser = await chromium.connectOverCDP(endpoint);
+  session.browser = await withTimeout(chromium.connectOverCDP(endpoint), 20_000, null);
+  if (session.browser === null) {
+    throw new Error('连接 packaged app CDP 超时');
+  }
   session.page = await waitForReady(session.browser, session);
+  session.page.setDefaultTimeout(10_000);
   return session;
 }
 
 async function waitForExit(child, timeoutMs) {
-  if (child.exitCode !== null) {
-    return;
-  }
-  await new Promise((resolve) => {
-    const timer = setTimeout(resolve, timeoutMs);
-    child.once('close', () => {
+  return new Promise((resolve) => {
+    let timer;
+    const onClose = () => {
       clearTimeout(timer);
-      resolve();
-    });
+      resolve(true);
+    };
+    timer = setTimeout(() => {
+      child.removeListener('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    child.once('close', onClose);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      onClose();
+    }
   });
 }
 
 async function closeSession(session) {
   if (session.browser !== null) {
-    await session.browser.close().catch(() => {});
+    await withTimeout(session.browser.close().catch(() => {}), 5_000, undefined);
     session.browser = null;
   }
-  if (session.child.exitCode === null) {
+  if (session.child.exitCode === null && session.child.signalCode === null) {
     session.child.kill('SIGTERM');
     await waitForExit(session.child, 10_000);
   }
-  if (session.child.exitCode === null) {
+  if (session.child.exitCode === null && session.child.signalCode === null) {
     session.child.kill('SIGKILL');
-    await waitForExit(session.child, 5_000);
+    const forceExited = await waitForExit(session.child, 5_000);
+    if (!forceExited && session.child.exitCode === null && session.child.signalCode === null) {
+      console.error('packaged app 进程未能在 SIGKILL 后退出');
+    }
   }
   if (currentSession === session) {
     currentSession = null;
@@ -278,26 +309,37 @@ async function captureFailure(error) {
   mkdirSync(directory, { recursive: true });
   const page = currentSession?.page;
   if (page !== null && page !== undefined && !page.isClosed()) {
-    await page.screenshot({ path: path.join(directory, 'renderer.png'), fullPage: true }).catch(() => {});
-    await page.content()
-      .then((html) => writeFileSync(path.join(directory, 'renderer.html'), html))
-      .catch(() => {});
-    await page.evaluate(async () => {
-      const result = await globalThis.window.cocHelper.diagnosticsSnapshot({});
-      return result;
-    })
-      .then((diagnostics) =>
-        writeFileSync(
-          path.join(directory, 'diagnostics.json'),
-          `${JSON.stringify(diagnostics, null, 2)}\n`,
-        ),
-      )
-      .catch((diagnosticsError) =>
-        writeFileSync(
-          path.join(directory, 'diagnostics-error.txt'),
-          `${diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError)}\n`,
-        ),
+    await withTimeout(
+      page.screenshot({ path: path.join(directory, 'renderer.png'), fullPage: true }).catch(() => {}),
+      5_000,
+      undefined,
+    );
+    await withTimeout(
+      page
+        .content()
+        .then((html) => writeFileSync(path.join(directory, 'renderer.html'), html))
+        .catch(() => {}),
+      5_000,
+      undefined,
+    );
+    const diagnostics = await withTimeout(
+      page
+        .evaluate(async () => {
+          const result = await globalThis.window.cocHelper.diagnosticsSnapshot({});
+          return result;
+        })
+        .catch(() => null),
+      5_000,
+      null,
+    );
+    if (diagnostics === null) {
+      writeFileSync(path.join(directory, 'diagnostics-error.txt'), '诊断采集超时或失败。\n');
+    } else {
+      writeFileSync(
+        path.join(directory, 'diagnostics.json'),
+        `${JSON.stringify(diagnostics, null, 2)}\n`,
       );
+    }
   }
 
   writeFileSync(

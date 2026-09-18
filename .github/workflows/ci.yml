@@ -93,6 +93,13 @@ jobs:
           xvfb-run --auto-servernum pnpm smoke
       - name: Packaged E2E
         run: xvfb-run --auto-servernum pnpm test:e2e:packaged
+      - name: Upload packaged E2E failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-e2e-artifacts-linux
+          path: e2e-artifacts/
+          if-no-files-found: ignore
       - name: Renderer isolation on webpack output
         run: pnpm check:renderer-isolation
 
@@ -115,3 +122,10 @@ jobs:
         run: pnpm smoke
       - name: Packaged .app E2E
         run: pnpm test:e2e:packaged
+      - name: Upload packaged E2E failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-e2e-artifacts-macos
+          path: e2e-artifacts/
+          if-no-files-found: ignore

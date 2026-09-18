@@ -22,6 +22,12 @@ export const PERSISTENCE_FILE_NAMES = {
 } as const;
 
 export function resolveElectronDataRoot(homeDirectory?: string): string | null {
+  if (homeDirectory === undefined) {
+    const e2eDataRoot = process.env.COCHELPER_E2E_DATA_ROOT;
+    if (e2eDataRoot !== undefined && e2eDataRoot.length > 0) {
+      return e2eDataRoot;
+    }
+  }
   const home = homeDirectory ?? process.env.HOME;
   if (home === undefined || home.length === 0) {
     return null;

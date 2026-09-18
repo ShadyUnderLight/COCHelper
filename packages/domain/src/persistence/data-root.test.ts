@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   ELECTRON_DATA_ROOT_NAME,
@@ -22,5 +22,15 @@ describe('electron data root', () => {
     expect(paths?.trackedClans).toBe(join(root!, 'tracked-clans-v1.json'));
     expect(paths?.playerStates).toBe(join(root!, 'player-states-v1.json'));
     expect(paths?.selection).toBe(join(root!, 'selection-v1.json'));
+  });
+
+  it('E2E data root override 不依赖平台 HOME', () => {
+    vi.stubEnv('COCHELPER_E2E_DATA_ROOT', '/tmp/coc-helper-e2e-data');
+    try {
+      expect(resolveElectronDataRoot()).toBe('/tmp/coc-helper-e2e-data');
+      expect(resolveElectronPersistencePaths()?.root).toBe('/tmp/coc-helper-e2e-data');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

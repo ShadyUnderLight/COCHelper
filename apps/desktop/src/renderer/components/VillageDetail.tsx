@@ -24,9 +24,12 @@ import {
   primaryLevelAssets,
   type VillageDetailState,
 } from '../village-detail-session';
+import { isManualCommandEnabled, isManualQueryStale } from '../manual-session';
 import type { QuickImportApi } from '../use-quick-import';
+import type { ManualApi } from '../use-manual';
 import type { OfficialClanWarBundleApi } from '../use-official-clan-war-bundle';
 import type { OfficialVillageApi } from '../use-official-village';
+import { ManualStatusPanel } from './ManualStatusPanel';
 import { AssetImage } from './AssetImage';
 import { CapitalRaidCard } from './CapitalRaidCard';
 import { ClanWarCard } from './ClanWarCard';
@@ -46,6 +49,9 @@ export type VillageDetailProps = {
   readonly quick?: QuickImportApi;
   readonly canQuick?: boolean;
   readonly onNavigateToImport?: () => void;
+  /** 手动升级（#277-F）：缺省时不渲染面板，保持旧测试兼容。 */
+  readonly manual?: ManualApi;
+  readonly canManual?: boolean;
 };
 
 export function VillageDetail({
@@ -58,6 +64,8 @@ export function VillageDetail({
   quick,
   canQuick,
   onNavigateToImport,
+  manual,
+  canManual,
 }: VillageDetailProps) {
   const { status, payload, lastError } = state;
   const lookups = useMemo(() => (payload === null ? null : buildLookups(payload)), [payload]);
@@ -145,6 +153,34 @@ export function VillageDetail({
           onNavigateToImport={onNavigateToImport}
         />
       ) : null}
+      {manual !== undefined ? (
+        <ManualStatusPanel
+          view={manual.view}
+          canWrite={canManual ?? false}
+          busy={manual.busy}
+          commandError={manual.commandError}
+          onRetry={() => void manual.refresh()}
+          onSettle={() => void manual.settle({ villageId: payload.villageId })}
+          onCancelRecord={(recordId) =>
+            void manual.cancel({ villageId: payload.villageId, recordId })
+          }
+          onAdjustRecord={(recordId, startedAtMs) => {
+            const input = window.prompt('新的开始时间（毫秒时间戳）', String(startedAtMs));
+            if (input === null) {
+              return;
+            }
+            const parsed = Number(input);
+            if (!Number.isFinite(parsed)) {
+              return;
+            }
+            void manual.adjust({
+              villageId: payload.villageId,
+              recordId,
+              startedAtMs: parsed,
+            });
+          }}
+        />
+      ) : null}
       {alert !== null ? (
         <p className="notice-text" role="alert">
           {alert}
@@ -159,6 +195,32 @@ export function VillageDetail({
           catalogVersion={payload.catalogVersion}
           onClose={() => setOpenItem(null)}
           returnFocusTo={openItem.opener}
+          canManualStart={
+            manual !== undefined &&
+            isManualCommandEnabled(
+              manual.view.payload,
+              canManual ?? false,
+              isManualQueryStale(manual.view),
+            )
+          }
+          showManualNote={manual !== undefined}
+          manualBusy={manual?.busy ?? false}
+          onManualStart={
+            manual === undefined
+              ? undefined
+              : () =>
+                  void manual
+                    .startRow({
+                      villageId: payload.villageId,
+                      item: openItem.item,
+                      base,
+                    })
+                    .then((ok) => {
+                      if (ok) {
+                        setOpenItem(null);
+                      }
+                    })
+          }
         />
       ) : null}
     </section>

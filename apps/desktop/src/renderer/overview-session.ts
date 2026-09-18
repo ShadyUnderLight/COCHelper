@@ -241,5 +241,15 @@ function itemFixture(): VillageItemStateDto {
     effectiveDiagnostic: null,
     effectiveIsMaxed: false,
     effectiveDetailMissingReason: null,
+    trackerItemKey: {
+      base: 'home',
+      rawSection: 'buildings',
+      dataID: 1_000_001,
+      nestedKind: 'root',
+      nestedRootIdentity: null,
+      nestedPath: [],
+      stableId: 'home:buildings:1000001',
+    },
+    manualRowStart: null,
   };
 }

@@ -3,6 +3,7 @@ import type { AppSnapshotPayload, TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
+import type { ManualApi } from '../use-manual';
 import type { VillageDetailApi } from '../use-village-detail';
 import type { ClanAffiliation, WarLogPublicity } from '../official-session';
 import {
@@ -38,6 +39,8 @@ type AppShellProps = {
   readonly officialBridge?: BridgeOfficialVillageClient;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
+  /** 手动升级（#277-F）：缺省时详情页不渲染面板。 */
+  readonly manual?: ManualApi;
   readonly route?: AppRoute;
   readonly navigate?: (action: NavigateAction) => void;
   /** 测试与旧调用方兼容：直接设置路由。 */
@@ -51,6 +54,7 @@ export function AppShell({
   official,
   officialBridge,
   quick,
+  manual,
   route,
   navigate,
   onRouteChange,
@@ -129,6 +133,7 @@ export function AppShell({
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
   const detailDisabled = snapshot.selectedVillageId === null;
   const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
+  const canManual = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const openDetail = async (recordId: string, villageId: string) => {
     overview.select(recordId);
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
@@ -256,6 +261,8 @@ export function AppShell({
                   villageId={detailRoute.villageId}
                   quick={quick}
                   canQuick={canQuick}
+                  canManual={canManual}
+                  manual={manual}
                   onNavigateToImport={() => goToTab('import')}
                 />
               )
@@ -329,6 +336,8 @@ function OfficialVillageDetail(props: {
   readonly villageId: string;
   readonly quick?: QuickImportApi;
   readonly canQuick: boolean;
+  readonly canManual: boolean;
+  readonly manual?: ManualApi;
   readonly onNavigateToImport: () => void;
 }) {
   const detail = (
@@ -344,6 +353,8 @@ function OfficialVillageDetail(props: {
       officialWar={officialWar}
       quick={props.quick}
       canQuick={props.canQuick}
+      canManual={props.canManual}
+      manual={props.manual}
       onNavigateToImport={props.onNavigateToImport}
     />
   );

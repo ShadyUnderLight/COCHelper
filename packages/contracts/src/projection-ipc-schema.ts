@@ -161,6 +161,32 @@ const catalogCompatibilitySchema: z.ZodType<CatalogCompatibilityDto> = z.discrim
   ],
 );
 
+const trackerItemKeySchema: z.ZodType<TrackerItemKeyDto> = z
+  .object({
+    base: trackerBaseSchema,
+    rawSection: z.string().min(1).max(64),
+    dataID: safeIntSchema,
+    nestedKind: z.string().min(1).max(64),
+    nestedRootIdentity: z
+      .object({
+        base: trackerBaseSchema,
+        rawSection: z.string().min(1).max(64),
+        dataID: safeIntSchema,
+      })
+      .strict()
+      .nullable(),
+    nestedPath: z.array(
+      z
+        .object({
+          kind: z.string().min(1).max(64),
+          dataID: safeIntSchema,
+        })
+        .strict(),
+    ),
+    stableId: z.string().min(1).max(512),
+  })
+  .strict();
+
 export const villageItemStateDtoSchema: z.ZodType<VillageItemStateDto> = z
   .object({
     id: z.string().min(1).max(512),
@@ -198,6 +224,16 @@ export const villageItemStateDtoSchema: z.ZodType<VillageItemStateDto> = z
     effectiveDiagnostic: z.string().max(500).nullable(),
     effectiveIsMaxed: z.boolean(),
     effectiveDetailMissingReason: z.string().max(500).nullable(),
+    trackerItemKey: trackerItemKeySchema,
+    manualRowStart: z
+      .object({
+        fromLevel: safeIntSchema,
+        targetLevel: safeIntSchema,
+        quantity: safeIntSchema,
+        sourceKind: z.literal('row'),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -221,32 +257,6 @@ export const villageProgressMetricsDtoSchema: z.ZodType<VillageProgressMetricsDt
     snapshotCoverage: progressMetricSchema,
     instanceProgress: progressMetricSchema,
     effectiveTrackerProgress: progressMetricSchema,
-  })
-  .strict();
-
-const trackerItemKeySchema: z.ZodType<TrackerItemKeyDto> = z
-  .object({
-    base: trackerBaseSchema,
-    rawSection: z.string().min(1).max(64),
-    dataID: safeIntSchema,
-    nestedKind: z.string().min(1).max(64),
-    nestedRootIdentity: z
-      .object({
-        base: trackerBaseSchema,
-        rawSection: z.string().min(1).max(64),
-        dataID: safeIntSchema,
-      })
-      .strict()
-      .nullable(),
-    nestedPath: z.array(
-      z
-        .object({
-          kind: z.string().min(1).max(64),
-          dataID: safeIntSchema,
-        })
-        .strict(),
-    ),
-    stableId: z.string().min(1).max(512),
   })
   .strict();
 

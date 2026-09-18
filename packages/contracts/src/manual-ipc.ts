@@ -41,6 +41,7 @@ export type ManualStatePayload = {
   readonly baselineLineageId: string | null;
   readonly activeRecordCount: number;
   readonly itemStateCount: number;
+  readonly activeRecords: readonly ManualUpgradeRecordDto[];
   readonly lastSettleAtMs: number | null;
   readonly lastImportAtMs: number | null;
   readonly stateUpdatedAtMs: number | null;

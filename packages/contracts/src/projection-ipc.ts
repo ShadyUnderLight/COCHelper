@@ -102,6 +102,14 @@ export type CatalogCompatibilityDto =
   | { readonly kind: 'mismatch'; readonly catalogVersion: string; readonly expectedVersion: string }
   | { readonly kind: 'unavailable' };
 
+/** 行级手动升级启动参数（Main 投影，renderer 不得自行推断）。 */
+export type ManualRowStartPreviewDto = {
+  readonly fromLevel: number;
+  readonly targetLevel: number;
+  readonly quantity: number;
+  readonly sourceKind: 'row';
+};
+
 export type VillageItemStateDto = {
   readonly id: string;
   readonly section: string;
@@ -143,6 +151,10 @@ export type VillageItemStateDto = {
   readonly effectiveIsMaxed: boolean;
   /** 详情缺失说明（domain 缺失规则直出；null 表无说明）。 */
   readonly effectiveDetailMissingReason: string | null;
+  /** 手动升级命令用的稳定 item key（Main 直出）。 */
+  readonly trackerItemKey: TrackerItemKeyDto;
+  /** 行级可启动升级时非 null；不可启动时为 null。 */
+  readonly manualRowStart: ManualRowStartPreviewDto | null;
 };
 
 export type ProgressMetricStateDto = 'ready' | 'partial' | 'unavailable' | 'unknown';

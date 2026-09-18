@@ -197,6 +197,7 @@ describe('ManualTrackerService（#276-S3）', () => {
     expect(state.generation).toBe(before);
     expect(services.state.getGeneration()).toBe(before);
     expect(state.status === 'missing' || state.status === 'empty').toBe(true);
+    expect(state.activeRecords).toEqual([]);
   });
 
   it('settle 无记录时不 bump generation', () => {
@@ -218,6 +219,7 @@ describe('ManualTrackerService（#276-S3）', () => {
     expect(state.status).toBe('available');
     expect(state.baselineRevision).not.toBeNull();
     expect(state.itemStateCount).toBeGreaterThanOrEqual(0);
+    expect(state.activeRecords).toEqual([]);
   });
 
   it('buildReconciledManualEnvelope 在真实 duplicate decision 下保留 manualCompleted', () => {

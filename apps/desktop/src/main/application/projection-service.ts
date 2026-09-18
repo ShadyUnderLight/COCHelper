@@ -162,6 +162,13 @@ export class ProjectionService {
         metrics,
         buildingGroups,
         flatRows,
+        manualContext: {
+          catalog: bundle.gameCatalog,
+          catalogIsUsable: projection.catalogIsUsable,
+          manualUpgradeCore: manualCore,
+          progressCoverage: projection.progressCoverage,
+          nowMs,
+        },
       });
     } catch (error) {
       if (error instanceof RangeError) {

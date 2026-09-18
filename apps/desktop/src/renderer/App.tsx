@@ -4,6 +4,7 @@ import { getDesktopBridge } from './bridge';
 import { INITIAL_ROUTE, navigationReducer, type AppRoute, type NavigateAction } from './navigation';
 import { useAppSession } from './use-app-session';
 import { useQuickImport } from './use-quick-import';
+import { useManual } from './use-manual';
 import { useUpgradeOverview } from './use-upgrade-overview';
 import { useVillageDetail } from './use-village-detail';
 import { AppShell } from './components/AppShell';
@@ -20,7 +21,20 @@ export function App() {
     [route],
   );
   const detail = useVillageDetail(bridge, session.state.snapshot, detailTarget);
-  const quick = useQuickImport(bridge, session.state.snapshot);
+  const quick = useQuickImport(bridge, session.state.snapshot, {
+    onCommitted: () => {
+      void session.refresh();
+      void overview.refresh();
+      void detail.refresh();
+    },
+  });
+  const manual = useManual(bridge, session.state.snapshot, detailTarget?.villageId ?? null, {
+    onMutated: () => {
+      void session.refresh();
+      void overview.refresh();
+      void detail.refresh();
+    },
+  });
 
   const navigate = (action: NavigateAction): void => {
     dispatch(action);
@@ -37,6 +51,7 @@ export function App() {
       detail={detail}
       officialBridge={bridge}
       quick={quick}
+      manual={manual}
       route={route}
       navigate={navigate}
       onRouteChange={setRoute}

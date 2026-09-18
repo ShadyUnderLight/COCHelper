@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "scenarios": {
+    "import-and-restart": {
+      "account": "account-e2e.json",
+      "expectedTag": "#E2E001",
+      "expectedVillageName": "我的村庄"
+    }
+  }
+}

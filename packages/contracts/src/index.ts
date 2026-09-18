@@ -278,6 +278,7 @@ export {
   isManualReconcilePayload,
 } from './manual-ipc-schema';
 export {
+  officialEndpointStateDtoSchema,
   playerStateRequestSchema,
   playerStatePayloadSchema,
   clanStateRequestSchema,
@@ -305,6 +306,14 @@ export {
   isCapitalRaidLoadMorePayload,
   isOperationProgressPayload,
 } from './official-ipc-schema';
+export {
+  capitalRaidPageWireSchema,
+  capitalRaidSeasonWireSchema,
+  clanWarParticipantWireSchema,
+  clanWarWireSchema,
+  warLogEntryWireSchema,
+  warLogPageWireSchema,
+} from './official-wire-schema';
 export {
   RECOVERY_DATA_BASE64_MAX_LENGTH,
   recoveryStatusPayloadSchema,

@@ -455,3 +455,37 @@ button.danger {
   font-weight: 500;
   overflow-wrap: anywhere;
 }
+
+.official-list {
+  margin: 12px 0 0;
+  padding-left: 1.25rem;
+}
+
+.official-list li {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+}
+
+.official-war-body p {
+  margin: 0.35rem 0;
+}
+
+.official-details {
+  margin: 8px 0 0;
+}
+
+.official-details > summary {
+  cursor: pointer;
+  color: #64d2ff;
+  font-size: 13px;
+}
+
+.official-war-log-list > li > p,
+.official-capital-raid-list > li > p {
+  margin: 0;
+}
+
+.official-detail-subrow {
+  margin-left: 1rem;
+  color: #aeaeb2;
+}

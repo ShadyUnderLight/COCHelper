@@ -4,6 +4,13 @@ import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { VillageDetailApi } from '../use-village-detail';
+import type { ClanAffiliation, WarLogPublicity } from '../official-session';
+import {
+  useOfficialClanWarBundle,
+  warLogPublicityOf,
+  type BridgeOfficialVillageClient,
+  type OfficialClanWarBundleApi,
+} from '../use-official-clan-war-bundle';
 import {
   useOfficialVillage,
   type BridgeOfficialClient,
@@ -28,7 +35,7 @@ type AppShellProps = {
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
   readonly official?: OfficialVillageApi;
-  readonly officialBridge?: BridgeOfficialClient;
+  readonly officialBridge?: BridgeOfficialVillageClient;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
   readonly quick?: QuickImportApi;
   readonly route?: AppRoute;
@@ -317,37 +324,69 @@ function OfficialVillageDetail(props: {
   readonly onBaseChange: (base: TrackerBaseDto) => void;
   readonly onRetry: () => void;
   readonly official?: OfficialVillageApi;
-  readonly officialBridge?: BridgeOfficialClient;
+  readonly officialBridge?: BridgeOfficialVillageClient;
   readonly snapshot: AppSnapshotPayload;
   readonly villageId: string;
   readonly quick?: QuickImportApi;
   readonly canQuick: boolean;
   readonly onNavigateToImport: () => void;
 }) {
-  const detail = (official: OfficialVillageApi | undefined) => (
+  const detail = (
+    official: OfficialVillageApi | undefined,
+    officialWar: OfficialClanWarBundleApi | undefined,
+  ) => (
     <VillageDetail
       state={props.state}
       base={props.base}
       onBaseChange={props.onBaseChange}
       onRetry={props.onRetry}
       official={official}
+      officialWar={officialWar}
       quick={props.quick}
       canQuick={props.canQuick}
       onNavigateToImport={props.onNavigateToImport}
     />
   );
   if (props.officialBridge === undefined) {
-    return detail(props.official);
+    return detail(props.official, undefined);
   }
+  const bridge = props.officialBridge;
   return (
-    <OfficialVillageHost
-      bridge={props.officialBridge}
-      snapshot={props.snapshot}
-      villageId={props.villageId}
-    >
-      {detail}
+    <OfficialVillageHost bridge={bridge} snapshot={props.snapshot} villageId={props.villageId}>
+      {(official) => (
+        <OfficialClanWarHost
+          bridge={bridge}
+          snapshot={props.snapshot}
+          affiliation={official.clan.affiliation}
+          clanTag={official.clan.clanTag}
+          villageId={props.villageId}
+          warLogPublicity={warLogPublicityOf(official.clan)}
+        >
+          {(officialWar) => detail(official, officialWar)}
+        </OfficialClanWarHost>
+      )}
     </OfficialVillageHost>
   );
+}
+
+function OfficialClanWarHost(props: {
+  readonly bridge: BridgeOfficialVillageClient;
+  readonly snapshot: AppSnapshotPayload | null;
+  readonly affiliation: ClanAffiliation;
+  readonly clanTag: string | null;
+  readonly villageId: string | null;
+  readonly warLogPublicity: WarLogPublicity;
+  readonly children: (officialWar: OfficialClanWarBundleApi) => ReactNode;
+}) {
+  const officialWar = useOfficialClanWarBundle(
+    props.bridge,
+    props.snapshot,
+    props.affiliation,
+    props.clanTag,
+    props.villageId,
+    props.warLogPublicity,
+  );
+  return props.children(officialWar);
 }
 
 function TabNav(props: {

@@ -2,10 +2,17 @@
  * Official API DTO 映射：domain endpoint state → contracts wire DTO。
  */
 
-import type {
-  OfficialClanSummaryDto,
-  OfficialEndpointStateDto,
-  OfficialPlayerSummaryDto,
+import {
+  capitalRaidPageWireSchema,
+  clanWarWireSchema,
+  officialEndpointStateDtoSchema,
+  warLogPageWireSchema,
+  type CapitalRaidPageWire,
+  type ClanWarWire,
+  type OfficialClanSummaryDto,
+  type OfficialEndpointStateDto,
+  type OfficialPlayerSummaryDto,
+  type WarLogPageWire,
 } from '@coc-helper/contracts';
 import {
   encodeClanAPIStateWire,
@@ -73,12 +80,18 @@ export function toClanSummaryDto(state: ClanAPIState): OfficialClanSummaryDto | 
   };
 }
 
-export function toClanWarEndpointDto(state: ClanWarAPIState): OfficialEndpointStateDto {
-  return encodeClanWarAPIStateWire(state) as OfficialEndpointStateDto;
+export function toClanWarEndpointDto(
+  state: ClanWarAPIState,
+): OfficialEndpointStateDto<ClanWarWire> {
+  return officialEndpointStateDtoSchema(clanWarWireSchema).parse(encodeClanWarAPIStateWire(state));
 }
 
-export function toWarLogEndpointDto(state: ClanWarLogAPIState): OfficialEndpointStateDto {
-  const wire = encodeClanWarLogAPIStateWire(state) as OfficialEndpointStateDto;
+export function toWarLogEndpointDto(
+  state: ClanWarLogAPIState,
+): OfficialEndpointStateDto<WarLogPageWire> {
+  const wire = officialEndpointStateDtoSchema(warLogPageWireSchema).parse(
+    encodeClanWarLogAPIStateWire(state),
+  );
   const items = state.lastGood?.page.items.length ?? 0;
   const after = state.lastGood?.page.after;
   return {
@@ -87,8 +100,12 @@ export function toWarLogEndpointDto(state: ClanWarLogAPIState): OfficialEndpoint
   };
 }
 
-export function toCapitalRaidEndpointDto(state: ClanCapitalAPIState): OfficialEndpointStateDto {
-  const wire = encodeClanCapitalAPIStateWire(state) as OfficialEndpointStateDto;
+export function toCapitalRaidEndpointDto(
+  state: ClanCapitalAPIState,
+): OfficialEndpointStateDto<CapitalRaidPageWire> {
+  const wire = officialEndpointStateDtoSchema(capitalRaidPageWireSchema).parse(
+    encodeClanCapitalAPIStateWire(state),
+  );
   const items = state.lastGood?.page.items.length ?? 0;
   const after = state.lastGood?.page.after;
   return {

@@ -5,11 +5,14 @@
 
 import type { Result } from './result';
 import type {
+  CapitalRaidPageWire,
+  ClanWarWire,
   EndpointStateWire,
   OfficialClanSummaryDto,
   OfficialEndpointFailureKindWire,
   OfficialAPIRequestStatusWire,
   OfficialPlayerSummaryDto,
+  WarLogPageWire,
 } from './official-wire';
 import type { RequestId } from './ipc';
 
@@ -91,7 +94,7 @@ export type ClanWarStateRequest = {
 export type ClanWarStatePayload = {
   readonly generation: number;
   readonly clanTag: string;
-  readonly state: OfficialEndpointStateDto | null;
+  readonly state: OfficialEndpointStateDto<ClanWarWire> | null;
 };
 
 export type ClanWarStateResponse = Result<ClanWarStatePayload>;
@@ -103,7 +106,7 @@ export type WarLogStateRequest = {
 export type WarLogStatePayload = {
   readonly generation: number;
   readonly clanTag: string;
-  readonly state: OfficialEndpointStateDto | null;
+  readonly state: OfficialEndpointStateDto<WarLogPageWire> | null;
 };
 
 export type WarLogStateResponse = Result<WarLogStatePayload>;
@@ -115,7 +118,7 @@ export type CapitalRaidStateRequest = {
 export type CapitalRaidStatePayload = {
   readonly generation: number;
   readonly clanTag: string;
-  readonly state: OfficialEndpointStateDto | null;
+  readonly state: OfficialEndpointStateDto<CapitalRaidPageWire> | null;
 };
 
 export type CapitalRaidStateResponse = Result<CapitalRaidStatePayload>;
@@ -155,7 +158,7 @@ export type WarLogLoadMoreRequest = {
 export type WarLogLoadMorePayload = {
   readonly generation: number;
   readonly clanTag: string;
-  readonly state: OfficialEndpointStateDto;
+  readonly state: OfficialEndpointStateDto<WarLogPageWire>;
 };
 
 export type WarLogLoadMoreResponse = Result<WarLogLoadMorePayload>;
@@ -168,7 +171,7 @@ export type CapitalRaidLoadMoreRequest = {
 export type CapitalRaidLoadMorePayload = {
   readonly generation: number;
   readonly clanTag: string;
-  readonly state: OfficialEndpointStateDto;
+  readonly state: OfficialEndpointStateDto<CapitalRaidPageWire>;
 };
 
 export type CapitalRaidLoadMoreResponse = Result<CapitalRaidLoadMorePayload>;

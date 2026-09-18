@@ -132,11 +132,7 @@ export function useOfficialVillage(
       ) {
         return;
       }
-      if (
-        payload.phase !== 'completed' &&
-        payload.phase !== 'cancelled' &&
-        payload.phase !== 'failed'
-      ) {
+      if (payload.phase !== 'cancelled' && payload.phase !== 'failed') {
         return;
       }
       const failedMessage =
@@ -182,6 +178,8 @@ export function useOfficialVillage(
 
   useEffect(() => {
     return () => {
+      playerEpochRef.current += 1;
+      clanEpochRef.current += 1;
       const playerOp = playerOpRef.current;
       const clanOp = clanOpRef.current;
       playerOpRef.current = null;

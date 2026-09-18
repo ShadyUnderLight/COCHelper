@@ -72,10 +72,12 @@ export type OfficialPaginatedPageWire<Item> = {
 
 export type WarLogPageWire = {
   readonly page: OfficialPaginatedPageWire<WarLogEntryWire>;
+  readonly unrecognizedKeys: readonly string[];
 };
 
 export type CapitalRaidPageWire = {
   readonly page: OfficialPaginatedPageWire<CapitalRaidSeasonWire>;
+  readonly unrecognizedKeys: readonly string[];
 };
 
 export type WarLogEntryWire = {

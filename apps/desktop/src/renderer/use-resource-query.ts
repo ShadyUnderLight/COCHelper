@@ -66,10 +66,50 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   const onSessionResetRef = useRef(onSessionReset);
   onSessionResetRef.current = onSessionReset;
   const prevSubjectKeyRef = useRef<string | null>(subjectKey);
+  const refreshWaitersRef = useRef(new Map<number, { readonly resolve: () => void }>());
+
+  const settleRefreshWaiter = useCallback((seq: number): void => {
+    const waiter = refreshWaitersRef.current.get(seq);
+    if (waiter === undefined) {
+      return;
+    }
+    refreshWaitersRef.current.delete(seq);
+    waiter.resolve();
+  }, []);
+
+  /** seq=K 的 fetch 完成/取消时，同时满足所有 seq<=K 的 batched refresh 请求。 */
+  const settleRefreshWaitersUpTo = useCallback(
+    (seq: number): void => {
+      for (const key of [...refreshWaitersRef.current.keys()]) {
+        if (key <= seq) {
+          settleRefreshWaiter(key);
+        }
+      }
+    },
+    [settleRefreshWaiter],
+  );
+
+  const settleAllRefreshWaiters = useCallback((): void => {
+    for (const seq of refreshWaitersRef.current.keys()) {
+      settleRefreshWaiter(seq);
+    }
+  }, [settleRefreshWaiter]);
+
+  const prevSessionIdRef = useRef<string | null>(snapshot?.sessionId ?? null);
 
   useEffect(() => {
     const prevSubjectKey = prevSubjectKeyRef.current;
     prevSubjectKeyRef.current = subjectKey;
+    const prevSessionId = prevSessionIdRef.current;
+    const currentSessionId = snapshot?.sessionId ?? null;
+    prevSessionIdRef.current = currentSessionId;
+
+    if (
+      (prevSubjectKey !== null && subjectKey !== null && prevSubjectKey !== subjectKey) ||
+      (prevSessionId !== null && currentSessionId !== null && prevSessionId !== currentSessionId)
+    ) {
+      settleAllRefreshWaiters();
+    }
 
     if (snapshot === null || subjectKey === null) {
       // subject 离开有效态：作废在途请求，避免同 key 在重新进入时被 beginFetch skip。
@@ -81,6 +121,8 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         // A→null→A 仍可依赖 last-good 与 beginFetch 重新拉取。
         // stateSubjectRef 不在这里改：无 subject 时 fencedResourceState 直接返回 idle。
       }
+      // 无法继续 fetch 时，把 pending refresh 当作正常取消 resolve，避免 Promise 泄漏。
+      settleAllRefreshWaiters();
       return;
     }
     const requestEpoch = epochRef.current;
@@ -115,6 +157,9 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
     if (planned.kind === 'skip') {
       lastKeyRef.current = planned.fetchKey;
+      if (forced) {
+        settleRefreshWaitersUpTo(refreshSeq);
+      }
       return;
     }
 
@@ -158,6 +203,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         }
         setState((prev) => resourceFailure(prev, message));
         stateSubjectRef.current = subjectKey;
+        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 
@@ -182,6 +228,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       if (!result.ok) {
         setState((prev) => resourceFailure(prev, formatIpcError(result.error)));
         stateSubjectRef.current = subjectKey;
+        settleRefreshWaitersUpTo(refreshSeq);
         return;
       }
 
@@ -190,17 +237,25 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       payloadSubjectRef.current = subjectKey;
       stateSubjectRef.current = subjectKey;
       setState(resourceSuccess(result.value));
+      settleRefreshWaitersUpTo(refreshSeq);
     })();
-  }, [snapshot, subjectKey, refreshSeq]);
+  }, [snapshot, subjectKey, refreshSeq, settleAllRefreshWaiters, settleRefreshWaitersUpTo]);
 
   useEffect(() => {
     return () => {
       epochRef.current += 1;
+      settleAllRefreshWaiters();
     };
-  }, []);
+  }, [settleAllRefreshWaiters]);
 
-  const refresh = useCallback(async () => {
-    setRefreshSeq((n) => n + 1);
+  const refresh = useCallback((): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      setRefreshSeq((current) => {
+        const next = current + 1;
+        refreshWaitersRef.current.set(next, { resolve });
+        return next;
+      });
+    });
   }, []);
 
   return {

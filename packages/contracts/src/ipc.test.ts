@@ -5,6 +5,9 @@ import {
   APP_IPC_BRIDGE_KEYS,
   APP_IPC_CHANNELS,
   APP_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_IPC_BRIDGE_KEYS,
+  DIAGNOSTICS_IPC_CHANNELS,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
   DESKTOP_BRIDGE_KEYS,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
@@ -44,6 +47,11 @@ import {
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_IPC_BRIDGE_KEYS,
+  TOKEN_IPC_CHANNELS,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
@@ -57,6 +65,10 @@ describe('@coc-helper/contracts IPC', () => {
     expect(APP_HEALTH_CHANNEL).toBe('app.health');
     expect(REQUEST_CANCEL_CHANNEL).toBe('request.cancel');
     expect(APP_SNAPSHOT_CHANNEL).toBe('app.snapshot');
+    expect(DIAGNOSTICS_SNAPSHOT_CHANNEL).toBe('diagnostics.snapshot');
+    expect(TOKEN_STATUS_CHANNEL).toBe('token.status');
+    expect(TOKEN_SAVE_CHANNEL).toBe('token.save');
+    expect(TOKEN_CLEAR_CHANNEL).toBe('token.clear');
     expect(VILLAGE_SELECT_CHANNEL).toBe('village.select');
     expect(IMPORT_PREPARE_CHANNEL).toBe('import.prepare');
     expect(IMPORT_COMMIT_CHANNEL).toBe('import.commit');
@@ -122,6 +134,12 @@ describe('@coc-helper/contracts IPC', () => {
       RECOVERY_RESET_CHANNEL,
       RECOVERY_RECOVER_JOURNAL_CHANNEL,
     ]);
+    expect(DIAGNOSTICS_IPC_CHANNELS).toEqual([DIAGNOSTICS_SNAPSHOT_CHANNEL]);
+    expect(TOKEN_IPC_CHANNELS).toEqual([
+      TOKEN_STATUS_CHANNEL,
+      TOKEN_SAVE_CHANNEL,
+      TOKEN_CLEAR_CHANNEL,
+    ]);
     const appKeysWithoutEvent = APP_IPC_BRIDGE_KEYS.filter((key) => key !== 'onStateChanged');
     const officialKeysWithoutEvent = OFFICIAL_IPC_BRIDGE_KEYS.filter(
       (key) => key !== 'onOperationProgress',
@@ -134,6 +152,8 @@ describe('@coc-helper/contracts IPC', () => {
       ...MANUAL_IPC_BRIDGE_KEYS,
       ...officialKeysWithoutEvent,
       ...RECOVERY_IPC_BRIDGE_KEYS,
+      ...DIAGNOSTICS_IPC_BRIDGE_KEYS,
+      ...TOKEN_IPC_BRIDGE_KEYS,
       'onOperationProgress',
       'onStateChanged',
     ]);

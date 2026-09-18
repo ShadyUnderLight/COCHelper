@@ -18,6 +18,7 @@ import type {
   ManualStartRequest,
   ManualStatePayload,
   ManualStateRequest,
+  ManualTrackerStatusDto,
   ManualUpgradeRecordDto,
   TrackerItemKeyDto,
 } from '@coc-helper/contracts';
@@ -89,6 +90,36 @@ export class ManualTrackerService {
     this.manual = options.manual;
     this.history = options.history;
     this.catalog = options.catalog;
+  }
+
+  storageStatus(): ManualTrackerStatusDto {
+    if (this.manual === null) {
+      return 'unavailable';
+    }
+    let envelope: ManualTrackerEnvelope | null;
+    try {
+      envelope = this.manual.load();
+    } catch {
+      return 'unavailable';
+    }
+    if (envelope === null) {
+      return 'missing';
+    }
+    if (!manualTrackerEnvelopeIsMigrated(envelope)) {
+      return 'migrationRequired';
+    }
+    const selectedVillageId = this.state.getSelectedVillageId();
+    if (selectedVillageId === null) {
+      return 'empty';
+    }
+    try {
+      return manualTrackerEnvelopeState(envelope, requireUuid(selectedVillageId, '村庄 ID')) ===
+        undefined
+        ? 'empty'
+        : 'available';
+    } catch {
+      return 'empty';
+    }
   }
 
   getState(request: ManualStateRequest): ManualStatePayload {

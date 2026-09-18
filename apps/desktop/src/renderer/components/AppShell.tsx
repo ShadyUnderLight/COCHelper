@@ -5,6 +5,8 @@ import type { OverviewApi } from '../use-upgrade-overview';
 import type { QuickImportApi } from '../use-quick-import';
 import type { ManualApi } from '../use-manual';
 import type { VillageDetailApi } from '../use-village-detail';
+import type { DiagnosticsApi } from '../use-diagnostics';
+import type { BridgeTokenSettingsClient } from '../use-token-settings';
 import type { ClanAffiliation, WarLogPublicity } from '../official-session';
 import {
   useOfficialClanWarBundle,
@@ -30,11 +32,15 @@ import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
 import { UpgradeOverview } from './UpgradeOverview';
 import { VillageDetail } from './VillageDetail';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { TokenSettingsPanel } from './TokenSettingsPanel';
 
 type AppShellProps = {
   readonly session: AppSessionApi;
   readonly overview: OverviewApi;
   readonly detail: VillageDetailApi;
+  readonly diagnostics?: DiagnosticsApi;
+  readonly tokenBridge?: BridgeTokenSettingsClient;
   readonly official?: OfficialVillageApi;
   readonly officialBridge?: BridgeOfficialVillageClient;
   /** 快捷导入（#277-D）：缺省时详情页不渲染入口，保持旧测试兼容。 */
@@ -51,6 +57,8 @@ export function AppShell({
   session,
   overview,
   detail,
+  diagnostics,
+  tokenBridge,
   official,
   officialBridge,
   quick,
@@ -86,13 +94,15 @@ export function AppShell({
         ? { kind: 'import' }
         : nextTab === 'overview'
           ? { kind: 'overview' }
-          : snapshot === null || snapshot.selectedVillageId === null
-            ? activeRoute
-            : {
-                kind: 'villageDetail',
-                villageId: snapshot.selectedVillageId,
-                base: detailBaseForTab(),
-              };
+          : nextTab === 'info'
+            ? { kind: 'info', section: 'diagnostics' }
+            : snapshot === null || snapshot.selectedVillageId === null
+              ? activeRoute
+              : {
+                  kind: 'villageDetail',
+                  villageId: snapshot.selectedVillageId,
+                  base: detailBaseForTab(),
+                };
     applyRoute(nextRoute);
   };
 
@@ -193,6 +203,13 @@ export function AppShell({
         </p>
       ) : null}
 
+      <TabNav
+        tab={tab}
+        onChange={goToTab}
+        detailDisabled={detailDisabled}
+        showDataTabs={showImport}
+      />
+
       {showRecovery ? (
         <RecoveryPanel
           status={recoveryStatus}
@@ -202,7 +219,9 @@ export function AppShell({
           onRecoverJournal={() => void session.recoveryRecoverJournal()}
           onRefresh={() => void session.refreshRecovery()}
         />
-      ) : (
+      ) : null}
+
+      {showRecovery && tab !== 'info' ? null : (
         <div className="layout">
           <VillageSidebar
             villages={snapshot.villages}
@@ -219,8 +238,14 @@ export function AppShell({
             {readOnly && snapshot.availability === 'available' ? (
               <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
             ) : null}
-            {showImport ? (
-              <TabNav tab={tab} onChange={goToTab} detailDisabled={detailDisabled} />
+            {tab === 'info' ? (
+              <InfoPanel
+                route={activeRoute}
+                diagnostics={diagnostics}
+                tokenBridge={tokenBridge}
+                onTokenChanged={() => void diagnostics?.refresh()}
+                onNavigate={(section) => applyRoute({ kind: 'info', section })}
+              />
             ) : null}
             {showImport && tab === 'import' ? (
               <OfficialImportPanel
@@ -400,35 +425,101 @@ function OfficialClanWarHost(props: {
   return props.children(officialWar);
 }
 
+function InfoPanel(props: {
+  readonly route: AppRoute;
+  readonly diagnostics?: DiagnosticsApi;
+  readonly tokenBridge?: BridgeTokenSettingsClient;
+  readonly onTokenChanged: () => void;
+  readonly onNavigate: (section: 'diagnostics' | 'tokenSettings') => void;
+}) {
+  const section = props.route.kind === 'info' ? props.route.section : 'diagnostics';
+  return (
+    <div className="info-content">
+      <nav className="info-nav" aria-label="Info 页面">
+        <button
+          type="button"
+          aria-pressed={section === 'diagnostics'}
+          onClick={() => props.onNavigate('diagnostics')}
+        >
+          Diagnostics
+        </button>
+        <button
+          type="button"
+          aria-pressed={section === 'tokenSettings'}
+          onClick={() => props.onNavigate('tokenSettings')}
+        >
+          Token Settings
+        </button>
+      </nav>
+      {section === 'diagnostics' ? (
+        props.diagnostics === undefined ? (
+          <section className="info-panel" aria-label="诊断">
+            <h2>Diagnostics</h2>
+            <p className="error-text" role="alert">
+              诊断服务不可用。
+            </p>
+          </section>
+        ) : (
+          <DiagnosticsPanel
+            state={props.diagnostics.state}
+            onRetry={() => void props.diagnostics?.refresh()}
+          />
+        )
+      ) : props.tokenBridge === undefined ? (
+        <section className="info-panel" aria-label="Token 设置">
+          <h2>Token Settings</h2>
+          <p className="error-text" role="alert">
+            Token 安全存储不可用。
+          </p>
+        </section>
+      ) : (
+        <TokenSettingsPanel bridge={props.tokenBridge} onTokenChanged={props.onTokenChanged} />
+      )}
+    </div>
+  );
+}
+
 function TabNav(props: {
   readonly tab: PrimaryTab;
   readonly onChange: (tab: PrimaryTab) => void;
   readonly detailDisabled: boolean;
+  readonly showDataTabs: boolean;
 }) {
   return (
     <nav className="tab-row" aria-label="功能切换">
+      {props.showDataTabs ? (
+        <>
+          <button
+            type="button"
+            aria-pressed={props.tab === 'import'}
+            onClick={() => props.onChange('import')}
+          >
+            导入
+          </button>
+          <button
+            type="button"
+            aria-pressed={props.tab === 'overview'}
+            onClick={() => props.onChange('overview')}
+          >
+            升级总览
+          </button>
+          <button
+            type="button"
+            aria-pressed={props.tab === 'detail'}
+            disabled={props.detailDisabled}
+            title={props.detailDisabled ? '先选择村庄' : undefined}
+            onClick={() => props.onChange('detail')}
+          >
+            村庄详情
+          </button>
+        </>
+      ) : null}
       <button
         type="button"
-        aria-pressed={props.tab === 'import'}
-        onClick={() => props.onChange('import')}
+        aria-pressed={props.tab === 'info'}
+        onClick={() => props.onChange('info')}
       >
-        导入
-      </button>
-      <button
-        type="button"
-        aria-pressed={props.tab === 'overview'}
-        onClick={() => props.onChange('overview')}
-      >
-        升级总览
-      </button>
-      <button
-        type="button"
-        aria-pressed={props.tab === 'detail'}
-        disabled={props.detailDisabled}
-        title={props.detailDisabled ? '先选择村庄' : undefined}
-        onClick={() => props.onChange('detail')}
-      >
-        村庄详情
+        Info
       </button>
     </nav>
   );

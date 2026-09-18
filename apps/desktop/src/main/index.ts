@@ -4,6 +4,8 @@ import {
   createApplicationServices,
   type ApplicationServices,
 } from './application/application-services';
+import { DiagnosticsService } from './application/diagnostics-service';
+import { TokenSettingsService } from './application/token-settings-service';
 import { FileEncryptedBlobStore, SafeStorageTokenStore } from './persistence/secret-store';
 import { getCatalogService } from './catalog-service';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
@@ -25,6 +27,8 @@ const smokeMode = process.argv.includes('--smoke') || process.env.COCHELPER_SMOK
 /** E3-02（#276）Main application services；权威态与 typed IPC 入口。 */
 let applicationServices: ApplicationServices | null = null;
 let tokenStore: SafeStorageTokenStore | null = null;
+let tokenSettings: TokenSettingsService | null = null;
+let diagnosticsService: DiagnosticsService | null = null;
 
 export function getApplicationServices(): ApplicationServices | null {
   return applicationServices;
@@ -116,6 +120,21 @@ function initializeApplicationServices(): void {
       new FileEncryptedBlobStore(persistence.paths.apiTokenEncrypted),
     );
   }
+  tokenSettings = new TokenSettingsService(tokenStore);
+  diagnosticsService = new DiagnosticsService({
+    services: applicationServices,
+    tokenSettings,
+    catalog: getCatalogService(),
+    appName: app.getName(),
+    appVersion: app.getVersion(),
+    runtime: {
+      electron: process.versions.electron ?? 'unknown',
+      node: process.versions.node ?? 'unknown',
+      chrome: process.versions.chrome ?? 'unknown',
+      platform: process.platform,
+      arch: process.arch,
+    },
+  });
   if (applicationServices.boot.bootError !== null) {
     writeSmoke(`COCHELPER_PERSISTENCE_BOOT_FAIL ${applicationServices.boot.bootError}`);
   }
@@ -130,10 +149,15 @@ app.whenReady().then(() => {
       `COCHELPER_PERSISTENCE_BOOT_FAIL ${error instanceof Error ? error.message : String(error)}`,
     );
     applicationServices = null;
+    tokenSettings = null;
+    diagnosticsService = null;
   }
   installAppProtocolHandler();
   getCatalogService().preload();
-  registerApplicationHandlers(applicationServices);
+  registerApplicationHandlers(applicationServices, {
+    diagnostics: diagnosticsService,
+    tokenSettings,
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

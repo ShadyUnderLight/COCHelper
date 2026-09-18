@@ -4,6 +4,7 @@ import type { ProjectionIpcBridge } from './projection-ipc';
 import type { ManualIpcBridge } from './manual-ipc';
 import type { OfficialIpcBridge } from './official-ipc';
 import type { RecoveryIpcBridge } from './recovery-ipc';
+import type { DiagnosticsIpcBridge, TokenIpcBridge } from './diagnostics-ipc';
 
 /** IPC 通道名。preload 只允许调用这里列出的通道。 */
 export const APP_HEALTH_CHANNEL = 'app.health' as const;
@@ -54,7 +55,9 @@ export type DesktopBridge = {
   ProjectionIpcBridge &
   ManualIpcBridge &
   OfficialIpcBridge &
-  RecoveryIpcBridge;
+  RecoveryIpcBridge &
+  DiagnosticsIpcBridge &
+  TokenIpcBridge;
 
 export const DESKTOP_BRIDGE_KEYS = [
   'health',
@@ -89,6 +92,10 @@ export const DESKTOP_BRIDGE_KEYS = [
   'recoveryRestoreSaved',
   'recoveryReset',
   'recoveryRecoverJournal',
+  'diagnosticsSnapshot',
+  'tokenStatus',
+  'tokenSave',
+  'tokenClear',
   'onOperationProgress',
   'onStateChanged',
 ] as const satisfies ReadonlyArray<keyof DesktopBridge>;
@@ -260,3 +267,33 @@ export {
   type RecoveryRecoverJournalResponse,
   type RecoveryIpcBridge,
 } from './recovery-ipc';
+
+export {
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_IPC_CHANNELS,
+  DIAGNOSTICS_IPC_BRIDGE_KEYS,
+  TOKEN_STATUS_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_IPC_CHANNELS,
+  TOKEN_IPC_BRIDGE_KEYS,
+  type TokenStorageStatus,
+  type TokenStatusPayload,
+  type TokenStatusRequest,
+  type TokenStatusResponse,
+  type TokenSaveRequest,
+  type TokenSaveResponse,
+  type TokenClearRequest,
+  type TokenClearResponse,
+  type DiagnosticsAppDto,
+  type DiagnosticsRuntimeDto,
+  type DiagnosticsApplicationDto,
+  type DiagnosticsCatalogDto,
+  type DiagnosticsOfficialDto,
+  type DiagnosticsManualDto,
+  type DiagnosticsSnapshotRequest,
+  type DiagnosticsSnapshotPayload,
+  type DiagnosticsSnapshotResponse,
+  type DiagnosticsIpcBridge,
+  type TokenIpcBridge,
+} from './diagnostics-ipc';

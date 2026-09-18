@@ -19,7 +19,7 @@ export type AppRoute =
 
 export const INITIAL_ROUTE: AppRoute = { kind: 'import' };
 
-export type PrimaryTab = 'import' | 'overview' | 'detail';
+export type PrimaryTab = 'import' | 'overview' | 'detail' | 'info';
 
 export type NavigateAction =
   | { readonly type: 'navigate'; readonly route: AppRoute }
@@ -29,7 +29,7 @@ export type NavigateAction =
       readonly base?: TrackerBaseDto;
     };
 
-/** 当前三 tab 页面对应的主 tab；official/manual/info 暂映射到 overview 占位。 */
+/** 主导航 tab；Info 下挂 Diagnostics 与 Token Settings。 */
 export function primaryTabOfRoute(route: AppRoute): PrimaryTab {
   switch (route.kind) {
     case 'import':
@@ -37,8 +37,9 @@ export function primaryTabOfRoute(route: AppRoute): PrimaryTab {
     case 'overview':
     case 'official':
     case 'manual':
-    case 'info':
       return 'overview';
+    case 'info':
+      return 'info';
     case 'villageDetail':
       return 'detail';
     default: {

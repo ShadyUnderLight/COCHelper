@@ -2,6 +2,7 @@ import {
   API_REFRESH_CHANNEL,
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
   CAPITAL_RAID_LOAD_MORE_CHANNEL,
   CAPITAL_RAID_STATE_CHANNEL,
   CLAN_STATE_CHANNEL,
@@ -28,6 +29,9 @@ import {
   RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
@@ -40,6 +44,7 @@ import {
   isCapitalRaidStatePayload,
   isClanStatePayload,
   isClanWarStatePayload,
+  isDiagnosticsSnapshotPayload,
   isImportCommitPayload,
   isImportDiscardPayload,
   isImportPreparePayload,
@@ -61,6 +66,7 @@ import {
   isRecoveryRestorePayload,
   isRecoveryStatusPayload,
   isResult,
+  isTokenStatusPayload,
   isUpgradeOverviewPayload,
   isVillageDetailPayload,
   isVillageSelectPayload,
@@ -75,6 +81,7 @@ import {
   type ClanStateResponse,
   type ClanWarStateResponse,
   type DesktopBridge,
+  type DiagnosticsSnapshotResponse,
   type ImportCommitResponse,
   type ImportDiscardResponse,
   type ImportPrepareResponse,
@@ -97,6 +104,9 @@ import {
   type RecoveryStatusResponse,
   type StateChangedListener,
   type StateChangedPayload,
+  type TokenClearResponse,
+  type TokenSaveResponse,
+  type TokenStatusResponse,
   type UpgradeOverviewResponse,
   type VillageDetailResponse,
   type VillageSelectResponse,
@@ -115,6 +125,24 @@ export function isAppHealthResponse(value: unknown): value is AppHealthResponse 
 
 export function isAppSnapshotResponse(value: unknown): value is AppSnapshotResponse {
   return isResult(value, isAppSnapshotPayload, isIpcError);
+}
+
+export function isDiagnosticsSnapshotResponse(
+  value: unknown,
+): value is DiagnosticsSnapshotResponse {
+  return isResult(value, isDiagnosticsSnapshotPayload, isIpcError);
+}
+
+export function isTokenStatusResponse(value: unknown): value is TokenStatusResponse {
+  return isResult(value, isTokenStatusPayload, isIpcError);
+}
+
+export function isTokenSaveResponse(value: unknown): value is TokenSaveResponse {
+  return isTokenStatusResponse(value);
+}
+
+export function isTokenClearResponse(value: unknown): value is TokenClearResponse {
+  return isTokenStatusResponse(value);
 }
 
 export function isVillageSelectResponse(value: unknown): value is VillageSelectResponse {
@@ -469,6 +497,34 @@ export function createDesktopBridge(invoke: Invoke, send: Send, on: On): Desktop
       const result = await invoke(RECOVERY_RECOVER_JOURNAL_CHANNEL, request);
       if (!isRecoveryRecoverJournalResponse(result)) {
         throw new Error('recovery.recoverJournal 返回值不合法');
+      }
+      return result;
+    },
+    diagnosticsSnapshot: async (request) => {
+      const result = await invoke(DIAGNOSTICS_SNAPSHOT_CHANNEL, request);
+      if (!isDiagnosticsSnapshotResponse(result)) {
+        throw new Error('diagnostics.snapshot 返回值不合法');
+      }
+      return result;
+    },
+    tokenStatus: async (request) => {
+      const result = await invoke(TOKEN_STATUS_CHANNEL, request);
+      if (!isTokenStatusResponse(result)) {
+        throw new Error('token.status 返回值不合法');
+      }
+      return result;
+    },
+    tokenSave: async (request) => {
+      const result = await invoke(TOKEN_SAVE_CHANNEL, request);
+      if (!isTokenSaveResponse(result)) {
+        throw new Error('token.save 返回值不合法');
+      }
+      return result;
+    },
+    tokenClear: async (request) => {
+      const result = await invoke(TOKEN_CLEAR_CHANNEL, request);
+      if (!isTokenClearResponse(result)) {
+        throw new Error('token.clear 返回值不合法');
       }
       return result;
     },

@@ -110,3 +110,5 @@ export { ManualTrackerService } from './manual-tracker-service';
 export { OfficialApiService } from './official-api-service';
 export { RecoveryService, hasPendingVillageJournals } from './recovery-service';
 export { AppAuthoritativeState, AppServiceError } from './app-authoritative-state';
+export { DiagnosticsService } from './diagnostics-service';
+export { TokenSettingsService } from './token-settings-service';

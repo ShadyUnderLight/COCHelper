@@ -1,6 +1,8 @@
 import { BrowserWindow, session, shell } from 'electron';
 
 import { registerIpcHandlers } from './ipc';
+import type { DiagnosticsService } from './application/diagnostics-service';
+import type { TokenSettingsService } from './application/token-settings-service';
 import {
   SECURE_WEB_PREFERENCES,
   contentSecurityPolicyFor,
@@ -63,8 +65,16 @@ export function createMainWindow(): BrowserWindow {
 
 export function registerApplicationHandlers(
   services: import('./application/application-services').ApplicationServices | null = null,
+  options: {
+    readonly diagnostics?: DiagnosticsService | null;
+    readonly tokenSettings?: TokenSettingsService | null;
+  } = {},
 ): void {
-  registerIpcHandlers(MAIN_WINDOW_WEBPACK_ENTRY, { services });
+  registerIpcHandlers(MAIN_WINDOW_WEBPACK_ENTRY, {
+    services,
+    diagnostics: options.diagnostics,
+    tokenSettings: options.tokenSettings,
+  });
   applySessionGuards(MAIN_WINDOW_WEBPACK_ENTRY);
 }
 

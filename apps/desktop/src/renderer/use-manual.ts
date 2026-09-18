@@ -12,6 +12,8 @@ import type {
 import { formatIpcError, isCurrentEpoch, type SessionCursor } from './app-session';
 import { advanceSessionCursor } from './manual-command-cursor';
 import { IDLE_MANUAL_VIEW, type ManualView } from './manual-session';
+
+const MANUAL_COMMAND_UNCERTAIN_MESSAGE = '命令结果未知，正在同步状态…';
 import { resourceData, resourceLastError, type ResourceState } from './resource-state';
 import { useResourceQuery } from './use-resource-query';
 
@@ -187,6 +189,10 @@ export function useManual(
             return false;
           }
           setCommandError(error instanceof Error ? error.message : '手动升级命令失败');
+          setQueryStale(true);
+          setStaleMessage(MANUAL_COMMAND_UNCERTAIN_MESSAGE);
+          onMutatedRef.current?.();
+          void query.refresh();
           return false;
         }
         if (!isCurrentEpoch(requestEpoch, epochRef.current)) {

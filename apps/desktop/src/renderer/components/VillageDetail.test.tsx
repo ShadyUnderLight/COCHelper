@@ -10,7 +10,9 @@ import type {
   VillageDetailGroupDto,
 } from '@coc-helper/contracts';
 
+import type { ManualView } from '../manual-session';
 import { recordFixture } from '../overview-session';
+import type { ManualApi } from '../use-manual';
 import { resetClockStoreForTests } from '../clock-store';
 import { clanFixture, playerFixture } from '../official-session.fixtures';
 import { toOfficialClanView, toOfficialPlayerView } from '../official-session';
@@ -34,6 +36,68 @@ function baseProps() {
     onBaseChange: () => undefined,
     onRetry: () => undefined,
   };
+}
+
+const startableItem = {
+  ...recordFixture().item,
+  manualRowStart: {
+    fromLevel: 5,
+    targetLevel: 6,
+    quantity: 1,
+    sourceKind: 'row' as const,
+  },
+};
+
+function manualView(overrides: Partial<ManualView> = {}): ManualView {
+  return {
+    status: 'ready',
+    payload: {
+      generation: 5,
+      villageId: 'v1',
+      status: 'available',
+      error: null,
+      baselineRevision: 'rev',
+      baselineLineageId: 'line',
+      activeRecordCount: 0,
+      itemStateCount: 1,
+      activeRecords: [],
+      lastSettleAtMs: null,
+      lastImportAtMs: 1_000,
+      stateUpdatedAtMs: 1_000,
+    },
+    lastError: null,
+    queryStale: false,
+    ...overrides,
+  };
+}
+
+function manualApi(overrides: Partial<ManualApi> = {}): ManualApi {
+  return {
+    view: manualView(),
+    refresh: async () => undefined,
+    commandError: null,
+    busy: false,
+    startRow: async () => true,
+    cancel: async () => true,
+    adjust: async () => true,
+    settle: async () => true,
+    ...overrides,
+  };
+}
+
+function detailWithStartableRow() {
+  return villageDetailFixture({
+    items: [startableItem],
+    flatRows: [
+      {
+        kind: 'legacy',
+        itemID: 'item-1',
+        groupID: 'g',
+        indented: false,
+        leadingDivider: false,
+      },
+    ],
+  });
 }
 
 describe('VillageDetail', () => {
@@ -707,6 +771,71 @@ describe('VillageDetail', () => {
     );
     expect(container.querySelector('img.detail-item-icon')?.getAttribute('src')).toBe(
       'cochelper://catalog/18.400.13/icons/buildings/cannon_lvl5.png',
+    );
+  });
+
+  it('传入 manual 时渲染手动升级面板', () => {
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(villageDetailFixture())}
+        {...baseProps()}
+        manual={manualApi()}
+        canManual={true}
+      />,
+    );
+    expect(screen.getByLabelText('手动升级')).toBeTruthy();
+    expect(screen.getByText('本地手动升级')).toBeTruthy();
+  });
+
+  it('只读模式禁用手动升级写操作', () => {
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(detailWithStartableRow())}
+        {...baseProps()}
+        manual={manualApi()}
+        canManual={false}
+      />,
+    );
+    expect((screen.getByText('结算到期升级') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('queryStale 时等级底片禁用开始本地升级', () => {
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(detailWithStartableRow())}
+        {...baseProps()}
+        manual={manualApi({
+          view: manualView({ queryStale: true, lastError: '命令结果未知，正在同步状态…' }),
+        })}
+        canManual={true}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /加农炮，打开等级详情/ }));
+    expect(
+      (screen.getByRole('button', { name: '开始本地升级' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('可写且未 stale 时点击开始本地升级', async () => {
+    const startRow = vi.fn(async () => true);
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(detailWithStartableRow())}
+        {...baseProps()}
+        manual={manualApi({ startRow })}
+        canManual={true}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /加农炮，打开等级详情/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '开始本地升级' }));
+    });
+    expect(startRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        villageId: 'v1',
+        item: startableItem,
+        base: 'home',
+      }),
     );
   });
 });

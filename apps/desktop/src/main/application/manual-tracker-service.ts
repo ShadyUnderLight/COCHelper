@@ -125,6 +125,7 @@ export class ManualTrackerService {
     if (villageState === undefined) {
       return emptyStatePayload(generation, villageId, 'empty', null);
     }
+    const activeRecords = villageState.core.activeRecords.map(toRecordDto);
     return {
       generation,
       villageId,
@@ -132,8 +133,9 @@ export class ManualTrackerService {
       error: null,
       baselineRevision: villageState.baselineReference?.revision ?? null,
       baselineLineageId: villageState.baselineReference?.lineageID ?? null,
-      activeRecordCount: villageState.core.activeRecords.length,
+      activeRecordCount: activeRecords.length,
       itemStateCount: villageState.core.itemStates.length,
+      activeRecords,
       lastSettleAtMs: villageState.lastSettleAtMs,
       lastImportAtMs: villageState.lastImportAtMs,
       stateUpdatedAtMs: villageState.stateUpdatedAtMs,
@@ -753,6 +755,7 @@ function emptyStatePayload(
     baselineLineageId: null,
     activeRecordCount: 0,
     itemStateCount: 0,
+    activeRecords: [],
     lastSettleAtMs: null,
     lastImportAtMs: null,
     stateUpdatedAtMs: null,

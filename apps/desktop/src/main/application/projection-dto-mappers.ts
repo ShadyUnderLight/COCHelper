@@ -18,6 +18,7 @@ import type {
   VillageDetailFlatRowDto,
   VillageDetailGroupDto,
   VillageDetailPayload,
+  ManualRowStartPreviewDto,
   VillageItemStateDto,
   VillageNextUpgradeDto,
   VillageProgressMetricsDto,
@@ -29,7 +30,10 @@ import type {
   CatalogCompatibility,
   CatalogDurationState,
   EffectiveVillageItemState,
+  GameCatalog,
+  ManualUpgradeCore,
   ProgressMetric,
+  ProgressUniverseCoverage,
   TrackerItemKey,
   UpgradeDisplayRecord,
   UpgradeOverviewRender,
@@ -45,8 +49,19 @@ import type {
 import {
   effectiveDetailMissingReason,
   effectiveItemView,
+  projectUpgradeActionForItem,
+  trackerItemKeyRoot,
   trackerItemKeyStableId,
+  upgradeActionCoverageForItem,
 } from '@coc-helper/domain';
+
+export type VillageItemManualProjectionContext = {
+  readonly catalog: GameCatalog | null;
+  readonly catalogIsUsable: boolean;
+  readonly manualUpgradeCore: ManualUpgradeCore | null;
+  readonly progressCoverage: ProgressUniverseCoverage;
+  readonly nowMs: number;
+};
 
 export function toUpgradeOverviewPayload(input: {
   readonly generation: number;
@@ -82,7 +97,9 @@ export function toVillageDetailPayload(input: {
   readonly metrics: VillageProgressMetrics;
   readonly buildingGroups: readonly BuildingGroup[];
   readonly flatRows: readonly VillageDetailFlatRow[];
+  readonly manualContext?: VillageItemManualProjectionContext;
 }): VillageDetailPayload {
+  const mapItem = (item: VillageItemState) => toVillageItemStateDto(item, input.manualContext);
   return {
     generation: input.generation,
     nowMs: input.nowMs,
@@ -93,8 +110,8 @@ export function toVillageDetailPayload(input: {
     catalogVersion: input.catalogVersion,
     catalogIsUsable: input.catalogIsUsable,
     compatibility: toCatalogCompatibilityDto(input.compatibility),
-    items: input.items.map(toVillageItemStateDto),
-    instanceItems: input.instanceItems.map(toVillageItemStateDto),
+    items: input.items.map(mapItem),
+    instanceItems: input.instanceItems.map(mapItem),
     groups: input.groups.map(toVillageDetailGroupDto),
     completion: input.completion.map(toVillageCategoryCompletionDto),
     totalCompletion: toVillageCategoryCompletionDto(input.totalCompletion),
@@ -144,8 +161,14 @@ function toUpgradeRecentCompletionDto(
   };
 }
 
-export function toVillageItemStateDto(item: VillageItemState): VillageItemStateDto {
+export function toVillageItemStateDto(
+  item: VillageItemState,
+  manualContext?: VillageItemManualProjectionContext,
+): VillageItemStateDto {
   const effective = effectiveItemView(item);
+  const trackerItemKey = toTrackerItemKeyDto(trackerItemKeyForItem(item));
+  const manualRowStart =
+    manualContext === undefined ? null : manualRowStartPreview(item, manualContext);
   return {
     id: item.id,
     section: item.section,
@@ -182,6 +205,49 @@ export function toVillageItemStateDto(item: VillageItemState): VillageItemStateD
     effectiveDiagnostic: effective.diagnostic,
     effectiveIsMaxed: effective.isMaxed,
     effectiveDetailMissingReason: effectiveDetailMissingReason(item),
+    trackerItemKey,
+    manualRowStart,
+  };
+}
+
+function trackerItemKeyForItem(item: VillageItemState): TrackerItemKey {
+  const effective = item.effectiveState as EffectiveVillageItemState | undefined;
+  if (effective !== undefined) {
+    return effective.itemKey;
+  }
+  return trackerItemKeyRoot(item.base, item.section, item.dataID);
+}
+
+function manualRowStartPreview(
+  item: VillageItemState,
+  context: VillageItemManualProjectionContext,
+): ManualRowStartPreviewDto | null {
+  const action = projectUpgradeActionForItem({
+    item,
+    catalog: context.catalog,
+    catalogIsUsable: context.catalogIsUsable,
+    manualUpgradeCore: context.manualUpgradeCore,
+    coverage: upgradeActionCoverageForItem(item, context.progressCoverage),
+    nowMs: context.nowMs,
+  });
+  if (
+    action === null ||
+    !action.isStartable ||
+    action.sourceKind !== 'row' ||
+    action.fromLevel === null ||
+    action.targetLevel === null
+  ) {
+    return null;
+  }
+  const quantity = Number(action.quantity);
+  if (!Number.isSafeInteger(quantity)) {
+    return null;
+  }
+  return {
+    fromLevel: action.fromLevel,
+    targetLevel: action.targetLevel,
+    quantity,
+    sourceKind: 'row',
   };
 }
 

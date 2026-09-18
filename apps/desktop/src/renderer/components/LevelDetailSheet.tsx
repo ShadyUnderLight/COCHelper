@@ -23,6 +23,9 @@ export function LevelDetailSheet(props: {
   readonly catalogVersion: string | null;
   readonly onClose: () => void;
   readonly returnFocusTo?: HTMLElement | null;
+  readonly canManualStart?: boolean;
+  readonly manualBusy?: boolean;
+  readonly onManualStart?: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -123,6 +126,18 @@ export function LevelDetailSheet(props: {
               : ''}
           </p>
         ) : null}
+        {props.item.manualRowStart !== null && props.onManualStart !== undefined ? (
+          <div className="action-row">
+            <button
+              type="button"
+              disabled={!props.canManualStart || props.manualBusy === true}
+              onClick={props.onManualStart}
+            >
+              开始本地升级
+            </button>
+          </div>
+        ) : null}
+        <p className="muted manual-local-note">本地记录不会操作游戏。</p>
         <button type="button" autoFocus onClick={props.onClose}>
           关闭
         </button>

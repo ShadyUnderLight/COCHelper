@@ -82,6 +82,7 @@ export const manualStatePayloadSchema: z.ZodType<ManualStatePayload> = z
     baselineLineageId: z.string().max(128).nullable(),
     activeRecordCount: z.number().int().nonnegative().safe(),
     itemStateCount: z.number().int().nonnegative().safe(),
+    activeRecords: z.array(manualUpgradeRecordDtoSchema),
     lastSettleAtMs: z.number().finite().nullable(),
     lastImportAtMs: z.number().finite().nullable(),
     stateUpdatedAtMs: z.number().finite().nullable(),

@@ -4,6 +4,7 @@ import {
   API_REFRESH_CHANNEL,
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
   CAPITAL_RAID_LOAD_MORE_CHANNEL,
   CAPITAL_RAID_STATE_CHANNEL,
   CLAN_STATE_CHANNEL,
@@ -30,6 +31,9 @@ import {
   RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
@@ -43,11 +47,14 @@ import {
 
 import { AppServiceError } from './application/app-authoritative-state';
 import type { ApplicationServices } from './application/application-services';
+import type { DiagnosticsService } from './application/diagnostics-service';
+import type { TokenSettingsService } from './application/token-settings-service';
 import {
   appHealthResponse,
   parseApiRefreshRequest,
   parseAppHealthRequest,
   parseAppSnapshotRequest,
+  parseDiagnosticsSnapshotRequest,
   parseCancelRequest,
   parseCapitalRaidLoadMoreRequest,
   parseCapitalRaidStateRequest,
@@ -72,6 +79,9 @@ import {
   parseRecoveryRestoreRequest,
   parseRecoveryRestoreSavedRequest,
   parseRecoveryStatusRequest,
+  parseTokenClearRequest,
+  parseTokenSaveRequest,
+  parseTokenStatusRequest,
   parseUpgradeOverviewRequest,
   parseVillageDetailRequest,
   parseVillageSelectRequest,
@@ -99,6 +109,22 @@ function requireOfficial(services: ApplicationServices) {
   return services.official;
 }
 
+function requireDiagnostics(service: DiagnosticsService | null | undefined): DiagnosticsService {
+  if (service === null || service === undefined) {
+    throw new AppServiceError('unavailable', '诊断服务尚未就绪。');
+  }
+  return service;
+}
+
+function requireTokenSettings(
+  service: TokenSettingsService | null | undefined,
+): TokenSettingsService {
+  if (service === null || service === undefined) {
+    throw new AppServiceError('unavailable', 'Token 安全存储尚未就绪。');
+  }
+  return service;
+}
+
 export function assertTrustedSender(event: IpcSenderEvent, webpackEntry: string): void {
   assertTrustedSenderState(
     {
@@ -114,11 +140,15 @@ export function registerIpcHandlers(
   options: {
     readonly cancellation?: RequestCancellationRegistry;
     readonly services?: ApplicationServices | null;
+    readonly diagnostics?: DiagnosticsService | null;
+    readonly tokenSettings?: TokenSettingsService | null;
     readonly clipboard?: ClipboardPort;
   } = {},
 ): RequestCancellationRegistry {
   const cancellation = options.cancellation ?? new RequestCancellationRegistry();
   const services = options.services ?? null;
+  const diagnostics = options.diagnostics ?? null;
+  const tokenSettings = options.tokenSettings ?? null;
   const clipboard = options.clipboard ?? electronClipboardPort;
 
   ipcMain.handle(APP_HEALTH_CHANNEL, (event, payload: unknown) => {
@@ -136,6 +166,46 @@ export function registerIpcHandlers(
       assertTrustedSender(event, webpackEntry);
       parseAppSnapshotRequest(payload);
       return resultOk(requireServices(services).lifecycle.snapshot());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(DIAGNOSTICS_SNAPSHOT_CHANNEL, async (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseDiagnosticsSnapshotRequest(payload);
+      return resultOk(await requireDiagnostics(diagnostics).snapshot());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(TOKEN_STATUS_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseTokenStatusRequest(payload);
+      return resultOk(requireTokenSettings(tokenSettings).status());
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(TOKEN_SAVE_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      const request = parseTokenSaveRequest(payload);
+      return resultOk(requireTokenSettings(tokenSettings).save(request.token));
+    } catch (error: unknown) {
+      return resultErr(toIpcError(error));
+    }
+  });
+
+  ipcMain.handle(TOKEN_CLEAR_CHANNEL, (event, payload: unknown) => {
+    try {
+      assertTrustedSender(event, webpackEntry);
+      parseTokenClearRequest(payload);
+      return resultOk(requireTokenSettings(tokenSettings).clear());
     } catch (error: unknown) {
       return resultErr(toIpcError(error));
     }

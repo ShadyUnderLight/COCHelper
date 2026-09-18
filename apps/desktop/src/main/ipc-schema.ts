@@ -1,6 +1,7 @@
 import {
   APP_HEALTH_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
   API_REFRESH_CHANNEL,
   CAPITAL_RAID_LOAD_MORE_CHANNEL,
   CAPITAL_RAID_STATE_CHANNEL,
@@ -29,11 +30,18 @@ import {
   REQUEST_CANCEL_CHANNEL,
   REQUEST_ID_MAX_LENGTH,
   STATE_CHANGED_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   WAR_LOG_LOAD_MORE_CHANNEL,
   WAR_LOG_STATE_CHANNEL,
+  diagnosticsSnapshotRequestSchema,
+  tokenClearRequestSchema,
+  tokenSaveRequestSchema,
+  tokenStatusRequestSchema,
   apiRefreshRequestSchema,
   capitalRaidLoadMoreRequestSchema,
   capitalRaidStateRequestSchema,
@@ -99,6 +107,10 @@ import {
   type VillageSelectRequest,
   type WarLogLoadMoreRequest,
   type WarLogStateRequest,
+  type DiagnosticsSnapshotRequest,
+  type TokenClearRequest,
+  type TokenSaveRequest,
+  type TokenStatusRequest,
 } from '@coc-helper/contracts';
 import { z } from 'zod';
 
@@ -164,6 +176,38 @@ export function parseAppSnapshotRequest(payload: unknown): AppSnapshotRequest {
   const result = appSnapshotRequestSchema.safeParse(payload);
   if (!result.success) {
     throw new IpcValidationError('app.snapshot 参数不合法');
+  }
+  return {};
+}
+
+export function parseDiagnosticsSnapshotRequest(payload: unknown): DiagnosticsSnapshotRequest {
+  const result = diagnosticsSnapshotRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('diagnostics.snapshot 参数不合法');
+  }
+  return {};
+}
+
+export function parseTokenStatusRequest(payload: unknown): TokenStatusRequest {
+  const result = tokenStatusRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('token.status 参数不合法');
+  }
+  return {};
+}
+
+export function parseTokenSaveRequest(payload: unknown): TokenSaveRequest {
+  const result = tokenSaveRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('token.save 参数不合法');
+  }
+  return result.data;
+}
+
+export function parseTokenClearRequest(payload: unknown): TokenClearRequest {
+  const result = tokenClearRequestSchema.safeParse(payload);
+  if (!result.success) {
+    throw new IpcValidationError('token.clear 参数不合法');
   }
   return {};
 }
@@ -470,6 +514,10 @@ export const REGISTERED_IPC_CHANNELS = [
   APP_HEALTH_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   APP_SNAPSHOT_CHANNEL,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
   IMPORT_COMMIT_CHANNEL,

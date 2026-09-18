@@ -27,6 +27,13 @@ const safeIntSchema = z.number().int().safe();
 const trackerBaseSchema = z.enum(['home', 'builder']);
 
 const trackerNestedKindSchema = z.enum(['root', 'type', 'module']);
+export const manualTrackerStatusSchema = z.enum([
+  'missing',
+  'available',
+  'empty',
+  'unavailable',
+  'migrationRequired',
+]);
 
 const trackerItemKeySchema: z.ZodType<TrackerItemKeyDto> = z
   .object({
@@ -76,7 +83,7 @@ export const manualStatePayloadSchema: z.ZodType<ManualStatePayload> = z
   .object({
     generation: generationSchema,
     villageId: villageIdSchema,
-    status: z.enum(['missing', 'available', 'empty', 'unavailable', 'migrationRequired']),
+    status: manualTrackerStatusSchema,
     error: z.string().max(500).nullable(),
     baselineRevision: z.string().max(256).nullable(),
     baselineLineageId: z.string().max(128).nullable(),

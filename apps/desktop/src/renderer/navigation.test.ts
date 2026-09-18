@@ -13,13 +13,14 @@ describe('navigation', () => {
     expect(INITIAL_ROUTE).toEqual({ kind: 'import' });
   });
 
-  it('primaryTabOfRoute 映射三 tab', () => {
+  it('primaryTabOfRoute 映射主导航 tab', () => {
     expect(primaryTabOfRoute({ kind: 'import' })).toBe('import');
     expect(primaryTabOfRoute({ kind: 'overview' })).toBe('overview');
     expect(primaryTabOfRoute({ kind: 'villageDetail', villageId: 'v1', base: 'home' })).toBe(
       'detail',
     );
     expect(primaryTabOfRoute({ kind: 'official', section: 'player' })).toBe('overview');
+    expect(primaryTabOfRoute({ kind: 'info', section: 'diagnostics' })).toBe('info');
   });
 
   it('routeEquals 区分 villageDetail base', () => {

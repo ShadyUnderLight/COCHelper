@@ -173,6 +173,44 @@ describe('AppShell', () => {
     expect(screen.queryByLabelText('账号导入')).toBeNull();
   });
 
+  it('Info 路由渲染 Diagnostics 页面而不是 overview 占位', () => {
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'ready',
+          snapshot: snapshot(),
+        })}
+        overview={overviewApi()}
+        detail={detailApi()}
+        route={{ kind: 'info', section: 'diagnostics' }}
+      />,
+    );
+    expect(screen.getByLabelText('诊断')).toBeTruthy();
+    expect(screen.getByText('诊断服务不可用。')).toBeTruthy();
+    expect(screen.queryByLabelText('升级总览')).toBeNull();
+  });
+
+  it('recovery 状态仍保留 Info 入口', () => {
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'ready',
+          snapshot: snapshot({
+            availability: 'recovery',
+            villageStatus: 'corrupt',
+            canWrite: false,
+          }),
+        })}
+        overview={overviewApi()}
+        detail={detailApi()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Info' })).toBeTruthy();
+    expect(screen.getByLabelText('数据恢复')).toBeTruthy();
+  });
+
   it('read-only 提示且禁用写入入口文案可见', () => {
     render(
       <AppShell

@@ -8,6 +8,7 @@ import {
   CAPITAL_RAID_STATE_CHANNEL,
   CLAN_STATE_CHANNEL,
   CLAN_WAR_STATE_CHANNEL,
+  DIAGNOSTICS_SNAPSHOT_CHANNEL,
   IMPORT_COMMIT_CHANNEL,
   IMPORT_DISCARD_CHANNEL,
   IMPORT_PREPARE_CHANNEL,
@@ -30,6 +31,9 @@ import {
   RECOVERY_STATUS_CHANNEL,
   REQUEST_CANCEL_CHANNEL,
   STATE_CHANGED_CHANNEL,
+  TOKEN_CLEAR_CHANNEL,
+  TOKEN_SAVE_CHANNEL,
+  TOKEN_STATUS_CHANNEL,
   UPGRADE_OVERVIEW_CHANNEL,
   VILLAGE_DETAIL_CHANNEL,
   VILLAGE_SELECT_CHANNEL,
@@ -44,6 +48,7 @@ import {
   REGISTERED_IPC_CHANNELS,
   appHealthResponse,
   parseAppSnapshotRequest,
+  parseDiagnosticsSnapshotRequest,
   parseCancelRequest,
   parseImportCommitRequest,
   parseImportDiscardRequest,
@@ -51,6 +56,9 @@ import {
   parseQuickCommitRequest,
   parseQuickDiscardRequest,
   parseQuickPrepareRequest,
+  parseTokenClearRequest,
+  parseTokenSaveRequest,
+  parseTokenStatusRequest,
   parseAppHealthRequest,
   parseVillageSelectRequest,
   toIpcError,
@@ -75,6 +83,10 @@ describe('app.health schema', () => {
       APP_HEALTH_CHANNEL,
       REQUEST_CANCEL_CHANNEL,
       APP_SNAPSHOT_CHANNEL,
+      DIAGNOSTICS_SNAPSHOT_CHANNEL,
+      TOKEN_STATUS_CHANNEL,
+      TOKEN_SAVE_CHANNEL,
+      TOKEN_CLEAR_CHANNEL,
       VILLAGE_SELECT_CHANNEL,
       IMPORT_PREPARE_CHANNEL,
       IMPORT_COMMIT_CHANNEL,
@@ -162,6 +174,24 @@ describe('E3-02 business schemas', () => {
       expectedGeneration: 0,
     });
     expect(() => parseQuickDiscardRequest({ expectedGeneration: -1 })).toThrow(IpcValidationError);
+  });
+});
+
+describe('diagnostics/token schemas', () => {
+  it('接受 diagnostics 查询和 token status/clear 空请求', () => {
+    expect(parseDiagnosticsSnapshotRequest(undefined)).toEqual({});
+    expect(parseTokenStatusRequest({})).toEqual({});
+    expect(parseTokenClearRequest(undefined)).toEqual({});
+  });
+
+  it('token.save 只接受一次性 token 字符串', () => {
+    expect(parseTokenSaveRequest({ token: 'secret-token' })).toEqual({
+      token: 'secret-token',
+    });
+    expect(() => parseTokenSaveRequest({ token: '' })).toThrow(IpcValidationError);
+    expect(() => parseTokenSaveRequest({ token: 'secret-token', extra: true })).toThrow(
+      IpcValidationError,
+    );
   });
 });
 

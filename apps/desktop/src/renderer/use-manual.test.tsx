@@ -11,7 +11,7 @@ import type {
 } from '@coc-helper/contracts';
 
 import { advanceSessionCursor } from './manual-command-cursor';
-import { isManualQueryStale } from './manual-session';
+import { isManualCommandEnabled, isManualQueryStale } from './manual-session';
 import { recordFixture } from './overview-session';
 import { useManual, type BridgeManualClient } from './use-manual';
 
@@ -120,6 +120,25 @@ async function waitReady(harness: ReturnType<typeof createBridge>, generation = 
   });
 }
 
+async function triggerBridgeReject(
+  harness: ReturnType<typeof createBridge>,
+  result: { current: ReturnType<typeof useManual> },
+): Promise<void> {
+  harness.bridge.manualStart = vi.fn(async () => {
+    throw new Error('IPC 通道异常');
+  });
+  let settled = true;
+  await act(async () => {
+    settled = await result.current.startRow({
+      villageId: 'v1',
+      item: startableItem,
+      base: 'home',
+    });
+  });
+  expect(settled).toBe(false);
+  await waitFor(() => expect(harness.bridge.manualState).toHaveBeenCalledTimes(2));
+}
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -142,28 +161,61 @@ describe('manual-command-cursor', () => {
 describe('useManual（#277-F）', () => {
   it('bridge reject 时设置 commandError、标记 stale 并触发会话刷新', async () => {
     const harness = createBridge();
-    harness.bridge.manualStart = vi.fn(async () => {
-      throw new Error('IPC 通道异常');
-    });
     const onMutated = vi.fn();
     const { result } = renderHook(() => useManual(harness.bridge, snapshot(), 'v1', { onMutated }));
     await waitReady(harness);
     await waitFor(() => expect(result.current.view.status).toBe('ready'));
 
-    let settled = false;
-    await act(async () => {
-      settled = await result.current.startRow({
-        villageId: 'v1',
-        item: startableItem,
-        base: 'home',
-      });
-    });
-    expect(settled).toBe(false);
+    await triggerBridgeReject(harness, result);
     expect(result.current.commandError).toBe('IPC 通道异常');
     expect(onMutated).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(harness.bridge.manualState).toHaveBeenCalledTimes(2));
     expect(isManualQueryStale(result.current.view)).toBe(true);
     expect(result.current.view.lastError).toContain('命令结果未知');
+  });
+
+  it('bridge reject 重拉成功后解除禁写', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useManual(harness.bridge, snapshot(), 'v1'));
+    await waitReady(harness);
+    await waitFor(() => expect(result.current.view.status).toBe('ready'));
+
+    await triggerBridgeReject(harness, result);
+    expect(isManualQueryStale(result.current.view)).toBe(true);
+
+    act(() => {
+      harness.resolveState(ok(manualStatePayload({ generation: 5 })));
+    });
+    await waitFor(() => expect(isManualQueryStale(result.current.view)).toBe(false));
+    expect(
+      isManualCommandEnabled(
+        result.current.view.payload,
+        true,
+        isManualQueryStale(result.current.view),
+      ),
+    ).toBe(true);
+  });
+
+  it('bridge reject 重拉失败后持续禁写', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useManual(harness.bridge, snapshot(), 'v1'));
+    await waitReady(harness);
+    await waitFor(() => expect(result.current.view.status).toBe('ready'));
+
+    await triggerBridgeReject(harness, result);
+    expect(isManualQueryStale(result.current.view)).toBe(true);
+
+    act(() => {
+      harness.resolveState(err('手动升级状态查询失败'));
+    });
+    await waitFor(() => expect(result.current.view.lastError).toContain('手动升级状态查询失败'));
+    expect(isManualQueryStale(result.current.view)).toBe(true);
+    expect(
+      isManualCommandEnabled(
+        result.current.view.payload,
+        true,
+        isManualQueryStale(result.current.view),
+      ),
+    ).toBe(false);
   });
 
   it('mutation 成功后连续命令使用新 generation', async () => {

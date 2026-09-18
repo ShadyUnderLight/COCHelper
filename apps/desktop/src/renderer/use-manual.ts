@@ -1,14 +1,16 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   AppSnapshotPayload,
   DesktopBridge,
   ManualStatePayload,
+  Result,
   TrackerBaseDto,
   VillageItemStateDto,
 } from '@coc-helper/contracts';
 
-import { cursorFromSnapshot, formatIpcError, isCurrentEpoch, type SessionCursor } from './app-session';
+import { formatIpcError, isCurrentEpoch, type SessionCursor } from './app-session';
+import { advanceSessionCursor } from './manual-command-cursor';
 import { IDLE_MANUAL_VIEW, type ManualView } from './manual-session';
 import { resourceData, resourceLastError, type ResourceState } from './resource-state';
 import { useResourceQuery } from './use-resource-query';
@@ -65,13 +67,34 @@ export function useManual(
   const epochRef = useRef(0);
   const onMutatedRef = useRef(options.onMutated);
   onMutatedRef.current = options.onMutated;
-
-  if (snapshot !== null) {
-    cursorRef.current = cursorFromSnapshot(snapshot);
-  }
+  const prevSubjectKeyRef = useRef<string | null>(null);
 
   const subjectKey =
     snapshot === null || villageId === null ? null : `${snapshot.sessionId}:manual:${villageId}`;
+
+  // snapshot 单调推进 cursor；成功 mutation 后 cursor 可能领先 prop，不得回退。
+  useEffect(() => {
+    if (snapshot === null) {
+      return;
+    }
+    const cursor = cursorRef.current;
+    if (cursor !== null && snapshot.sessionId !== cursor.sessionId) {
+      cursorRef.current = null;
+      epochRef.current += 1;
+      setCommandError(null);
+      return;
+    }
+    advanceSessionCursor(cursorRef, snapshot.sessionId, snapshot.generation);
+  }, [snapshot]);
+
+  useEffect(() => {
+    const prevSubjectKey = prevSubjectKeyRef.current;
+    prevSubjectKeyRef.current = subjectKey;
+    if (prevSubjectKey !== null && prevSubjectKey !== subjectKey) {
+      epochRef.current += 1;
+      setCommandError(null);
+    }
+  }, [subjectKey]);
 
   const query = useResourceQuery({
     snapshot,
@@ -81,8 +104,31 @@ export function useManual(
     fetchErrorMessage: '手动升级状态查询失败',
   });
 
+  const applyCommandResult = useCallback(
+    (result: Result<{ readonly generation: number }>): Result<{ readonly generation: number }> => {
+      if (!result.ok) {
+        setCommandError(formatIpcError(result.error));
+        if (result.error.code === 'conflict') {
+          onMutatedRef.current?.();
+        }
+        return result;
+      }
+      if (cursorRef.current !== null) {
+        cursorRef.current = {
+          sessionId: cursorRef.current.sessionId,
+          generation: result.value.generation,
+        };
+      }
+      setCommandError(null);
+      return result;
+    },
+    [],
+  );
+
   const runCommand = useCallback(
-    async (action: (expectedGeneration: number) => Promise<{ readonly ok: boolean }>): Promise<boolean> => {
+    async (
+      action: (expectedGeneration: number) => Promise<Result<{ readonly generation: number }>>,
+    ): Promise<boolean> => {
       if (inFlightRef.current) {
         return false;
       }
@@ -96,22 +142,32 @@ export function useManual(
       setBusy(true);
       setCommandError(null);
       try {
-        const result = await action(cursor.generation);
+        let result: Result<{ readonly generation: number }>;
+        try {
+          result = await action(cursor.generation);
+        } catch (error: unknown) {
+          if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
+            return false;
+          }
+          setCommandError(error instanceof Error ? error.message : '手动升级命令失败');
+          return false;
+        }
         if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
           return false;
         }
+        result = applyCommandResult(result);
         if (!result.ok) {
           return false;
         }
         onMutatedRef.current?.();
-        await query.refresh();
+        void query.refresh();
         return true;
       } finally {
         inFlightRef.current = false;
         setBusy(false);
       }
     },
-    [query.refresh],
+    [applyCommandResult, query.refresh],
   );
 
   const startRow = useCallback(
@@ -125,8 +181,8 @@ export function useManual(
         setCommandError('当前项目不可启动本地升级。');
         return false;
       }
-      return await runCommand(async (expectedGeneration) => {
-        const result = await bridge.manualStart({
+      return await runCommand(async (expectedGeneration) =>
+        bridge.manualStart({
           expectedGeneration,
           villageId: input.villageId,
           itemKey: input.item.trackerItemKey,
@@ -136,47 +192,21 @@ export function useManual(
           startedAtMs: Date.now(),
           sourceKind: preview.sourceKind,
           base: input.base,
-        });
-        if (!result.ok) {
-          setCommandError(formatIpcError(result.error));
-          if (result.error.code === 'conflict') {
-            onMutatedRef.current?.();
-          }
-          return result;
-        }
-        cursorRef.current =
-          cursorRef.current === null
-            ? cursorRef.current
-            : { sessionId: cursorRef.current.sessionId, generation: result.value.generation };
-        setCommandError(null);
-        return result;
-      });
+        }),
+      );
     },
     [bridge, runCommand],
   );
 
   const cancel = useCallback(
     async (input: { readonly villageId: string; readonly recordId: string }): Promise<boolean> =>
-      await runCommand(async (expectedGeneration) => {
-        const result = await bridge.manualCancel({
+      await runCommand(async (expectedGeneration) =>
+        bridge.manualCancel({
           expectedGeneration,
           villageId: input.villageId,
           recordId: input.recordId,
-        });
-        if (!result.ok) {
-          setCommandError(formatIpcError(result.error));
-          if (result.error.code === 'conflict') {
-            onMutatedRef.current?.();
-          }
-          return result;
-        }
-        cursorRef.current =
-          cursorRef.current === null
-            ? cursorRef.current
-            : { sessionId: cursorRef.current.sessionId, generation: result.value.generation };
-        setCommandError(null);
-        return result;
-      }),
+        }),
+      ),
     [bridge, runCommand],
   );
 
@@ -186,51 +216,25 @@ export function useManual(
       readonly recordId: string;
       readonly startedAtMs: number;
     }): Promise<boolean> =>
-      await runCommand(async (expectedGeneration) => {
-        const result = await bridge.manualAdjust({
+      await runCommand(async (expectedGeneration) =>
+        bridge.manualAdjust({
           expectedGeneration,
           villageId: input.villageId,
           recordId: input.recordId,
           startedAtMs: input.startedAtMs,
-        });
-        if (!result.ok) {
-          setCommandError(formatIpcError(result.error));
-          if (result.error.code === 'conflict') {
-            onMutatedRef.current?.();
-          }
-          return result;
-        }
-        cursorRef.current =
-          cursorRef.current === null
-            ? cursorRef.current
-            : { sessionId: cursorRef.current.sessionId, generation: result.value.generation };
-        setCommandError(null);
-        return result;
-      }),
+        }),
+      ),
     [bridge, runCommand],
   );
 
   const settle = useCallback(
     async (input: { readonly villageId?: string }): Promise<boolean> =>
-      await runCommand(async (expectedGeneration) => {
-        const result = await bridge.manualSettle({
+      await runCommand(async (expectedGeneration) =>
+        bridge.manualSettle({
           expectedGeneration,
           villageId: input.villageId ?? null,
-        });
-        if (!result.ok) {
-          setCommandError(formatIpcError(result.error));
-          if (result.error.code === 'conflict') {
-            onMutatedRef.current?.();
-          }
-          return result;
-        }
-        cursorRef.current =
-          cursorRef.current === null
-            ? cursorRef.current
-            : { sessionId: cursorRef.current.sessionId, generation: result.value.generation };
-        setCommandError(null);
-        return result;
-      }),
+        }),
+      ),
     [bridge, runCommand],
   );
 

@@ -26,6 +26,7 @@ export function LevelDetailSheet(props: {
   readonly canManualStart?: boolean;
   readonly manualBusy?: boolean;
   readonly onManualStart?: () => void;
+  readonly showManualNote?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -137,7 +138,9 @@ export function LevelDetailSheet(props: {
             </button>
           </div>
         ) : null}
-        <p className="muted manual-local-note">本地记录不会操作游戏。</p>
+        {props.showManualNote === true ? (
+          <p className="muted manual-local-note">本地记录不会操作游戏。</p>
+        ) : null}
         <button type="button" autoFocus onClick={props.onClose}>
           关闭
         </button>

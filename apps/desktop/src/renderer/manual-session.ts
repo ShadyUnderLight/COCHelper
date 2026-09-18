@@ -35,11 +35,16 @@ export function manualStatusLabel(status: ManualTrackerStatusDto): string {
   }
 }
 
+export function isManualQueryStale(view: ManualView): boolean {
+  return view.status === 'ready' && view.lastError !== null;
+}
+
 export function isManualCommandEnabled(
   payload: ManualStatePayload | null,
   canWrite: boolean,
+  queryStale = false,
 ): boolean {
-  return canWrite && payload !== null && payload.status === 'available';
+  return canWrite && !queryStale && payload !== null && payload.status === 'available';
 }
 
 export function manualStatusNotice(payload: ManualStatePayload): string | null {

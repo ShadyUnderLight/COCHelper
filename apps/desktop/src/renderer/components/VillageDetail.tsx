@@ -24,7 +24,7 @@ import {
   primaryLevelAssets,
   type VillageDetailState,
 } from '../village-detail-session';
-import { isManualCommandEnabled } from '../manual-session';
+import { isManualCommandEnabled, isManualQueryStale } from '../manual-session';
 import type { QuickImportApi } from '../use-quick-import';
 import type { ManualApi } from '../use-manual';
 import type { OfficialClanWarBundleApi } from '../use-official-clan-war-bundle';
@@ -159,15 +159,13 @@ export function VillageDetail({
           canWrite={canManual ?? false}
           busy={manual.busy}
           commandError={manual.commandError}
+          onRetry={() => void manual.refresh()}
           onSettle={() => void manual.settle({ villageId: payload.villageId })}
           onCancelRecord={(recordId) =>
             void manual.cancel({ villageId: payload.villageId, recordId })
           }
           onAdjustRecord={(recordId, startedAtMs) => {
-            const input = window.prompt(
-              '新的开始时间（毫秒时间戳）',
-              String(startedAtMs),
-            );
+            const input = window.prompt('新的开始时间（毫秒时间戳）', String(startedAtMs));
             if (input === null) {
               return;
             }
@@ -199,8 +197,13 @@ export function VillageDetail({
           returnFocusTo={openItem.opener}
           canManualStart={
             manual !== undefined &&
-            isManualCommandEnabled(manual.view.payload, canManual ?? false)
+            isManualCommandEnabled(
+              manual.view.payload,
+              canManual ?? false,
+              isManualQueryStale(manual.view),
+            )
           }
+          showManualNote={manual !== undefined}
           manualBusy={manual?.busy ?? false}
           onManualStart={
             manual === undefined

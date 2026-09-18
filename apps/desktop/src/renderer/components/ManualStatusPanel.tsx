@@ -1,8 +1,7 @@
-import type { ManualStatePayload } from '@coc-helper/contracts';
-
 import {
   formatManualRecordSummary,
   isManualCommandEnabled,
+  isManualQueryStale,
   manualStatusLabel,
   manualStatusNotice,
   type ManualView,
@@ -13,6 +12,7 @@ export function ManualStatusPanel(props: {
   readonly canWrite: boolean;
   readonly busy: boolean;
   readonly commandError: string | null;
+  readonly onRetry: () => void;
   readonly onSettle: () => void;
   readonly onCancelRecord: (recordId: string) => void;
   readonly onAdjustRecord: (recordId: string, startedAtMs: number) => void;
@@ -31,13 +31,17 @@ export function ManualStatusPanel(props: {
         <p className="error-text" role="alert">
           {view.lastError ?? '手动升级状态加载失败'}
         </p>
+        <button type="button" onClick={props.onRetry}>
+          重试
+        </button>
       </section>
     );
   }
 
   const payload = view.payload;
+  const queryStale = isManualQueryStale(view);
   const notice = manualStatusNotice(payload);
-  const writable = isManualCommandEnabled(payload, canWrite);
+  const writable = isManualCommandEnabled(payload, canWrite, queryStale);
 
   return (
     <section className="manual-panel" aria-label="手动升级">
@@ -47,12 +51,20 @@ export function ManualStatusPanel(props: {
         {payload.activeRecordCount > 0 ? ` · 进行中 ${payload.activeRecordCount}` : ''}
       </p>
       {notice !== null ? <p className="notice-text">{notice}</p> : null}
+      {view.lastError !== null ? (
+        <p className="notice-text" role="alert">
+          数据可能过期：{view.lastError}
+        </p>
+      ) : null}
       {commandError !== null ? (
         <p className="error-text" role="alert">
           {commandError}
         </p>
       ) : null}
       <div className="action-row">
+        <button type="button" disabled={busy} onClick={props.onRetry}>
+          刷新状态
+        </button>
         <button type="button" disabled={!writable || busy} onClick={props.onSettle}>
           结算到期升级
         </button>
@@ -82,13 +94,7 @@ export function ManualStatusPanel(props: {
           ))}
         </ul>
       ) : null}
-      <p className="muted manual-local-note">
-        本地手动升级仅在本应用内记录进度，不会操作游戏。
-      </p>
+      <p className="muted manual-local-note">本地手动升级仅在本应用内记录进度，不会操作游戏。</p>
     </section>
   );
-}
-
-export function manualPanelVisible(payload: ManualStatePayload | null): boolean {
-  return payload !== null;
 }

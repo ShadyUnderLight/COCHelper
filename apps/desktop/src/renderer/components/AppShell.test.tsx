@@ -904,8 +904,10 @@ describe('AppShell Official 接线（#277-E1）', () => {
     await waitFor(() => {
       expect(harness.bridge.clanState).toHaveBeenCalled();
     });
+    await waitFor(() => {
+      expect(screen.getByText('尚未获取部落对战日志')).toBeTruthy();
+    });
     expect(screen.queryByText('没有历史部落对战记录')).toBeNull();
-    expect(screen.getByText('尚未获取部落对战日志')).toBeTruthy();
   });
 
   it('pending refresh 时切走 Official 页会 cancel', async () => {

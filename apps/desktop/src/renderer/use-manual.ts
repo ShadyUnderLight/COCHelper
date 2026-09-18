@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AppSnapshotPayload,
@@ -42,16 +42,26 @@ export type ManualApi = {
   readonly settle: (input: { readonly villageId?: string }) => Promise<boolean>;
 };
 
-function toManualView(resource: ResourceState<ManualStatePayload>): ManualView {
+function toManualView(
+  resource: ResourceState<ManualStatePayload>,
+  queryStale: boolean,
+  staleMessage: string | null,
+): ManualView {
   const payload = resourceData(resource);
   const lastError = resourceLastError(resource);
   if (payload === null) {
     if (lastError !== null) {
-      return { status: 'error', payload: null, lastError };
+      return { status: 'error', payload: null, lastError, queryStale: false };
     }
     return IDLE_MANUAL_VIEW;
   }
-  return { status: 'ready', payload, lastError };
+  const effectiveStale = queryStale || lastError !== null;
+  return {
+    status: 'ready',
+    payload,
+    lastError: lastError ?? (queryStale ? staleMessage : null),
+    queryStale: effectiveStale,
+  };
 }
 
 export function useManual(
@@ -62,6 +72,8 @@ export function useManual(
 ): ManualApi {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [queryStale, setQueryStale] = useState(false);
+  const [staleMessage, setStaleMessage] = useState<string | null>(null);
   const inFlightRef = useRef(false);
   const cursorRef = useRef<SessionCursor | null>(null);
   const epochRef = useRef(0);
@@ -79,10 +91,8 @@ export function useManual(
     }
     const cursor = cursorRef.current;
     if (cursor !== null && snapshot.sessionId !== cursor.sessionId) {
-      cursorRef.current = null;
       epochRef.current += 1;
       setCommandError(null);
-      return;
     }
     advanceSessionCursor(cursorRef, snapshot.sessionId, snapshot.generation);
   }, [snapshot]);
@@ -104,6 +114,36 @@ export function useManual(
     fetchErrorMessage: '手动升级状态查询失败',
   });
 
+  useEffect(() => {
+    switch (query.state.kind) {
+      case 'failedWithLastGood':
+        setQueryStale(true);
+        setStaleMessage(query.state.error.message);
+        break;
+      case 'ready':
+        setQueryStale(false);
+        setStaleMessage(null);
+        break;
+      case 'failed':
+        setQueryStale(false);
+        setStaleMessage(null);
+        break;
+      case 'refreshing':
+      case 'loading':
+      case 'idle':
+        break;
+      default: {
+        const exhaustive: never = query.state;
+        throw new Error(`未知资源态：${String(exhaustive)}`);
+      }
+    }
+  }, [query.state]);
+
+  const view = useMemo(
+    () => toManualView(query.state, queryStale, staleMessage),
+    [query.state, queryStale, staleMessage],
+  );
+
   const applyCommandResult = useCallback(
     (result: Result<{ readonly generation: number }>): Result<{ readonly generation: number }> => {
       if (!result.ok) {
@@ -114,10 +154,7 @@ export function useManual(
         return result;
       }
       if (cursorRef.current !== null) {
-        cursorRef.current = {
-          sessionId: cursorRef.current.sessionId,
-          generation: result.value.generation,
-        };
+        advanceSessionCursor(cursorRef, cursorRef.current.sessionId, result.value.generation);
       }
       setCommandError(null);
       return result;
@@ -239,7 +276,7 @@ export function useManual(
   );
 
   return {
-    view: toManualView(query.state),
+    view,
     refresh: query.refresh,
     commandError,
     busy,

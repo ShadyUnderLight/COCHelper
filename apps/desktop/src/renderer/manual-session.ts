@@ -8,12 +8,15 @@ export type ManualView = {
   readonly status: 'idle' | 'loading' | 'ready' | 'error';
   readonly payload: ManualStatePayload | null;
   readonly lastError: string | null;
+  /** 查询曾失败且尚未成功刷新；refreshing 期间也保持 true。 */
+  readonly queryStale: boolean;
 };
 
 export const IDLE_MANUAL_VIEW: ManualView = {
   status: 'idle',
   payload: null,
   lastError: null,
+  queryStale: false,
 };
 
 export function manualStatusLabel(status: ManualTrackerStatusDto): string {
@@ -36,7 +39,7 @@ export function manualStatusLabel(status: ManualTrackerStatusDto): string {
 }
 
 export function isManualQueryStale(view: ManualView): boolean {
-  return view.status === 'ready' && view.lastError !== null;
+  return view.queryStale;
 }
 
 export function isManualCommandEnabled(

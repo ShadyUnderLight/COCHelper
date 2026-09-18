@@ -35,12 +35,13 @@ describe('manual-session（#277-F）', () => {
     expect(isManualCommandEnabled({ ...availablePayload, status: 'empty' }, true)).toBe(false);
   });
 
-  it('isManualQueryStale 识别 last-good + lastError', () => {
+  it('isManualQueryStale 识别 queryStale 标记', () => {
     expect(
       isManualQueryStale({
         status: 'ready',
         payload: availablePayload,
         lastError: '刷新失败',
+        queryStale: true,
       }),
     ).toBe(true);
     expect(
@@ -48,6 +49,7 @@ describe('manual-session（#277-F）', () => {
         status: 'ready',
         payload: availablePayload,
         lastError: null,
+        queryStale: false,
       }),
     ).toBe(false);
   });

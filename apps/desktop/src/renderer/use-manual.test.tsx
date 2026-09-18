@@ -140,12 +140,13 @@ describe('manual-command-cursor', () => {
 });
 
 describe('useManual（#277-F）', () => {
-  it('bridge reject 时设置 commandError 且不抛出', async () => {
+  it('bridge reject 时设置 commandError、标记 stale 并触发会话刷新', async () => {
     const harness = createBridge();
     harness.bridge.manualStart = vi.fn(async () => {
       throw new Error('IPC 通道异常');
     });
-    const { result } = renderHook(() => useManual(harness.bridge, snapshot(), 'v1'));
+    const onMutated = vi.fn();
+    const { result } = renderHook(() => useManual(harness.bridge, snapshot(), 'v1', { onMutated }));
     await waitReady(harness);
     await waitFor(() => expect(result.current.view.status).toBe('ready'));
 
@@ -159,6 +160,10 @@ describe('useManual（#277-F）', () => {
     });
     expect(settled).toBe(false);
     expect(result.current.commandError).toBe('IPC 通道异常');
+    expect(onMutated).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(harness.bridge.manualState).toHaveBeenCalledTimes(2));
+    expect(isManualQueryStale(result.current.view)).toBe(true);
+    expect(result.current.view.lastError).toContain('命令结果未知');
   });
 
   it('mutation 成功后连续命令使用新 generation', async () => {

@@ -127,13 +127,15 @@ async function triggerBridgeReject(
   harness.bridge.manualStart = vi.fn(async () => {
     throw new Error('IPC 通道异常');
   });
+  let settled = true;
   await act(async () => {
-    await result.current.startRow({
+    settled = await result.current.startRow({
       villageId: 'v1',
       item: startableItem,
       base: 'home',
     });
   });
+  expect(settled).toBe(false);
   await waitFor(() => expect(harness.bridge.manualState).toHaveBeenCalledTimes(2));
 }
 

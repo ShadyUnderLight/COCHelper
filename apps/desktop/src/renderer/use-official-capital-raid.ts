@@ -158,7 +158,14 @@ export function useOfficialCapitalRaid(
         commandErrorFor(refreshState.commandError, subjectKey) ??
         commandErrorFor(loadMoreState.commandError, subjectKey),
     };
-  }, [affiliation, clanTag, query.state, refreshState.commandError, loadMoreState.commandError, subjectKey]);
+  }, [
+    affiliation,
+    clanTag,
+    query.state,
+    refreshState.commandError,
+    loadMoreState.commandError,
+    subjectKey,
+  ]);
 
   const refreshing = refreshState.refreshing && refreshOpRef.current?.subjectKey === subjectKey;
   const loadingMore = loadMoreState.refreshing && loadMoreOpRef.current?.subjectKey === subjectKey;

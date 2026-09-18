@@ -720,15 +720,11 @@ function capitalRaidLogRowsFromEntries<T extends CapitalRaidAttackLogEntryWire>(
   return { rows, entryCount, truncated };
 }
 
-export function capitalRaidAttackLogRows(
-  season: CapitalRaidSeasonWire,
-): CapitalRaidLogRowsResult {
+export function capitalRaidAttackLogRows(season: CapitalRaidSeasonWire): CapitalRaidLogRowsResult {
   return capitalRaidLogRowsFromEntries(season.attackLog, capitalRaidAttackLogHeader);
 }
 
-export function capitalRaidDefenseLogRows(
-  season: CapitalRaidSeasonWire,
-): CapitalRaidLogRowsResult {
+export function capitalRaidDefenseLogRows(season: CapitalRaidSeasonWire): CapitalRaidLogRowsResult {
   return capitalRaidLogRowsFromEntries(season.defenseLog, capitalRaidDefenseLogHeader);
 }
 

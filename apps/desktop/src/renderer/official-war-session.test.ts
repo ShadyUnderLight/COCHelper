@@ -124,9 +124,14 @@ describe('official-war-session（#277-E2）', () => {
       ]),
     ).toBe('3 次进攻 · 已知 4★ · 1 次星数未知 · 摧毁 100%/50%/80%');
     expect(
-      formatMemberAttackSummary([{ destructionPercentage: 100 }, { destructionPercentage: undefined }]),
+      formatMemberAttackSummary([
+        { destructionPercentage: 100 },
+        { destructionPercentage: undefined },
+      ]),
     ).toBe('2 次进攻 · 星数未知 · 摧毁 100%/—');
-    expect(formatMemberAttackSummary([{ stars: 0 }, { stars: 0 }])).toBe('2 次进攻 · 0★ · 摧毁 —/—');
+    expect(formatMemberAttackSummary([{ stars: 0 }, { stars: 0 }])).toBe(
+      '2 次进攻 · 0★ · 摧毁 —/—',
+    );
     expect(formatMemberAttackSummary([])).toBe('0 次进攻');
     expect(formatMemberAttackSummary(undefined)).toBeNull();
     expect(

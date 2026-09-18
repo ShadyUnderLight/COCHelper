@@ -1,51 +1,16 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolvePackagedBinary } from './electron-package.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = path.join(root, 'apps/desktop/out');
-
-function findBinary(dir) {
-  if (!existsSync(dir)) {
-    return null;
-  }
-  const entries = readdirSync(dir);
-  for (const entry of entries) {
-    const full = path.join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      if (entry.endsWith('.app')) {
-        const binary = path.join(full, 'Contents/MacOS/COCHelper');
-        if (existsSync(binary)) {
-          return binary;
-        }
-      }
-      const nested = findBinary(full);
-      if (nested !== null) {
-        return nested;
-      }
-    } else if (entry === 'COCHelper' && (st.mode & 0o111) !== 0) {
-      return full;
-    }
-  }
-  return null;
-}
-
-const binary = findBinary(outDir);
-if (binary === null) {
-  console.error('未找到 packaged app。请先运行 pnpm package。');
-  process.exit(1);
-}
-
-const posix = binary.split(path.sep).join('/');
-if (!posix.includes('/out/')) {
-  console.error(`smoke 必须启动 packaged out/ 产物，实际: ${binary}`);
-  process.exit(1);
-}
-if (process.platform === 'darwin' && !posix.includes('.app/Contents/MacOS/')) {
-  console.error(`macOS smoke 必须启动 .app 内二进制，实际: ${binary}`);
+let binary;
+try {
+  binary = resolvePackagedBinary(root);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
 

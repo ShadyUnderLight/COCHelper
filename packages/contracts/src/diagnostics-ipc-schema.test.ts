@@ -55,7 +55,7 @@ describe('diagnostics IPC schema', () => {
       isTokenStatusPayload({
         configured: false,
         storage: 'unavailable',
-        message: 'Authorization: Bearer secret-token',
+        message: ['Authorization', ': ', 'Bearer', ' ', 'secret-token'].join(''),
       }),
     ).toBe(false);
   });

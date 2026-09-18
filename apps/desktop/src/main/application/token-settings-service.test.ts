@@ -18,7 +18,7 @@ function safeStorage(
     isEncryptionAvailable: () => options.available ?? true,
     encryptString: (value) => Buffer.from(`encrypted:${value}`),
     decryptString: (value) => {
-      if (options.failDecrypt) {
+      if (options.failDecrypt && value.toString() === 'encrypted:secret-token') {
         throw new Error('decrypt failed');
       }
       return value.toString().slice('encrypted:'.length);
@@ -29,9 +29,8 @@ function safeStorage(
 
 describe('TokenSettingsService', () => {
   it('返回配置状态，保存后不回显 token，清除后变为未配置', () => {
-    const service = new TokenSettingsService(
-      new SafeStorageTokenStore(safeStorage(), new InMemoryEncryptedBlobStore()),
-    );
+    const store = new SafeStorageTokenStore(safeStorage(), new InMemoryEncryptedBlobStore());
+    const service = new TokenSettingsService(store);
 
     expect(service.status()).toEqual({
       configured: false,
@@ -43,12 +42,22 @@ describe('TokenSettingsService', () => {
       storage: 'available',
       message: null,
     });
+    expect(store.readToken()).toBe('secret-token');
     expect(JSON.stringify(service.status())).not.toContain('secret-token');
     expect(service.clear()).toEqual({
       configured: false,
       storage: 'available',
       message: null,
     });
+  });
+
+  it('保存 token 前清理首尾空白和换行', () => {
+    const store = new SafeStorageTokenStore(safeStorage(), new InMemoryEncryptedBlobStore());
+    const service = new TokenSettingsService(store);
+
+    service.save(' \nsecret-token\t ');
+
+    expect(store.readToken()).toBe('secret-token');
   });
 
   it('安全存储不可用或解密失败时 fail-closed', () => {
@@ -77,6 +86,16 @@ describe('TokenSettingsService', () => {
       message: '已保存的凭据无法解密。',
     });
     expect(JSON.stringify(decryptFailed.status())).not.toContain('secret-token');
+    expect(decryptFailed.save('replacement-token')).toEqual({
+      configured: true,
+      storage: 'available',
+      message: null,
+    });
+    expect(decryptFailed.clear()).toEqual({
+      configured: false,
+      storage: 'available',
+      message: null,
+    });
   });
 
   it('拒绝空 token', () => {

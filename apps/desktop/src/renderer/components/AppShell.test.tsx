@@ -191,6 +191,51 @@ describe('AppShell', () => {
     expect(screen.queryByLabelText('升级总览')).toBeNull();
   });
 
+  it('Token 变更成功后刷新 Diagnostics', async () => {
+    const refreshDiagnostics = vi.fn(async () => undefined);
+    const tokenBridge = {
+      tokenStatus: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: false, storage: 'available' as const, message: null },
+      })),
+      tokenSave: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: true, storage: 'available' as const, message: null },
+      })),
+      tokenClear: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: false, storage: 'available' as const, message: null },
+      })),
+    };
+
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'ready',
+          snapshot: snapshot(),
+        })}
+        overview={overviewApi()}
+        detail={detailApi()}
+        diagnostics={{
+          state: { kind: 'loading', data: null },
+          refresh: refreshDiagnostics,
+        }}
+        tokenBridge={tokenBridge}
+        route={{ kind: 'info', section: 'tokenSettings' }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('当前未配置 Token。')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('CoC API Token'), {
+      target: { value: 'secret-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存 Token' }));
+
+    await waitFor(() => expect(tokenBridge.tokenSave).toHaveBeenCalled());
+    expect(refreshDiagnostics).toHaveBeenCalledTimes(1);
+  });
+
   it('recovery 状态仍保留 Info 入口', () => {
     render(
       <AppShell

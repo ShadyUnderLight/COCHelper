@@ -6,15 +6,19 @@ import { useTokenSettings } from '../use-token-settings';
 
 export function TokenSettingsPanel({
   bridge,
+  onTokenChanged,
 }: {
   readonly bridge: Pick<DesktopBridge, 'tokenStatus' | 'tokenSave' | 'tokenClear'>;
+  readonly onTokenChanged?: () => void;
 }) {
   const api = useTokenSettings(bridge);
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
-  const storageAvailable = api.state.token?.storage === 'available';
+  const storageWritable =
+    api.state.token?.storage === 'available' || api.state.token?.storage === 'decryptFailed';
   const saving = api.state.status === 'saving';
   const configured = api.state.token?.configured === true;
+  const canClear = configured || api.state.token?.storage === 'decryptFailed';
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -25,12 +29,15 @@ export function TokenSettingsPanel({
     setInputError(null);
     if (await api.save(input)) {
       setInput('');
+      onTokenChanged?.();
     }
   };
 
   const clear = async () => {
     setInputError(null);
-    await api.clear();
+    if (await api.clear()) {
+      onTokenChanged?.();
+    }
   };
 
   return (
@@ -49,7 +56,12 @@ export function TokenSettingsPanel({
       {api.state.status === 'configured' ? (
         <p className="notice-text">Token 已配置，输入新 Token 可覆盖当前配置。</p>
       ) : null}
-      {api.state.status === 'unavailable' ? (
+      {api.state.status === 'unavailable' && api.state.token.storage === 'decryptFailed' ? (
+        <p className="error-text" role="alert">
+          已保存的 Token 无法解密，可以覆盖保存或清除损坏的凭据。
+        </p>
+      ) : null}
+      {api.state.status === 'unavailable' && api.state.token.storage === 'unavailable' ? (
         <p className="error-text" role="alert">
           安全存储不可用{api.state.error === null ? '。' : `：${api.state.error}`}
         </p>
@@ -57,6 +69,11 @@ export function TokenSettingsPanel({
       {api.state.status === 'saveFailed' ? (
         <p className="error-text" role="alert">
           Token 保存失败：{api.state.error}
+        </p>
+      ) : null}
+      {api.state.status === 'clearFailed' ? (
+        <p className="error-text" role="alert">
+          Token 清除失败：{api.state.error}
         </p>
       ) : null}
 
@@ -68,7 +85,7 @@ export function TokenSettingsPanel({
           value={input}
           autoComplete="off"
           spellCheck={false}
-          disabled={!storageAvailable || saving}
+          disabled={!storageWritable || saving}
           onChange={(event) => {
             setInput(event.target.value);
             setInputError(null);
@@ -80,13 +97,13 @@ export function TokenSettingsPanel({
           </p>
         ) : null}
         <div className="action-row">
-          <button type="submit" disabled={!storageAvailable || saving}>
+          <button type="submit" disabled={!storageWritable || saving}>
             {saving ? '保存中…' : configured ? '更新 Token' : '保存 Token'}
           </button>
           <button
             type="button"
             className="danger"
-            disabled={!configured || saving}
+            disabled={!canClear || saving}
             onClick={() => void clear()}
           >
             清除 Token

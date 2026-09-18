@@ -27,7 +27,8 @@ export class TokenSettingsService {
   }
 
   save(token: string): TokenStatusPayload {
-    if (token.trim().length === 0) {
+    const normalizedToken = token.trim();
+    if (normalizedToken.length === 0) {
       throw new AppServiceError('validation', 'Token 不能为空。', 'token.empty');
     }
     if (this.store === null) {
@@ -39,7 +40,7 @@ export class TokenSettingsService {
     }
 
     try {
-      this.store.saveToken(token);
+      this.store.saveToken(normalizedToken);
     } catch (error: unknown) {
       const status = statusFromStoreError(error);
       throw new AppServiceError(

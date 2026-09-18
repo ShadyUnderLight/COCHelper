@@ -243,6 +243,7 @@ export function AppShell({
                 route={activeRoute}
                 diagnostics={diagnostics}
                 tokenBridge={tokenBridge}
+                onTokenChanged={() => void diagnostics?.refresh()}
                 onNavigate={(section) => applyRoute({ kind: 'info', section })}
               />
             ) : null}
@@ -428,6 +429,7 @@ function InfoPanel(props: {
   readonly route: AppRoute;
   readonly diagnostics?: DiagnosticsApi;
   readonly tokenBridge?: BridgeTokenSettingsClient;
+  readonly onTokenChanged: () => void;
   readonly onNavigate: (section: 'diagnostics' | 'tokenSettings') => void;
 }) {
   const section = props.route.kind === 'info' ? props.route.section : 'diagnostics';
@@ -471,7 +473,7 @@ function InfoPanel(props: {
           </p>
         </section>
       ) : (
-        <TokenSettingsPanel bridge={props.tokenBridge} />
+        <TokenSettingsPanel bridge={props.tokenBridge} onTokenChanged={props.onTokenChanged} />
       )}
     </div>
   );

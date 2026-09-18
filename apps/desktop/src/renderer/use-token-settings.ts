@@ -5,6 +5,7 @@ import type { DesktopBridge } from '@coc-helper/contracts';
 import { formatIpcError } from './app-session';
 import {
   applyTokenCommandSuccess,
+  applyTokenClearFailure,
   applyTokenSaveFailure,
   applyTokenStatus,
   beginTokenSave,
@@ -64,7 +65,7 @@ export function useTokenSettings(bridge: BridgeTokenSettingsClient): TokenSettin
   const clear = useCallback(async (): Promise<boolean> => {
     const result = await bridge.tokenClear({});
     if (!result.ok) {
-      setState((previous) => applyTokenSaveFailure(previous, formatIpcError(result.error)));
+      setState((previous) => applyTokenClearFailure(previous, formatIpcError(result.error)));
       return false;
     }
     setState(applyTokenCommandSuccess(result.value));

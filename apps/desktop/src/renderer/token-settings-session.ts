@@ -14,6 +14,11 @@ export type TokenSettingsState =
       readonly status: 'saveFailed';
       readonly token: TokenStatusPayload;
       readonly error: string;
+    }
+  | {
+      readonly status: 'clearFailed';
+      readonly token: TokenStatusPayload;
+      readonly error: string;
     };
 
 export const INITIAL_TOKEN_SETTINGS_STATE: TokenSettingsState = {
@@ -57,6 +62,20 @@ export function applyTokenSaveFailure(
   }
   return {
     status: 'saveFailed',
+    token: state.token,
+    error: message,
+  };
+}
+
+export function applyTokenClearFailure(
+  state: TokenSettingsState,
+  message: string,
+): TokenSettingsState {
+  if (state.token === null) {
+    return state;
+  }
+  return {
+    status: 'clearFailed',
     token: state.token,
     error: message,
   };

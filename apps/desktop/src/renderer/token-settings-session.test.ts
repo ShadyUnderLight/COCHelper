@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyTokenClearFailure,
   applyTokenSaveFailure,
   applyTokenStatus,
   beginTokenSave,
@@ -42,5 +43,14 @@ describe('token-settings-session', () => {
     expect(state.token?.configured).toBe(true);
     expect(state.error).toBe('保存失败');
     expect(INITIAL_TOKEN_SETTINGS_STATE.status).toBe('loading');
+  });
+
+  it('清除失败使用独立状态', () => {
+    const state = applyTokenClearFailure(
+      applyTokenStatus({ ...available, configured: true }),
+      '清除失败',
+    );
+    expect(state.status).toBe('clearFailed');
+    expect(state.error).toBe('清除失败');
   });
 });

@@ -132,6 +132,21 @@ describe('effectiveItemView', () => {
     expect(view.durationState).toBeNull();
   });
 
+  it('manualCompleted + globalMaxed：不暴露旧升级时长', () => {
+    const view = effectiveItemView(
+      item({
+        effectiveState: sidecar('manualCompleted', {
+          effectiveCompletedLevel: 10,
+          catalogNextUpgrade: { kind: 'globalMaxed' },
+          catalogDurationState: { kind: 'timed', seconds: 3600n },
+        }),
+      }),
+    );
+    expect(view.nextUpgrade).toEqual({ kind: 'globalMaxed' });
+    expect(view.targetLevel).toBeNull();
+    expect(view.durationState).toBeNull();
+  });
+
   it('conflict + raw available/timed：不暴露 raw 升级与时长', () => {
     const view = effectiveItemView(
       item({ effectiveState: sidecar('conflict', { diagnostic: '冲突' }) }),
@@ -328,6 +343,11 @@ describe('effectiveDetailMissingReason', () => {
     expect(effectiveDetailMissingReason(item({ status: 'unknown' }))).toBe(
       '该项目暂无逐级升级数据。',
     );
+  });
+  it('raw unavailable 透出 missingReason', () => {
+    expect(
+      effectiveDetailMissingReason(item({ status: 'unavailable', missingReason: '目录不可用' })),
+    ).toBe('目录不可用');
   });
   it('升级中 + unknown dataID：显示目录未收录原因', () => {
     expect(

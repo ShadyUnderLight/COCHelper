@@ -438,6 +438,7 @@ function makeEffectiveState(input: {
   let catalogDuration: CatalogDurationState | null;
   let catalogCosts: CatalogLevel['upgradeCosts'] | null;
   if (
+    effectiveCatalogProjection?.nextUpgrade.kind === 'globalMaxed' ||
     status === 'unknown' ||
     status === 'conflict' ||
     status === 'needsReimport' ||

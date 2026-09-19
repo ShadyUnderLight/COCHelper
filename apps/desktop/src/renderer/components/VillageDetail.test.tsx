@@ -390,6 +390,46 @@ describe('VillageDetail', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('legacy 行使用 effective 等级和权威状态，不并列展示 raw 状态', () => {
+    const base = recordFixture().item;
+    const item = {
+      ...base,
+      currentLevel: 5,
+      nextLevel: 6,
+      status: 'complete' as const,
+      effectiveStatus: 'manualCompleted' as const,
+      effectiveCurrentLevel: 6,
+      effectiveTargetLevel: 7,
+      effectiveNextUpgrade: { kind: 'available' as const, level: 7, durationSeconds: 7200 },
+      effectiveNextLevelDurationState: { kind: 'timed' as const, seconds: 7200 },
+      effectiveIsMaxed: false,
+    };
+    render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [item],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: item.id,
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    const row = screen.getByRole('button', { name: /加农炮/ });
+    expect(row.textContent).toContain('6 → 7 级');
+    expect(row.textContent).toContain('已记录');
+    expect(row.textContent).not.toContain('5 → 6 级');
+    expect(row.textContent).not.toContain('已完成');
+  });
+
   it('缺失 legacy 条目显示未知条目且无详情按钮（不崩溃）', () => {
     render(
       <VillageDetail

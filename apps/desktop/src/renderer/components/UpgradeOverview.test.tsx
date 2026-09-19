@@ -84,6 +84,31 @@ describe('UpgradeOverview', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('列表使用 effective 等级和权威状态，不并列展示 raw 状态', () => {
+    const base = recordFixture();
+    const rec = recordFixture({
+      id: 'r-effective',
+      item: {
+        ...base.item,
+        currentLevel: 5,
+        nextLevel: 6,
+        status: 'complete',
+        effectiveStatus: 'manualCompleted',
+        effectiveCurrentLevel: 6,
+        effectiveTargetLevel: 7,
+        effectiveNextUpgrade: { kind: 'available', level: 7, durationSeconds: 7200 },
+        effectiveNextLevelDurationState: { kind: 'timed', seconds: 7200 },
+        effectiveIsMaxed: false,
+      },
+    });
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />);
+    const row = screen.getByRole('button', { name: /加农炮/ });
+    expect(row.textContent).toContain('6 → 7 级');
+    expect(row.textContent).toContain('已记录');
+    expect(row.textContent).not.toContain('5 → 6 级');
+    expect(row.textContent).not.toContain('已完成');
+  });
+
   it('catalogIsUsable=false 显示不可用横幅且仍列出记录', () => {
     const rec = recordFixture({ id: 'r1' });
     render(

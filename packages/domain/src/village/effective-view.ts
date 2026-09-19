@@ -79,7 +79,8 @@ export function effectiveItemView(item: VillageItemState): EffectiveItemView {
         currentLevel,
         targetLevel: targetLevelFromCatalogUpgrade(state.catalogNextUpgrade),
         nextUpgrade: state.catalogNextUpgrade ?? { kind: 'unknown' },
-        durationState: state.catalogDurationState,
+        durationState:
+          state.catalogNextUpgrade?.kind === 'globalMaxed' ? null : state.catalogDurationState,
         diagnostic: state.diagnostic,
         isMaxed: isEffectivelyMaxed(item),
       };
@@ -140,7 +141,7 @@ function targetLevelFromCatalogUpgrade(upgrade: VillageNextUpgrade | null): numb
 
 /**
  * 详情缺失说明（复刻 Swift `missingNote` 顺序：isNested → deprecated →
- * effective conflict/needsReimport/unknown → unverified → unknown →
+ * effective conflict/needsReimport/unknown → unavailable → unverified → unknown →
  * upgrading + missingReason）。升级中 + missingReason 分支防止升级里的
  * 目录异常被正常详情 UI 吞掉；调用方仍按 effective 视图展示等级/升级/
  * 时长（fail-closed 状态下 domain 已置空目标与时长）。
@@ -173,6 +174,9 @@ export function effectiveDetailMissingReason(item: VillageItemState): string | n
   }
   if (item.status === 'unknown') {
     return item.missingReason ?? '该项目暂无逐级升级数据。';
+  }
+  if (item.status === 'unavailable') {
+    return item.missingReason ?? state?.diagnostic ?? null;
   }
   if (isEffectivelyUpgradingNow(item, state) && item.missingReason !== null) {
     return item.missingReason;

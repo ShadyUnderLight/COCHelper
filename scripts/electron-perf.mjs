@@ -918,40 +918,6 @@ async function getSnapshot(page) {
   return result.value;
 }
 
-async function installImportCommitProbe(page) {
-  return page.evaluate(() => {
-    const existing = globalThis.__cocHelperPerfCommitProbe;
-    if (existing?.installed === true) {
-      return existing;
-    }
-    const probe = { installed: false, last: null, error: null };
-    const bridge = globalThis.window.cocHelper;
-    if (typeof bridge.commitImport !== 'function') {
-      probe.error = 'bridge.commitImport 不可用';
-      globalThis.__cocHelperPerfCommitProbe = probe;
-      return probe;
-    }
-    const original = bridge.commitImport.bind(bridge);
-    try {
-      bridge.commitImport = async (request) => {
-        const startedAt = globalThis.performance.now();
-        const result = await original(request);
-        probe.last = {
-          request,
-          result,
-          durationMs: globalThis.performance.now() - startedAt,
-        };
-        return result;
-      };
-      probe.installed = true;
-    } catch (error) {
-      probe.error = error instanceof Error ? error.message : String(error);
-    }
-    globalThis.__cocHelperPerfCommitProbe = probe;
-    return probe;
-  });
-}
-
 async function waitForCommittedImport(page, previousGeneration, expectedTag) {
   const deadline = Date.now() + importTimeoutMs;
   let lastSnapshot = null;
@@ -978,7 +944,6 @@ async function waitForCommittedImport(page, previousGeneration, expectedTag) {
 }
 
 async function importFixture(page, text, expectedTag, context, label) {
-  context.importCommitProbe = await installImportCommitProbe(page);
   context.phase = `${label}:open-import`;
   await page.getByRole('button', { name: '导入', exact: true }).click();
   const input = page.locator('#account-json');
@@ -1014,14 +979,21 @@ async function importFixture(page, text, expectedTag, context, label) {
   if (!(await confirmButton.isEnabled())) {
     throw new Error(`确认导入按钮不可用：${previewText}`);
   }
-  await page.evaluate(
-    () =>
-      new Promise((resolve) => {
-        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve));
-      }),
+  context.phase = `${label}:bridge-commit`;
+  const commitResult = await page.evaluate(
+    async (expectedGeneration) =>
+      await globalThis.window.cocHelper.commitImport({ expectedGeneration }),
+    preparedSnapshot.generation,
   );
-  await confirmButton.click();
-  await page.waitForTimeout(100);
+  context.lastImport = {
+    ...context.lastImport,
+    commitResult: commitResult.ok
+      ? { ok: true, value: commitResult.value }
+      : { ok: false, error: commitResult.error },
+  };
+  if (!commitResult.ok) {
+    throw new Error(`导入提交失败：${commitResult.error.message}`);
+  }
   context.phase = `${label}:wait-commit-state`;
   await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag);
   context.lastImport = {
@@ -1251,7 +1223,6 @@ async function captureFailureDiagnostics(context, session, error) {
     renderer: null,
     process: null,
     import: context?.lastImport ?? null,
-    importCommitProbe: context?.importCommitProbe ?? null,
     appOutput: session?.output ?? null,
     session: session
       ? {
@@ -1322,7 +1293,6 @@ async function captureFailureDiagnostics(context, session, error) {
             (element) => element.textContent?.trim() ?? '',
           ),
           bodyText: globalThis.document.body.innerText ?? '',
-          importCommitProbe: globalThis.__cocHelperPerfCommitProbe ?? null,
           import: panelEvidence('section[aria-label="账号导入"]'),
           overview: panelEvidence('section[aria-label="升级总览"]'),
           detail: panelEvidence('section[aria-label="村庄详情"]'),
@@ -1335,7 +1305,6 @@ async function captureFailureDiagnostics(context, session, error) {
           appShell: pageEvidence.appShell,
           alerts: pageEvidence.alerts,
           bodyText: appendTail(pageEvidence.bodyText ?? '', '', failureOutputMaxChars),
-          importCommitProbe: pageEvidence.importCommitProbe,
           import: pageEvidence.import,
           overview: pageEvidence.overview,
           detail: pageEvidence.detail,

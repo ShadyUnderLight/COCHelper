@@ -1021,6 +1021,7 @@ async function importFixture(page, text, expectedTag, context, label) {
       }),
   );
   await confirmButton.click();
+  await page.waitForTimeout(100);
   context.phase = `${label}:wait-commit-state`;
   await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag);
   context.lastImport = {

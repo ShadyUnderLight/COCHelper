@@ -918,6 +918,31 @@ async function getSnapshot(page) {
   return result.value;
 }
 
+async function waitForCommittedImport(page, previousGeneration, expectedTag) {
+  const deadline = Date.now() + importTimeoutMs;
+  let lastSnapshot = null;
+  while (Date.now() < deadline) {
+    lastSnapshot = await getSnapshot(page);
+    const committed =
+      lastSnapshot.generation > previousGeneration &&
+      lastSnapshot.pendingImport === null &&
+      lastSnapshot.villages.some(
+        (village) => village.tag === expectedTag && village.hasImportedData === true,
+      );
+    if (committed) {
+      return lastSnapshot;
+    }
+    await sleep(Math.min(250, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(
+    `导入提交未完成：${JSON.stringify({
+      previousGeneration,
+      expectedTag,
+      snapshot: lastSnapshot,
+    })}`,
+  );
+}
+
 async function importFixture(page, text, expectedTag, context, label) {
   context.phase = `${label}:open-import`;
   await page.getByRole('button', { name: '导入', exact: true }).click();
@@ -956,20 +981,7 @@ async function importFixture(page, text, expectedTag, context, label) {
   }
   await confirmButton.click();
   context.phase = `${label}:wait-commit-state`;
-  await page.waitForFunction(
-    async ({ previousGeneration, expectedTag: tag }) => {
-      const result = await globalThis.window.cocHelper.snapshot({});
-      if (!result.ok || result.value.generation <= previousGeneration) return false;
-      if (result.value.pendingImport !== null && result.value.pendingImport !== undefined) {
-        return false;
-      }
-      return result.value.villages.some(
-        (village) => village.tag === tag && village.hasImportedData === true,
-      );
-    },
-    { previousGeneration: preparedSnapshot.generation, expectedTag },
-    { timeout: importTimeoutMs },
-  );
+  await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag);
   context.lastImport = {
     ...context.lastImport,
     commitStateObserved: true,

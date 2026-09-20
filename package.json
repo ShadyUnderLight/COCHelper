@@ -22,6 +22,7 @@
     "check:secrets": "node scripts/check-secrets.mjs",
     "smoke": "node scripts/electron-smoke.mjs",
     "test:e2e:packaged": "node scripts/electron-e2e.mjs",
+    "perf:release": "node scripts/electron-perf.mjs",
     "check:oracle-isolation": "node scripts/check-oracle-isolation.mjs",
     "baseline:e1-02": "node scripts/e1-02-baseline.mjs"
   },

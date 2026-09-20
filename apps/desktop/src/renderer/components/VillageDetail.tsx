@@ -82,14 +82,14 @@ export function VillageDetail({
   if (payload === null || lookups === null) {
     if (status === 'idle') {
       return (
-        <section className="detail-panel" aria-label="村庄详情">
+        <section className="detail-panel" aria-label="村庄详情" data-perf-state="idle">
           <p className="muted">先选择村庄查看详情</p>
         </section>
       );
     }
     if (status === 'error') {
       return (
-        <section className="detail-panel" aria-label="村庄详情">
+        <section className="detail-panel" aria-label="村庄详情" data-perf-state="error">
           <p className="error-text" role="alert">
             {lastError ?? '村庄详情加载失败'}
           </p>
@@ -100,7 +100,7 @@ export function VillageDetail({
       );
     }
     return (
-      <section className="detail-panel" aria-label="村庄详情">
+      <section className="detail-panel" aria-label="村庄详情" data-perf-state="loading">
         <p className="muted">正在加载村庄详情…</p>
       </section>
     );
@@ -119,7 +119,7 @@ export function VillageDetail({
   };
 
   return (
-    <section className="detail-panel" aria-label="村庄详情">
+    <section className="detail-panel" aria-label="村庄详情" data-perf-state="ready">
       <DetailHeader
         villageName={payload.villageName}
         villageTag={payload.villageTag}

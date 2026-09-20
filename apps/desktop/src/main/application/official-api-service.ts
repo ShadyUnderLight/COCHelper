@@ -62,6 +62,7 @@ import {
   type ClanWarAPIState,
   type ClanWarLogAPIState,
   type Clock,
+  type CoAPIConfig,
   type CoAPITokenProvider,
   type OfficialAPIState,
   type OfficialCapitalRaidPage,
@@ -94,6 +95,46 @@ export type OfficialApiServiceOptions = {
   readonly tokenProvider: CoAPITokenProvider;
   readonly client?: CoAPIClient;
 };
+
+function configuredCoAPIConfig(): CoAPIConfig {
+  if (!process.argv.includes('--perf-fixture')) {
+    return DEFAULT_CO_API_CONFIG;
+  }
+
+  const host = process.env.COCHELPER_PERF_API_HOST?.trim();
+  if (host === undefined || host.length === 0) {
+    throw new Error('COCHELPER_PERF_API_HOST is required in perf fixture mode');
+  }
+  const scheme = process.env.COCHELPER_PERF_API_SCHEME?.trim();
+  if (scheme === undefined || scheme.length === 0) {
+    throw new Error('COCHELPER_PERF_API_SCHEME is required in perf fixture mode');
+  }
+  if (scheme !== 'http') {
+    throw new Error('perf fixture API scheme must be http');
+  }
+  let parsedHost: URL;
+  try {
+    parsedHost = new URL(`${scheme}://${host}`);
+  } catch {
+    throw new Error('COCHELPER_PERF_API_HOST must be a valid loopback host');
+  }
+  if (
+    parsedHost.hostname !== '127.0.0.1' ||
+    parsedHost.username !== '' ||
+    parsedHost.password !== '' ||
+    parsedHost.pathname !== '/' ||
+    parsedHost.search !== '' ||
+    parsedHost.hash !== ''
+  ) {
+    throw new Error('COCHELPER_PERF_API_HOST must resolve to 127.0.0.1');
+  }
+
+  return {
+    ...DEFAULT_CO_API_CONFIG,
+    scheme,
+    host,
+  };
+}
 
 export class OfficialApiService {
   private readonly state: AppAuthoritativeState;
@@ -128,7 +169,7 @@ export class OfficialApiService {
     this.client =
       options.client ??
       new CoAPIClient({
-        config: DEFAULT_CO_API_CONFIG,
+        config: configuredCoAPIConfig(),
         tokenProvider: options.tokenProvider,
       });
     this.playerStore = options.persistence.loadedPlayerStates;

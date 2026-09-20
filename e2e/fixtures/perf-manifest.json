@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "protocol": "electron-release-perf-v1",
+  "fixtureRoot": "Tests/COCHelperCoreTests/Fixtures",
+  "accountSnapshots": {
+    "home": {
+      "file": "perf_account_snapshot_home.json",
+      "tag": "#ANONYMIZED",
+      "minimumBuildingRecords": 100
+    },
+    "builder": {
+      "file": "perf_account_snapshot_builder.json",
+      "tag": "#PERF-BUILDER",
+      "minimumBuilderRecords": 40
+    },
+    "mixed": {
+      "file": "perf_account_snapshot_mixed.json",
+      "tag": "#PERF-MIXED"
+    },
+    "variant": {
+      "file": "perf_account_snapshot_variant.json",
+      "tag": "#ANONYMIZED"
+    }
+  },
+  "largeWalls": {
+    "before": "perf_account_snapshot_large_walls_before.json",
+    "after": "perf_account_snapshot_large_walls_after.json",
+    "tag": "#LARGEWALL01",
+    "segmentCount": 1005
+  },
+  "warLogPages": [
+    "perf_war_log_page_01.json",
+    "perf_war_log_page_02.json",
+    "perf_war_log_page_03.json"
+  ],
+  "capitalRaidPages": [
+    "perf_capital_raid_page_01.json",
+    "perf_capital_raid_page_02.json",
+    "perf_capital_raid_page_03.json"
+  ],
+  "history24": {
+    "source": "home",
+    "entries": 24,
+    "markerField": "perfMarker"
+  },
+  "official": {
+    "clanTag": "#PERFCLAN",
+    "playerTag": "#ANONYMIZED",
+    "warLogPublic": true
+  }
+}

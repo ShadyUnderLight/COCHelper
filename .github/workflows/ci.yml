@@ -129,3 +129,32 @@ jobs:
           name: packaged-e2e-artifacts-macos
           path: e2e-artifacts/
           if-no-files-found: ignore
+
+  electron-perf-macos:
+    name: Electron Release perf (${{ matrix.scenario }})
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [overview, village-detail, history-24, official-lists]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Package
+        run: pnpm package
+      - name: Independent packaged Release perf
+        run: pnpm perf:release --scenario=${{ matrix.scenario }} --repetitions=1 --warmup=0 --scroll-ms=1000 --output=e2e-artifacts/perf-${{ matrix.scenario }}
+      - name: Upload packaged perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-perf-${{ matrix.scenario }}
+          path: e2e-artifacts/perf-${{ matrix.scenario }}/
+          if-no-files-found: ignore

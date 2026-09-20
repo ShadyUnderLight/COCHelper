@@ -59,6 +59,7 @@ describe('UpgradeOverview', () => {
   it('loading 显示加载文案', () => {
     render(<UpgradeOverview {...propsOf({ status: 'loading', payload: null, lastError: null })} />);
     expect(screen.getByText('正在加载升级总览…')).toBeTruthy();
+    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('loading');
   });
 
   it('error 无 last-good 显示错误与重试', () => {
@@ -74,6 +75,7 @@ describe('UpgradeOverview', () => {
       />,
     );
     expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('error');
     fireEvent.click(screen.getByText('重试'));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -82,6 +84,7 @@ describe('UpgradeOverview', () => {
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape()))} />);
     expect(screen.getByText('暂无进行中的升级')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('ready');
   });
 
   it('列表使用 effective 等级和权威状态，不并列展示 raw 状态', () => {

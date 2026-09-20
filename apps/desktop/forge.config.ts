@@ -3,12 +3,14 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
+import { writeFileSync } from 'node:fs';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import path from 'node:path';
 
 import { DEV_CONTENT_SECURITY_POLICY } from './src/main/security-policy';
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
+import { readGitProvenance } from '../../scripts/perf-provenance.mjs';
 
 const repoRoot = path.resolve(__dirname, '../..');
 
@@ -21,6 +23,28 @@ const config: ForgeConfig = {
       path.join(repoRoot, 'Sources/COCHelperCore/GameCatalog'),
       path.join(repoRoot, 'Sources/COCHelperCore/Resources/account_name_catalog.json'),
     ],
+  },
+  hooks: {
+    postPackage: async (_config, packageResult) => {
+      const provenance = {
+        ...readGitProvenance(repoRoot),
+        generatedAt: new Date().toISOString(),
+      };
+      for (const outputPath of packageResult.outputPaths) {
+        const appPath =
+          packageResult.platform === 'darwin' && !outputPath.endsWith('.app')
+            ? path.join(outputPath, 'COCHelper.app')
+            : outputPath;
+        const resourcesPath =
+          packageResult.platform === 'darwin'
+            ? path.join(appPath, 'Contents', 'Resources')
+            : path.join(appPath, 'resources');
+        writeFileSync(
+          path.join(resourcesPath, 'perf-build-provenance.json'),
+          `${JSON.stringify(provenance, null, 2)}\n`,
+        );
+      }
+    },
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin'])],

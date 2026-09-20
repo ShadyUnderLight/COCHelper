@@ -944,14 +944,24 @@ async function importFixture(page, text, expectedTag, context, label) {
   assert.match(previewText, new RegExp(expectedTag.replace('#', '\\#')));
   const preparedSnapshot = await getSnapshot(page);
   context.phase = `${label}:commit`;
-  await preview.getByRole('button', { name: '确认导入', exact: true }).click();
-  context.phase = `${label}:wait-generation`;
+  const confirmButton = preview.getByRole('button', { name: '确认导入', exact: true });
+  if (!(await confirmButton.isEnabled())) {
+    throw new Error(`确认导入按钮不可用：${previewText}`);
+  }
+  await confirmButton.click();
+  context.phase = `${label}:wait-commit-state`;
   await page.waitForFunction(
-    async (previousGeneration) => {
+    async ({ previousGeneration, expectedTag: tag }) => {
       const result = await globalThis.window.cocHelper.snapshot({});
-      return result.ok && result.value.generation > previousGeneration;
+      if (!result.ok || result.value.generation <= previousGeneration) return false;
+      if (result.value.pendingImport !== null && result.value.pendingImport !== undefined) {
+        return false;
+      }
+      return result.value.villages.some(
+        (village) => village.tag === tag && village.hasImportedData === true,
+      );
     },
-    preparedSnapshot.generation,
+    { previousGeneration: preparedSnapshot.generation, expectedTag },
     { timeout: importTimeoutMs },
   );
   context.phase = `${label}:wait-sidebar`;
@@ -1199,6 +1209,9 @@ async function captureFailureDiagnostics(context, session, error) {
               villageStatus: snapshotResult.value.villageStatus,
               villageError: snapshotResult.value.villageError,
               selectedVillageId: snapshotResult.value.selectedVillageId,
+              canWrite: snapshotResult.value.canWrite,
+              hasPendingJournal: snapshotResult.value.hasPendingJournal,
+              recoveryNotice: snapshotResult.value.recoveryNotice,
               pendingImport: snapshotResult.value.pendingImport,
               villages: snapshotResult.value.villages,
             }
@@ -1213,6 +1226,14 @@ async function captureFailureDiagnostics(context, session, error) {
             retryCount: [...panel.querySelectorAll('button')].filter(
               (button) => button.textContent?.trim() === '重试',
             ).length,
+            buttons: [...panel.querySelectorAll('button')].map((button) => ({
+              text: button.textContent?.trim() ?? '',
+              disabled: button.disabled,
+            })),
+            textareas: [...panel.querySelectorAll('textarea')].map((textarea) => ({
+              disabled: textarea.disabled,
+              valueLength: textarea.value.length,
+            })),
           };
         };
         return {
@@ -1221,16 +1242,18 @@ async function captureFailureDiagnostics(context, session, error) {
             globalThis.document.querySelector('[role="complementary"][aria-label="村庄列表"]')
               ?.textContent ?? null,
           statusText: globalThis.document.getElementById('status')?.textContent ?? null,
+          import: panelEvidence('section[aria-label="账号导入"]'),
           overview: panelEvidence('section[aria-label="升级总览"]'),
           detail: panelEvidence('section[aria-label="村庄详情"]'),
         };
       });
       diagnostics.snapshot = pageEvidence.snapshot;
       diagnostics.renderer = {
-        sidebarText: appendTail(pageEvidence.sidebarText ?? '', '', failureOutputMaxChars),
-        statusText: pageEvidence.statusText,
-        overview: pageEvidence.overview,
-        detail: pageEvidence.detail,
+          sidebarText: appendTail(pageEvidence.sidebarText ?? '', '', failureOutputMaxChars),
+          statusText: pageEvidence.statusText,
+          import: pageEvidence.import,
+          overview: pageEvidence.overview,
+          detail: pageEvidence.detail,
       };
     } catch (captureError) {
       diagnostics.renderer = {

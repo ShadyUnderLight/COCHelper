@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   evaluateWithTimeout,
   PerfTimeoutError,
+  remainingTimeoutMs,
   withHardTimeout,
 } from './perf-timeouts.mjs';
 
@@ -11,6 +12,11 @@ afterEach(() => {
 });
 
 describe('perf timeouts', () => {
+  it('剩余 deadline 不会重新授予完整 timeout，过期时直接失败', () => {
+    expect(remainingTimeoutMs(1_000, 'sidebar', 900)).toBe(100);
+    expect(() => remainingTimeoutMs(1_000, 'sidebar', 1_000)).toThrowError(PerfTimeoutError);
+  });
+
   it('永不 resolve 的 promise 会在 hard timeout 处失败', async () => {
     vi.useFakeTimers();
     const pending = withHardTimeout(() => new Promise(() => undefined), 100, 'bridge');

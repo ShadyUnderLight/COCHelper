@@ -7,6 +7,14 @@ export class PerfTimeoutError extends Error {
   }
 }
 
+export function remainingTimeoutMs(deadline, label, now = Date.now()) {
+  const remaining = deadline - now;
+  if (remaining <= 0) {
+    throw new PerfTimeoutError(label, 0);
+  }
+  return remaining;
+}
+
 export async function withHardTimeout(task, timeoutMs, label) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new RangeError(`timeoutMs 必须是正数：${String(timeoutMs)}`);

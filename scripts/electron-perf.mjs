@@ -35,7 +35,11 @@ import {
   summarizeProcessSamples,
 } from './perf-metrics.mjs';
 import { readGitProvenance } from './perf-provenance.mjs';
-import { evaluateWithTimeout, PerfTimeoutError } from './perf-timeouts.mjs';
+import {
+  evaluateWithTimeout,
+  PerfTimeoutError,
+  remainingTimeoutMs,
+} from './perf-timeouts.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -1004,10 +1008,7 @@ async function importFixture(page, text, expectedTag, context, label) {
   */
   const importDeadline = Date.now() + importTimeoutMs;
   context.phase = `${label}:bridge-commit`;
-  const commitTimeoutMs = importDeadline - Date.now();
-  if (commitTimeoutMs <= 0) {
-    throw new PerfTimeoutError('import.commit', importTimeoutMs);
-  }
+  const commitTimeoutMs = remainingTimeoutMs(importDeadline, 'import.commit');
   const commitResult = await evaluateWithTimeout(
     page,
     (expectedGeneration) =>
@@ -1044,10 +1045,11 @@ async function importFixture(page, text, expectedTag, context, label) {
     commitStateObserved: true,
   };
   context.phase = `${label}:wait-sidebar`;
+  const sidebarTimeoutMs = remainingTimeoutMs(importDeadline, 'import sidebar');
   await page
     .getByRole('complementary', { name: '村庄列表' })
     .getByText(expectedTag, { exact: true })
-    .waitFor({ state: 'visible', timeout: importTimeoutMs });
+    .waitFor({ state: 'visible', timeout: sidebarTimeoutMs });
   await preview.waitFor({ state: 'detached' }).catch(() => undefined);
 }
 

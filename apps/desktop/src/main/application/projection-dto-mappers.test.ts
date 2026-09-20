@@ -11,6 +11,7 @@ import {
   type CatalogAssetRef,
   type CatalogItem,
   type CatalogLevel,
+  type CatalogUpgradeCost,
   type EffectiveVillageItemState,
 } from '@coc-helper/domain';
 import { describe, expect, it } from 'vitest';
@@ -19,6 +20,13 @@ import { toVillageItemStateDto } from './projection-dto-mappers';
 
 const IMPORTED_AT_MS = 1_700_000_000_000;
 const ITEM_DATA_ID = 1_000_001n;
+const GOLD_COST: CatalogUpgradeCost = {
+  resource: 'gold',
+  amount: 1_000n,
+  rawResource: 'Gold',
+  rawAmount: '1,000',
+  parseFailed: false,
+};
 
 function asset(name: string): CatalogAssetRef {
   return {
@@ -29,11 +37,15 @@ function asset(name: string): CatalogAssetRef {
   };
 }
 
-function level(levelNumber: number, durationSeconds: bigint): CatalogLevel {
+function level(
+  levelNumber: number,
+  durationSeconds: bigint,
+  upgradeCosts: readonly CatalogUpgradeCost[] | null = null,
+): CatalogLevel {
   return {
     level: levelNumber,
     durationSeconds,
-    upgradeCosts: null,
+    upgradeCosts,
     requiredTownHallLevel: null,
     requiredLaboratoryLevel: null,
     requiredHeroTavernLevel: null,
@@ -44,7 +56,9 @@ function level(levelNumber: number, durationSeconds: bigint): CatalogLevel {
   };
 }
 
-function catalog(): ReturnType<typeof createGameCatalog> {
+function catalog(
+  levels: readonly CatalogLevel[] = [level(1, 60n), level(2, 300n)],
+): ReturnType<typeof createGameCatalog> {
   const item: CatalogItem = {
     section: 'buildings',
     category: 'buildings',
@@ -52,13 +66,13 @@ function catalog(): ReturnType<typeof createGameCatalog> {
     base: 'home',
     baseMissingReason: null,
     name: '加农炮',
-    maxLevel: 2,
+    maxLevel: levels[levels.length - 1]!.level,
     icon: asset('cannon_icon'),
     levelVisual: asset('cannon'),
     missingReason: null,
     displayCategory: 'defense',
     lifecycle: null,
-    levels: [level(1, 60n), level(2, 300n)],
+    levels,
   };
   return createGameCatalog({ gameVersion: '18.400.13', items: [item] });
 }
@@ -84,14 +98,14 @@ function accountItem(): AccountItem {
   };
 }
 
-function snapshot(): AccountSnapshot {
+function snapshot(item: AccountItem = accountItem()): AccountSnapshot {
   return {
     tag: '#DTO',
     capturedAtMs: null,
     importedAtMs: IMPORTED_AT_MS,
     ageSeconds: null,
     originalText: '',
-    objectSections: { buildings: [accountItem()] },
+    objectSections: { buildings: [item] },
     numericSections: {},
     boosts: {},
     unknownTopLevelKeys: [],
@@ -136,14 +150,14 @@ describe('projection DTO effective state mapping', () => {
     expect(dto.effectiveNextLevelDurationState).toBeNull();
   });
 
-  it('manualCompleted 且 effective 等级不唯一时不泄漏 raw 时长', () => {
+  it('manualCompleted 且 effective 等级不唯一时不泄漏 raw 时长与成本', () => {
     const itemKey = trackerItemKeyRoot('home', 'buildings', ITEM_DATA_ID);
     const manualUpgradeCore = createManualUpgradeCoreState({
       itemStates: [
         createManualItemStateForStatus({
           itemKey,
           baselineReference: { revision: 'snapshot-1', lineageID: null },
-          imported: createManualLevelDistributionFromPairs([[1, 1n]]),
+          imported: createManualLevelDistributionFromPairs([[1, 2n]]),
           manual: createManualLevelDistributionFromPairs([
             [1, 1n],
             [2, 1n],
@@ -156,11 +170,11 @@ describe('projection DTO effective state mapping', () => {
     const village = createVillageProfile({
       id: '00000000-0000-0000-0000-0000000000ab',
       name: 'DTO mixed 测试村',
-      accountSnapshot: snapshot(),
+      accountSnapshot: snapshot({ ...accountItem(), count: 2 }),
     });
     const projection = projectVillageCatalog({
       village,
-      catalog: catalog(),
+      catalog: catalog([level(1, 60n, [GOLD_COST]), level(2, 300n, [GOLD_COST])]),
       base: 'home',
       nowMs: IMPORTED_AT_MS,
       manualUpgradeCore,
@@ -168,17 +182,73 @@ describe('projection DTO effective state mapping', () => {
 
     const projected = projection.items[0]!;
     const sidecar = projected.effectiveState as EffectiveVillageItemState;
-    // effective distribution 是 mixed（Lv1×1 + Lv2×1）：等级无法唯一确定，
-    // projection 层必须 fail closed，catalogDurationState 不得回退 raw。
+    // 数量守恒（imported Lv1×2 → manual Lv1×1 + Lv2×1）但等级不唯一：
+    // projection 层必须 fail closed，duration 与 costs 都不得回退 raw。
     expect(sidecar.status).toBe('manualCompleted');
     expect(sidecar.effectiveCompletedLevel).toBeNull();
     expect(sidecar.catalogNextUpgrade).toEqual({ kind: 'unknown' });
     expect(sidecar.catalogDurationState).toBeNull();
+    expect(sidecar.catalogCosts).toBeNull();
 
     const dto = toVillageItemStateDto(projected);
     expect(dto.effectiveStatus).toBe('manualCompleted');
     expect(dto.effectiveNextUpgrade).toEqual({ kind: 'unknown' });
     expect(dto.effectiveTargetLevel).toBeNull();
     expect(dto.effectiveNextLevelDurationState).toBeNull();
+  });
+
+  it('manualCompleted 且 effective 等级唯一时保留 effective duration 与成本', () => {
+    const itemKey = trackerItemKeyRoot('home', 'buildings', ITEM_DATA_ID);
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: { revision: 'snapshot-1', lineageID: null },
+          imported: createManualLevelDistributionFromPairs([[2, 1n]]),
+          manual: createManualLevelDistributionFromPairs([[2, 1n]]),
+          status: 'manualCompleted',
+          sourceTimestampMs: IMPORTED_AT_MS,
+        }),
+      ],
+    });
+    const village = createVillageProfile({
+      id: '00000000-0000-0000-0000-0000000000ac',
+      name: 'DTO available 测试村',
+      accountSnapshot: snapshot(),
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog: catalog([level(1, 60n), level(2, 300n), level(3, 900n, [GOLD_COST])]),
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+      manualUpgradeCore,
+    });
+
+    const projected = projection.items[0]!;
+    const sidecar = projected.effectiveState as EffectiveVillageItemState;
+    // 单一 effective 等级（Lv2）时必须继续取得 effective catalog Lv3 的
+    // duration/costs：防止 fail-closed 分支被误改成“所有 manualCompleted
+    // 都清空时长”。raw 快照仍是 Lv1（next=2，300s），若回退 raw 会得到
+    // 2/300 而不是 3/900。
+    expect(sidecar.status).toBe('manualCompleted');
+    expect(sidecar.effectiveCompletedLevel).toBe(2);
+    expect(sidecar.catalogNextUpgrade).toEqual({
+      kind: 'available',
+      level: 3,
+      durationSeconds: 900n,
+    });
+    expect(sidecar.catalogDurationState).toEqual({ kind: 'timed', seconds: 900n });
+    expect(sidecar.catalogCosts).toEqual([GOLD_COST]);
+
+    const dto = toVillageItemStateDto(projected);
+    expect(dto.effectiveStatus).toBe('manualCompleted');
+    expect(dto.effectiveCurrentLevel).toBe(2);
+    expect(dto.effectiveTargetLevel).toBe(3);
+    expect(dto.effectiveNextUpgrade).toEqual({
+      kind: 'available',
+      level: 3,
+      durationSeconds: 900,
+    });
+    expect(dto.effectiveNextLevelDurationState).toEqual({ kind: 'timed', seconds: 900 });
   });
 });

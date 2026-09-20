@@ -1014,6 +1014,12 @@ async function importFixture(page, text, expectedTag, context, label) {
   if (!(await confirmButton.isEnabled())) {
     throw new Error(`确认导入按钮不可用：${previewText}`);
   }
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve));
+      }),
+  );
   await confirmButton.click();
   context.phase = `${label}:wait-commit-state`;
   await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag);

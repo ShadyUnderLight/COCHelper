@@ -10,6 +10,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import {
   existsSync,
@@ -47,6 +48,8 @@ const warmupCount = nonNegativeInt(
 const scrollMs = positiveInt(optionValue('--scroll-ms') ?? process.env.COCHELPER_PERF_SCROLL_MS, 10_000);
 const outputDir = path.resolve(optionValue('--output') ?? process.env.COCHELPER_PERF_OUTPUT ?? defaultOutput);
 const importTimeoutMs = 120_000;
+const processSampleIntervalMs = 250;
+const footprintSampleEvery = 16;
 
 const SCENARIOS = ['overview', 'village-detail', 'history-24', 'official-lists'];
 const selectedScenarios = scenarioArg === 'all' ? SCENARIOS : scenarioArg.split(',').filter(Boolean);
@@ -175,6 +178,64 @@ async function findFreePort() {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
   return port;
+}
+
+function fixturePage(file) {
+  const value = readJson(fixturePath(file));
+  assert(Array.isArray(value.items), `分页 fixture items 无效：${file}`);
+  const cursors = value.paging?.cursors;
+  return {
+    items: value.items,
+    before: cursors?.before,
+    after: cursors?.after,
+  };
+}
+
+async function startFixtureApiServer() {
+  const requests = [];
+  const server = createHttpServer((request, response) => {
+    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
+    const pathname = decodeURIComponent(requestUrl.pathname);
+    const endpoint = pathname.endsWith('/warlog')
+      ? 'warLog'
+      : pathname.endsWith('/capitalraidseasons')
+        ? 'capitalRaid'
+        : null;
+    if (endpoint === null) {
+      response.writeHead(404).end();
+      return;
+    }
+    const files = endpoint === 'warLog' ? manifest.warLogPages : manifest.capitalRaidPages;
+    const after = requestUrl.searchParams.get('after');
+    let pageIndex = 0;
+    if (after !== null) {
+      const previousIndex = files.findIndex((file) => fixturePage(file).after === after);
+      pageIndex = previousIndex + 1;
+    }
+    const file = files[pageIndex];
+    if (file === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    requests.push({ endpoint, after, file, url: requestUrl.toString() });
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(fixtureText(file));
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert(address !== null && typeof address !== 'string');
+  return {
+    port: address.port,
+    requests,
+    async close() {
+      await new Promise((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
+    },
+  };
 }
 
 async function waitForDevTools(child, port) {
@@ -327,6 +388,9 @@ async function settleCatalogRequests(page, probe) {
   while (probe.pendingCount() > 0 && Date.now() < deadline) {
     await sleep(10);
   }
+  if (probe.pendingCount() > 0) {
+    throw new Error(`catalog 请求在 ${5_000}ms 后仍未完成：${probe.pendingCount()}`);
+  }
 }
 
 function createContext(scenario, repetition) {
@@ -338,6 +402,7 @@ function createContext(scenario, repetition) {
     homeDirectory: path.join(tempRoot, 'home'),
     dataRoot: path.join(tempRoot, 'electron-data'),
     userDataDirectory: path.join(tempRoot, 'electron-user-data'),
+    apiServer: null,
   };
   mkdirSync(context.homeDirectory, { recursive: true });
   mkdirSync(context.dataRoot, { recursive: true });
@@ -350,6 +415,13 @@ function createEnvironment(context) {
     ...process.env,
     COCHELPER_E2E_DATA_ROOT: context.dataRoot,
     ELECTRON_ENABLE_LOGGING: '1',
+    ...(context.apiServer === null
+      ? {}
+      : {
+          COCHELPER_PERF_API_HOST: `127.0.0.1:${context.apiServer.port}`,
+          COCHELPER_PERF_API_SCHEME: 'http',
+          COCHELPER_PERF_API_TOKEN: 'perf-fixture-token',
+        }),
     ...(process.platform !== 'darwin'
       ? {
           HOME: context.homeDirectory,
@@ -389,12 +461,14 @@ async function launchApp(context) {
     browser: null,
     page: null,
     catalogProbe: null,
+    processSampler: null,
     port,
     spawnAt,
     startup: null,
   };
   sessions.add(session);
   const startupSampler = startProcessSampler(session, context.tempRoot);
+  session.processSampler = startupSampler;
   try {
     const endpoint = await waitForDevTools(child, port);
     const devToolsReadyAt = performance.now();
@@ -406,12 +480,13 @@ async function launchApp(context) {
       session.catalogProbe = attachCatalogRequestProbe(page);
     });
     const rendererReadyAt = performance.now();
+    const startupProcess = startupSampler.snapshot();
     await settleCatalogRequests(session.page, session.catalogProbe);
     session.startup = {
       // startupMs 是进程启动到 CDP 可用；ttiMs 是到 renderer app-shell ready。
       startupMs: devToolsReadyAt - spawnAt,
       ttiMs: rendererReadyAt - spawnAt,
-      process: await startupSampler.stop(),
+      process: startupProcess,
     };
     return session;
   } catch (error) {
@@ -443,6 +518,9 @@ async function closeSession(session) {
   if (session === null || session === undefined) {
     return;
   }
+  if (session.processSampler !== null) {
+    session.processFinal = await session.processSampler.stop();
+  }
   if (session.browser !== null) {
     await withTimeout(session.browser.close().catch(() => undefined), 5_000, undefined);
     session.browser = null;
@@ -463,7 +541,7 @@ function psRows() {
     const raw = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,%cpu=,command='], {
       encoding: 'utf8',
     });
-    return raw
+    const rows = raw
       .split('\n')
       .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(.*)$/))
       .filter((match) => match !== null)
@@ -474,13 +552,17 @@ function psRows() {
         cpuPercent: Number(match[4]),
         command: match[5],
       }));
+    return rows.length === 0 ? null : rows;
   } catch {
-    return [];
+    return null;
   }
 }
 
 function processTree(rootPid) {
   const rows = psRows();
+  if (rows === null) {
+    return null;
+  }
   const children = new Map();
   for (const row of rows) {
     const list = children.get(row.ppid) ?? [];
@@ -568,30 +650,58 @@ function footprintForPid(pid, tempRoot) {
   }
 }
 
-function sampleProcess(session, tempRoot, index) {
+function sampleProcess(session, tempRoot, index, forceFootprint = false) {
   const rows = processTree(session.child.pid);
+  if (rows === null) {
+    return {
+      atMs: performance.now(),
+      pids: null,
+      rssBytes: null,
+      cpuPercent: null,
+      rootFootprintBytes: null,
+    };
+  }
   return {
     atMs: performance.now(),
     pids: rows.map((row) => row.pid),
     rssBytes: rows.reduce((total, row) => total + row.rssBytes, 0),
     cpuPercent: rows.reduce((total, row) => total + row.cpuPercent, 0),
-    rootFootprintBytes: index % 2 === 0 ? footprintForPid(session.child.pid, tempRoot) : null,
+    rootFootprintBytes:
+      forceFootprint || index % footprintSampleEvery === 0
+        ? footprintForPid(session.child.pid, tempRoot)
+        : null,
   };
 }
 
 function startProcessSampler(session, tempRoot) {
   const samples = [];
   let index = 0;
-  const collect = () => {
-    samples.push(sampleProcess(session, tempRoot, index));
+  let stopped = false;
+  const collect = (forceFootprint = false) => {
+    samples.push(sampleProcess(session, tempRoot, index, forceFootprint));
     index += 1;
   };
-  collect();
-  const timer = setInterval(collect, 1_000);
+  collect(true);
+  const timer = setInterval(collect, processSampleIntervalMs);
   return {
-    async stop() {
-      clearInterval(timer);
+    mark() {
       collect();
+      return samples.length;
+    },
+    snapshot() {
+      collect(true);
+      return summarizeProcessSamples(samples);
+    },
+    summarySince(mark) {
+      collect(true);
+      return summarizeProcessSamples(samples.slice(mark));
+    },
+    async stop() {
+      if (!stopped) {
+        clearInterval(timer);
+        collect(true);
+        stopped = true;
+      }
       return summarizeProcessSamples(samples);
     },
   };
@@ -626,17 +736,24 @@ function summarizeNumbers(values) {
 }
 
 function summarizeProcessSamples(samples) {
+  const processCounts = samples
+    .map((sample) => sample.pids?.length)
+    .filter((value) => typeof value === 'number');
   return {
     sampleCount: samples.length,
-    rssBytes: summarizeNumbers(samples.map((sample) => sample.rssBytes)),
-    cpuPercent: summarizeNumbers(samples.map((sample) => sample.cpuPercent)),
+    rssBytes: summarizeNumbers(
+      samples.map((sample) => sample.rssBytes).filter((value) => typeof value === 'number'),
+    ),
+    cpuPercent: summarizeNumbers(
+      samples.map((sample) => sample.cpuPercent).filter((value) => typeof value === 'number'),
+    ),
     rootFootprintBytes: summarizeNumbers(
       samples
         .map((sample) => sample.rootFootprintBytes)
         .filter((value) => value !== null),
     ),
     footprintAvailable: samples.some((sample) => sample.rootFootprintBytes !== null),
-    processCount: Math.max(0, ...samples.map((sample) => sample.pids.length)),
+    processCount: processCounts.length === 0 ? null : Math.max(...processCounts),
   };
 }
 
@@ -725,11 +842,12 @@ function writeVillages(context, records, selectedVillageId = records[0]?.id ?? n
   writeJson(path.join(context.dataRoot, 'selection-v1.json'), { selectedVillageId });
 }
 
-function officialState(clanTag, parserVersion, lastGood) {
+function officialState(parserVersion, lastGood, ownership = {}) {
   const now = Date.now();
   return {
     status: 'success',
-    ...(clanTag === undefined ? {} : { clanTag }),
+    ...(ownership.clanTag === undefined ? {} : { clanTag: ownership.clanTag }),
+    ...(ownership.playerTag === undefined ? {} : { playerTag: ownership.playerTag }),
     fetchedAt: now,
     lastAttemptAt: now,
     parserVersion,
@@ -738,44 +856,43 @@ function officialState(clanTag, parserVersion, lastGood) {
   };
 }
 
-function seedOfficialStates(context) {
+function seedOfficialStates(context, villageId) {
   const clanTag = manifest.official.clanTag;
-  const warLogItems = manifest.warLogPages.flatMap((file) => readJson(fixturePath(file)).items);
-  const capitalItems = manifest.capitalRaidPages.flatMap((file) => readJson(fixturePath(file)).items);
+  const playerTag = manifest.official.playerTag;
   writeJson(path.join(context.dataRoot, 'player-states-v1.json'), [
     {
-      [manifest.official.villageId]: officialState(undefined, 'player-snapshot-0.2', {
+      [villageId]: officialState('player-snapshot-0.2', {
         tag: '#ANONYMIZED',
         name: 'perf-player',
         clan: { tag: clanTag, name: 'perf-clan' },
-      }),
+      }, { playerTag }),
     },
   ]);
   writeJson(path.join(context.dataRoot, 'clans-v1.json'), [
     {
-      [clanTag]: officialState(clanTag, 'clan-snapshot-0.4', {
+      [clanTag]: officialState('clan-snapshot-0.4', {
         tag: clanTag,
         name: 'perf-clan',
         clanLevel: 12,
         members: 30,
         isWarLogPublic: manifest.official.warLogPublic,
-      }),
+      }, { clanTag }),
     },
   ]);
   writeJson(path.join(context.dataRoot, 'clan-war-logs-v1.json'), [
     {
-      [clanTag]: officialState(clanTag, 'clan-war-log-0.4', {
-        page: { items: warLogItems },
+      [clanTag]: officialState('clan-war-log-0.4', {
+        page: fixturePage(manifest.warLogPages[0]),
         unrecognizedKeys: [],
-      }),
+      }, { clanTag }),
     },
   ]);
   writeJson(path.join(context.dataRoot, 'clan-capitals-v1.json'), [
     {
-      [clanTag]: officialState(clanTag, 'clan-capital-0.3', {
-        page: { items: capitalItems },
+      [clanTag]: officialState('clan-capital-0.3', {
+        page: fixturePage(manifest.capitalRaidPages[0]),
         unrecognizedKeys: [],
-      }),
+      }, { clanTag }),
     },
   ]);
 }
@@ -786,41 +903,63 @@ async function prepareScenario(scenario, repetition) {
   const home = fixtureText(manifest.accountSnapshots.home.file);
   const builder = fixtureText(manifest.accountSnapshots.builder.file);
   const mixed = fixtureText(manifest.accountSnapshots.mixed.file);
+  const variant = fixtureText(manifest.accountSnapshots.variant.file);
   let session = null;
+  let initialStartup = null;
   let restartStartup = null;
+  let preparation = null;
 
   if (scenario === 'overview') {
     const ids = [
       '00000000-0000-4000-8000-000000000001',
       '00000000-0000-4000-8000-000000000002',
       '00000000-0000-4000-8000-000000000003',
+      '00000000-0000-4000-8000-000000000004',
     ];
     writeVillages(context, [
       villageRecord(ids[0], 'perf-home', home, importedAtMs),
       villageRecord(ids[1], 'perf-builder', builder, importedAtMs),
       villageRecord(ids[2], 'perf-mixed', mixed, importedAtMs),
+      villageRecord(ids[3], 'perf-variant', variant, importedAtMs),
     ]);
   } else if (scenario === 'official-lists') {
     const id = '00000000-0000-4000-8000-000000000011';
     writeVillages(context, [villageRecord(id, 'perf-official', home, importedAtMs)], id);
-    manifest.official.villageId = id;
-    seedOfficialStates(context);
+    context.apiServer = await startFixtureApiServer();
+    seedOfficialStates(context, id);
   }
 
   try {
     session = await launchApp(context);
+    initialStartup = session.startup;
 
     if (scenario === 'village-detail') {
       const before = fixtureText(manifest.largeWalls.before);
       const after = fixtureText(manifest.largeWalls.after);
-      await importFixture(pageOf(session), before, manifest.largeWalls.tag);
-      await importFixture(pageOf(session), after, manifest.largeWalls.tag);
+      const imports = [];
+      for (const [label, text] of [
+        ['before', before],
+        ['after', after],
+      ]) {
+        const startedAt = performance.now();
+        const mark = session.processSampler.mark();
+        await importFixture(pageOf(session), text, manifest.largeWalls.tag);
+        imports.push({
+          label,
+          durationMs: performance.now() - startedAt,
+          process: session.processSampler.summarySince(mark),
+        });
+      }
+      preparation = { kind: 'large-walls-import', imports, process: session.processSampler.snapshot() };
       await closeSession(session);
       session = await launchApp(context);
       restartStartup = session.startup;
     } else if (scenario === 'history-24') {
       const source = fixtureText(manifest.accountSnapshots[manifest.history24.source].file);
+      const imports = [];
       for (let index = 0; index < manifest.history24.entries; index += 1) {
+        const startedAt = performance.now();
+        const mark = session.processSampler.mark();
         await importFixture(
           pageOf(session),
           markedFixture(
@@ -830,23 +969,37 @@ async function prepareScenario(scenario, repetition) {
           ),
           manifest.accountSnapshots[manifest.history24.source].tag,
         );
+        imports.push({
+          index: index + 1,
+          durationMs: performance.now() - startedAt,
+          process: session.processSampler.summarySince(mark),
+        });
       }
+      preparation = { kind: 'history-import', imports, process: session.processSampler.snapshot() };
       await closeSession(session);
       session = await launchApp(context);
       restartStartup = session.startup;
     }
   } catch (error) {
     await closeSession(session);
+    await context.apiServer?.close();
     rmSync(context.tempRoot, { recursive: true, force: true });
     throw error;
   }
 
-  return { context, session, restartStartup };
+  return { context, session, initialStartup, preparation, restartStartup };
 }
 
 function pageOf(session) {
   assert(session.page !== null, 'session page 尚未就绪');
   return session.page;
+}
+
+async function measureProcessPhase(session, task) {
+  assert(session.processSampler !== null, 'process sampler 尚未安装');
+  const mark = session.processSampler.mark();
+  const value = await task();
+  return { value, process: session.processSampler.summarySince(mark) };
 }
 
 async function measureIpc(page, kind, villageId, clanTag) {
@@ -870,11 +1023,16 @@ async function measureIpc(page, kind, villageId, clanTag) {
       } else {
         throw new Error(`未知 IPC 性能样本：${requestKind}`);
       }
+      if (!result.ok) {
+        throw new Error(
+          `${requestKind} IPC 返回失败：${result.error.code} ${result.error.message}`,
+        );
+      }
       const encoded = JSON.stringify(result);
       return {
         durationMs: performance.now() - started,
         payloadBytes: new TextEncoder().encode(encoded).byteLength,
-        ok: result.ok,
+        ok: true,
       };
     },
     { requestKind: kind, requestVillageId: villageId, requestClanTag: clanTag },
@@ -895,6 +1053,16 @@ async function resourceSummary(page, probe, mark) {
         .length,
     };
   });
+  if (requests.failedCount > 0 || images.failedImageCount > 0) {
+    throw new Error(
+      `catalog 资源失败：requestFailed=${requests.failedCount}, imageFailed=${images.failedImageCount}`,
+    );
+  }
+  if (requests.completedCount + requests.failedCount !== requests.requestCount) {
+    throw new Error(
+      `catalog 请求未闭合：request=${requests.requestCount}, completed=${requests.completedCount}, failed=${requests.failedCount}`,
+    );
+  }
   return {
     ...requests,
     ...images,
@@ -957,6 +1125,92 @@ async function measureScroll(page, durationMs) {
   );
 }
 
+async function waitForOfficialList(page, ariaLabel, listSelector, minimumCount) {
+  const section = page.locator(`section[aria-label="${ariaLabel}"]`);
+  await section.waitFor({ state: 'visible' });
+  const items = section.locator(`${listSelector} > li`);
+  await items.nth(minimumCount - 1).waitFor({ state: 'visible', timeout: 30_000 });
+  return { section, items };
+}
+
+async function waitForNoLoadMoreButton(section) {
+  const button = section.getByRole('button', { name: '加载更多', exact: true });
+  const deadline = Date.now() + 30_000;
+  while ((await button.count()) > 0 && Date.now() < deadline) {
+    await sleep(25);
+  }
+  assert.equal(await button.count(), 0, `${await section.getAttribute('aria-label')} 仍有加载更多按钮`);
+}
+
+async function exerciseOfficialPagination(page, context) {
+  assert(context.apiServer !== null, 'official fixture API server 尚未安装');
+  const startedAt = performance.now();
+  const warCounts = [];
+  for (const file of manifest.warLogPages) {
+    warCounts.push((fixturePage(file).items ?? []).length);
+  }
+  const capitalCounts = [];
+  for (const file of manifest.capitalRaidPages) {
+    capitalCounts.push((fixturePage(file).items ?? []).length);
+  }
+
+  const war = await waitForOfficialList(
+    page,
+    '部落对战日志',
+    'ul.official-war-log-list',
+    warCounts[0],
+  );
+  const capital = await waitForOfficialList(
+    page,
+    '突袭周末',
+    'ul.official-capital-raid-list',
+    capitalCounts[0],
+  );
+  const requestStart = context.apiServer.requests.length;
+  const warObservedCounts = [warCounts[0]];
+  for (const expectedCount of [warCounts[0] + warCounts[1], warCounts[0] + warCounts[1] + warCounts[2]]) {
+    const button = war.section.getByRole('button', { name: '加载更多', exact: true });
+    await button.waitFor({ state: 'visible', timeout: 30_000 });
+    await button.click();
+    await war.items.nth(expectedCount - 1).waitFor({ state: 'visible', timeout: 30_000 });
+    warObservedCounts.push(await war.items.count());
+  }
+  await waitForNoLoadMoreButton(war.section);
+
+  const capitalObservedCounts = [capitalCounts[0]];
+  for (const expectedCount of [
+    capitalCounts[0] + capitalCounts[1],
+    capitalCounts[0] + capitalCounts[1] + capitalCounts[2],
+  ]) {
+    const button = capital.section.getByRole('button', { name: '加载更多', exact: true });
+    await button.waitFor({ state: 'visible', timeout: 30_000 });
+    await button.click();
+    await capital.items.nth(expectedCount - 1).waitFor({ state: 'visible', timeout: 30_000 });
+    capitalObservedCounts.push(await capital.items.count());
+  }
+  await waitForNoLoadMoreButton(capital.section);
+
+  const observedRequests = context.apiServer.requests.slice(requestStart);
+  assert.deepEqual(
+    observedRequests.filter((request) => request.endpoint === 'warLog').map((request) => request.file),
+    manifest.warLogPages.slice(1),
+    'WarLog loadMore 未按 after 游标加载第 2/3 页',
+  );
+  assert.deepEqual(
+    observedRequests
+      .filter((request) => request.endpoint === 'capitalRaid')
+      .map((request) => request.file),
+    manifest.capitalRaidPages.slice(1),
+    'Capital Raid loadMore 未按 after 游标加载第 2/3 页',
+  );
+  return {
+    durationMs: performance.now() - startedAt,
+    warLog: { expectedCounts: warCounts, observedCounts: warObservedCounts },
+    capitalRaid: { expectedCounts: capitalCounts, observedCounts: capitalObservedCounts },
+    requests: observedRequests,
+  };
+}
+
 async function measureViews(session, includeOfficial) {
   const page = pageOf(session);
   const probe = session.catalogProbe;
@@ -966,17 +1220,23 @@ async function measureViews(session, includeOfficial) {
 
   // probe 在 renderer ready 前已安装；当前 session 的全部 catalog 请求属于 cold 视图。
   const overviewColdMark = 0;
-  const overviewColdMs = await goToTab(page, '升级总览', '升级总览');
-  await settleCatalogRequests(page, probe);
+  const overviewCold = await measureProcessPhase(session, async () => {
+    const navigationMs = await goToTab(page, '升级总览', '升级总览');
+    await settleCatalogRequests(page, probe);
+    return navigationMs;
+  });
   const overviewColdResources = await resourceSummary(page, probe, overviewColdMark);
   const overviewIpc = await measureIpc(page, 'overview', snapshot.selectedVillageId, null);
 
   const detailColdMark = probe.mark();
-  const detailColdMs = await goToTab(page, '村庄详情', '村庄详情');
-  await settleCatalogRequests(page, probe);
+  const detailCold = await measureProcessPhase(session, async () => {
+    const navigationMs = await goToTab(page, '村庄详情', '村庄详情');
+    await settleCatalogRequests(page, probe);
+    return navigationMs;
+  });
   const detailColdResources = await resourceSummary(page, probe, detailColdMark);
   const detailIpc = await measureIpc(page, 'detail', snapshot.selectedVillageId, null);
-  const detailScroll = await measureScroll(page, scrollMs);
+  const detailScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
 
   for (let index = 0; index < warmupCount; index += 1) {
     await goToTab(page, '升级总览', '升级总览');
@@ -986,15 +1246,28 @@ async function measureViews(session, includeOfficial) {
   }
 
   const overviewHotMark = probe.mark();
-  const overviewHotMs = await goToTab(page, '升级总览', '升级总览');
-  await settleCatalogRequests(page, probe);
+  const overviewHot = await measureProcessPhase(session, async () => {
+    const navigationMs = await goToTab(page, '升级总览', '升级总览');
+    await settleCatalogRequests(page, probe);
+    return navigationMs;
+  });
   const overviewHotResources = await resourceSummary(page, probe, overviewHotMark);
 
   const result = {
     navigationMs: {
-      overviewCold: overviewColdMs,
-      detailCold: detailColdMs,
-      overviewHot: overviewHotMs,
+      overviewCold: overviewCold.value,
+      detailCold: detailCold.value,
+      overviewHot: overviewHot.value,
+    },
+    process: {
+      navigation: {
+        overviewCold: overviewCold.process,
+        detailCold: detailCold.process,
+        overviewHot: overviewHot.process,
+      },
+      scroll: {
+        detail: detailScroll.process,
+      },
     },
     resources: {
       overviewCold: overviewColdResources,
@@ -1002,21 +1275,25 @@ async function measureViews(session, includeOfficial) {
       overviewHot: overviewHotResources,
     },
     ipc: { overview: overviewIpc, detail: detailIpc },
-    scroll: { detail: detailScroll },
+    scroll: { detail: detailScroll.value },
   };
 
   if (includeOfficial) {
     const clanTag = manifest.official.clanTag;
-    await goToTab(page, '村庄详情', '村庄详情');
-    await settleCatalogRequests(page, probe);
-    await page.locator('section[aria-label="部落对战日志"]').waitFor({ state: 'visible' });
-    await page.locator('section[aria-label="突袭周末"]').waitFor({ state: 'visible' });
+    const officialNavigation = await measureProcessPhase(session, async () => {
+      await goToTab(page, '村庄详情', '村庄详情');
+      await settleCatalogRequests(page, probe);
+      return await exerciseOfficialPagination(page, session.context);
+    });
     const warLog = await measureIpc(page, 'warLog', snapshot.selectedVillageId, clanTag);
     const capitalRaid = await measureIpc(page, 'capitalRaid', snapshot.selectedVillageId, clanTag);
-    const officialScroll = await measureScroll(page, scrollMs);
+    const officialScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
     result.ipc.warLog = warLog;
     result.ipc.capitalRaid = capitalRaid;
-    result.scroll.official = officialScroll;
+    result.pagination = officialNavigation.value;
+    result.process.navigation.official = officialNavigation.process;
+    result.scroll.official = officialScroll.value;
+    result.process.scroll.official = officialScroll.process;
   }
   return result;
 }
@@ -1039,17 +1316,22 @@ async function runScenario(scenario, repetition) {
     const snapshot = await getSnapshot(page);
     const views = await measureViews(session, scenario === 'official-lists');
     const runtime = await readRuntimeDiagnostics(page);
+    assert(session.processSampler !== null, 'process sampler 尚未安装');
+    const finalProcess = session.processSampler.snapshot();
     return {
       scenario,
       repetition,
-      startup: session.startup,
+      startup: prepared.initialStartup,
       restartStartup: prepared.restartStartup,
+      preparation: prepared.preparation,
+      finalProcess,
       selectedVillageId: snapshot.selectedVillageId,
       views,
       runtime,
     };
   } finally {
     await closeSession(session);
+    await prepared.context.apiServer?.close();
     rmSync(prepared.context.tempRoot, { recursive: true, force: true });
   }
 }
@@ -1060,6 +1342,61 @@ function collectPath(runs, pathParts) {
     let value = run;
     for (const part of pathParts) value = value?.[part];
     if (typeof value === 'number') values.push(value);
+  }
+  return summarizeNumbers(values);
+}
+
+function processSummariesForRun(run) {
+  return [
+    run.startup?.process,
+    run.restartStartup?.process,
+    run.preparation?.process,
+    ...(run.preparation?.imports?.map((entry) => entry.process) ?? []),
+    ...Object.values(run.views?.process?.navigation ?? {}),
+    ...Object.values(run.views?.process?.scroll ?? {}),
+    run.finalProcess,
+  ].filter((value) => value !== null && value !== undefined);
+}
+
+function collectProcessMetric(runs, metric, statistic) {
+  const values = [];
+  for (const run of runs) {
+    for (const process of processSummariesForRun(run)) {
+      const value = process[metric]?.[statistic];
+      if (typeof value === 'number') {
+        values.push(value);
+      }
+    }
+  }
+  return summarizeNumbers(values);
+}
+
+function collectPreparationEntry(runs, kind, label) {
+  const values = [];
+  for (const run of runs) {
+    if (run.preparation?.kind !== kind) {
+      continue;
+    }
+    for (const entry of run.preparation.imports ?? []) {
+      if (entry.label === label && typeof entry.durationMs === 'number') {
+        values.push(entry.durationMs);
+      }
+    }
+  }
+  return summarizeNumbers(values);
+}
+
+function collectPreparationTotal(runs, kind) {
+  const values = [];
+  for (const run of runs) {
+    if (run.preparation?.kind !== kind) {
+      continue;
+    }
+    const total = (run.preparation.imports ?? []).reduce(
+      (sum, entry) => sum + (typeof entry.durationMs === 'number' ? entry.durationMs : 0),
+      0,
+    );
+    values.push(total);
   }
   return summarizeNumbers(values);
 }
@@ -1087,6 +1424,9 @@ function buildSummary(runs) {
           ttiMs: collectPath(selected, ['startup', 'ttiMs']),
           restartStartupMs: collectPath(selected, ['restartStartup', 'startupMs']),
           restartTtiMs: collectPath(selected, ['restartStartup', 'ttiMs']),
+          wallBeforeImportMs: collectPreparationEntry(selected, 'large-walls-import', 'before'),
+          wallAfterImportMs: collectPreparationEntry(selected, 'large-walls-import', 'after'),
+          historyImportTotalMs: collectPreparationTotal(selected, 'history-import'),
           overviewColdMs: collectPath(selected, ['views', 'navigationMs', 'overviewCold']),
           detailColdMs: collectPath(selected, ['views', 'navigationMs', 'detailCold']),
           overviewHotMs: collectPath(selected, ['views', 'navigationMs', 'overviewHot']),
@@ -1125,6 +1465,32 @@ function buildSummary(runs) {
             'detail',
             'hitchCount',
           ]),
+          officialScrollFrameP95: collectPath(selected, [
+            'views',
+            'scroll',
+            'official',
+            'frameMs',
+            'p95',
+          ]),
+          officialScrollFrameMax: collectPath(selected, [
+            'views',
+            'scroll',
+            'official',
+            'frameMs',
+            'max',
+          ]),
+          officialScrollLongFrames: collectPath(selected, [
+            'views',
+            'scroll',
+            'official',
+            'longFrameCount',
+          ]),
+          officialScrollHitches: collectPath(selected, [
+            'views',
+            'scroll',
+            'official',
+            'hitchCount',
+          ]),
           overviewColdIconRequests: collectPath(selected, [
             'views',
             'resources',
@@ -1143,19 +1509,9 @@ function buildSummary(runs) {
             'overviewHot',
             'requestCount',
           ]),
-          peakRssBytes: collectPath(selected, ['startup', 'process', 'rssBytes', 'max']),
-          startupCpuPercent: collectPath(selected, [
-            'startup',
-            'process',
-            'cpuPercent',
-            'p95',
-          ]),
-          peakFootprintBytes: collectPath(selected, [
-            'startup',
-            'process',
-            'rootFootprintBytes',
-            'max',
-          ]),
+          peakRssBytes: collectProcessMetric(selected, 'rssBytes', 'max'),
+          cpuPercent: collectProcessMetric(selected, 'cpuPercent', 'p95'),
+          peakFootprintBytes: collectProcessMetric(selected, 'rootFootprintBytes', 'max'),
         },
       ];
     }),
@@ -1176,13 +1532,13 @@ function markdownReport(report) {
     '',
     '> 本报告只记录 observed baseline；unknown 不等于 0，也不等于通过。',
     '',
-    '| 场景 | 启动/CDP p50 | TTI p50 | Overview cold p50 | Detail cold p50 | Detail IPC p95 | 启动 CPU p95 | 启动峰值 RSS | 启动峰值 footprint |',
+    '| 场景 | 启动/CDP p50 | TTI p50 | Overview cold p50 | Detail cold p50 | Detail IPC p95 | 进程 CPU p95 | Workload 峰值 RSS | Workload 峰值 footprint |',
     '|---|---:|---:|---:|---:|---:|---:|---:|---:|',
   ];
   for (const scenario of SCENARIOS) {
     const summary = report.summary[scenario];
     lines.push(
-      `| ${scenario} | ${formatNumber(summary.startupMs.p50)} ms | ${formatNumber(summary.ttiMs.p50)} ms | ${formatNumber(summary.overviewColdMs.p50)} ms | ${formatNumber(summary.detailColdMs.p50)} ms | ${formatNumber(summary.detailPayloadBytes.p95)} B | ${formatNumber(summary.startupCpuPercent.p95)}% | ${formatBytes(summary.peakRssBytes.max)} | ${formatBytes(summary.peakFootprintBytes.max)} |`,
+      `| ${scenario} | ${formatNumber(summary.startupMs.p50)} ms | ${formatNumber(summary.ttiMs.p50)} ms | ${formatNumber(summary.overviewColdMs.p50)} ms | ${formatNumber(summary.detailColdMs.p50)} ms | ${formatNumber(summary.detailPayloadBytes.p95)} B | ${formatNumber(summary.cpuPercent.p95)}% | ${formatBytes(summary.peakRssBytes.max)} | ${formatBytes(summary.peakFootprintBytes.max)} |`,
     );
   }
   lines.push('', '## 图标冷/热缓存', '');
@@ -1194,6 +1550,28 @@ function markdownReport(report) {
     const summary = report.summary[scenario];
     lines.push(
       `| ${scenario} | ${formatNumber(summary.overviewColdIconRequests.p50)} | ${formatNumber(summary.detailColdIconRequests.p50)} | ${formatNumber(summary.overviewHotIconRequests.p50)} |`,
+    );
+  }
+  lines.push('', '## 首次/重启启动', '');
+  lines.push(
+    '| 场景 | 首次启动/CDP p50 | 首次 TTI p50 | 重启启动/CDP p50 | 重启 TTI p50 |',
+    '|---|---:|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const summary = report.summary[scenario];
+    lines.push(
+      `| ${scenario} | ${formatNumber(summary.startupMs.p50)} ms | ${formatNumber(summary.ttiMs.p50)} ms | ${formatNumber(summary.restartStartupMs.p50)} ms | ${formatNumber(summary.restartTtiMs.p50)} ms |`,
+    );
+  }
+  lines.push('', '## 导入 workload', '');
+  lines.push(
+    '| 场景 | 1005 Wall before p50 | 1005 Wall after p50 | History 24 总导入 p50 |',
+    '|---|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const summary = report.summary[scenario];
+    lines.push(
+      `| ${scenario} | ${formatNumber(summary.wallBeforeImportMs.p50)} ms | ${formatNumber(summary.wallAfterImportMs.p50)} ms | ${formatNumber(summary.historyImportTotalMs.p50)} ms |`,
     );
   }
   lines.push('', '## IPC payload', '');
@@ -1209,19 +1587,19 @@ function markdownReport(report) {
   }
   lines.push('', '## 滚动', '');
   lines.push(
-    '| 场景 | Detail frame p95 | Detail frame max | >16.7ms 帧 | >50ms hitch |',
-    '|---|---:|---:|---:|---:|',
+    '| 场景 | Detail frame p95 | Detail max | Official frame p95 | Official max | >16.7ms 帧 | >50ms hitch |',
+    '|---|---:|---:|---:|---:|---:|---:|',
   );
   for (const scenario of SCENARIOS) {
     const summary = report.summary[scenario];
     lines.push(
-      `| ${scenario} | ${formatNumber(summary.detailScrollFrameP95.p50)} ms | ${formatNumber(summary.detailScrollFrameMax.p50)} ms | ${formatNumber(summary.detailScrollLongFrames.p50)} | ${formatNumber(summary.detailScrollHitches.p50)} |`,
+      `| ${scenario} | ${formatNumber(summary.detailScrollFrameP95.p50)} ms | ${formatNumber(summary.detailScrollFrameMax.p50)} ms | ${formatNumber(summary.officialScrollFrameP95.p50)} ms | ${formatNumber(summary.officialScrollFrameMax.p50)} ms | ${formatNumber(summary.detailScrollLongFrames.p50)} | ${formatNumber(summary.detailScrollHitches.p50)} |`,
     );
   }
   lines.push('', '## 采样边界', '');
   lines.push(
     '- 启动/CDP 是从 spawn 到 remote debugging endpoint 可用；TTI 是从 spawn 到 renderer app-shell `data-smoke=ready`。',
-    '- RSS 统计 packaged app 进程树；footprint 当前仅统计主进程，平台不支持时为 unknown。',
+    '- RSS/CPU/footprint 在启动、导入、重启、导航和滚动阶段按 250ms 采样；footprint 当前仅统计主进程，平台不支持时为 unknown。',
     '- IPC payload 是 bridge 返回 Result 的 JSON UTF-8 字节数，不声称等于 Chromium 内部 structured-clone 字节数。',
     '- 图标冷/热请求来自 Playwright catalog protocol request 事件；hot=0 表示该视图未观察到新的 catalog 请求，不等于证明所有缓存层命中。',
     '- 滚动指标来自 renderer requestAnimationFrame 间隔；未把空 hitch 表解释为无卡顿。',

@@ -62,6 +62,7 @@ import {
   type ClanWarAPIState,
   type ClanWarLogAPIState,
   type Clock,
+  type CoAPIConfig,
   type CoAPITokenProvider,
   type OfficialAPIState,
   type OfficialCapitalRaidPage,
@@ -94,6 +95,18 @@ export type OfficialApiServiceOptions = {
   readonly tokenProvider: CoAPITokenProvider;
   readonly client?: CoAPIClient;
 };
+
+function configuredCoAPIConfig(): CoAPIConfig {
+  const host = process.env.COCHELPER_PERF_API_HOST;
+  if (host === undefined) {
+    return DEFAULT_CO_API_CONFIG;
+  }
+  return {
+    ...DEFAULT_CO_API_CONFIG,
+    scheme: process.env.COCHELPER_PERF_API_SCHEME ?? 'http',
+    host,
+  };
+}
 
 export class OfficialApiService {
   private readonly state: AppAuthoritativeState;
@@ -128,7 +141,7 @@ export class OfficialApiService {
     this.client =
       options.client ??
       new CoAPIClient({
-        config: DEFAULT_CO_API_CONFIG,
+        config: configuredCoAPIConfig(),
         tokenProvider: options.tokenProvider,
       });
     this.playerStore = options.persistence.loadedPlayerStates;

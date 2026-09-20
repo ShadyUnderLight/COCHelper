@@ -107,7 +107,7 @@ function initializeApplicationServices(): void {
   applicationServices = createApplicationServices({
     tokenProvider: () => {
       try {
-        return tokenStore?.readToken() ?? undefined;
+        return process.env.COCHELPER_PERF_API_TOKEN ?? tokenStore?.readToken() ?? undefined;
       } catch {
         return undefined;
       }

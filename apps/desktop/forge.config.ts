@@ -42,10 +42,14 @@ const config: ForgeConfig = {
         generatedAt: new Date().toISOString(),
       };
       for (const outputPath of packageResult.outputPaths) {
+        const appPath =
+          packageResult.platform === 'darwin' && !outputPath.endsWith('.app')
+            ? path.join(outputPath, 'COCHelper.app')
+            : outputPath;
         const resourcesPath =
           packageResult.platform === 'darwin'
-            ? path.join(outputPath, 'Contents', 'Resources')
-            : path.join(outputPath, 'resources');
+            ? path.join(appPath, 'Contents', 'Resources')
+            : path.join(appPath, 'resources');
         writeFileSync(
           path.join(resourcesPath, 'perf-build-provenance.json'),
           `${JSON.stringify(provenance, null, 2)}\n`,

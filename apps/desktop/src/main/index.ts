@@ -23,6 +23,7 @@ if (process.platform === 'linux' && process.env.CI === 'true') {
 }
 
 const smokeMode = process.argv.includes('--smoke') || process.env.COCHELPER_SMOKE === '1';
+const perfFixtureMode = process.argv.includes('--perf-fixture');
 
 /** E3-02（#276）Main application services；权威态与 typed IPC 入口。 */
 let applicationServices: ApplicationServices | null = null;
@@ -104,10 +105,14 @@ const createWindow = (): void => {
 };
 
 function initializeApplicationServices(): void {
+  const perfFixtureToken = process.env.COCHELPER_PERF_API_TOKEN?.trim();
+  if (perfFixtureMode && (perfFixtureToken === undefined || perfFixtureToken.length === 0)) {
+    throw new Error('COCHELPER_PERF_API_TOKEN is required in perf fixture mode');
+  }
   applicationServices = createApplicationServices({
     tokenProvider: () => {
       try {
-        return process.env.COCHELPER_PERF_API_TOKEN ?? tokenStore?.readToken() ?? undefined;
+        return perfFixtureMode ? perfFixtureToken : (tokenStore?.readToken() ?? undefined);
       } catch {
         return undefined;
       }

@@ -97,13 +97,22 @@ export type OfficialApiServiceOptions = {
 };
 
 function configuredCoAPIConfig(): CoAPIConfig {
-  const host = process.env.COCHELPER_PERF_API_HOST;
-  if (host === undefined) {
+  if (!process.argv.includes('--perf-fixture')) {
     return DEFAULT_CO_API_CONFIG;
   }
+
+  const host = process.env.COCHELPER_PERF_API_HOST?.trim();
+  if (host === undefined || host.length === 0) {
+    throw new Error('COCHELPER_PERF_API_HOST is required in perf fixture mode');
+  }
+  const scheme = process.env.COCHELPER_PERF_API_SCHEME?.trim();
+  if (scheme === undefined || scheme.length === 0) {
+    throw new Error('COCHELPER_PERF_API_SCHEME is required in perf fixture mode');
+  }
+
   return {
     ...DEFAULT_CO_API_CONFIG,
-    scheme: process.env.COCHELPER_PERF_API_SCHEME ?? 'http',
+    scheme,
     host,
   };
 }

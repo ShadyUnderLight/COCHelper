@@ -443,6 +443,7 @@ async function launchApp(context) {
       `--user-data-dir=${context.userDataDirectory}`,
       '--remote-debugging-address=127.0.0.1',
       `--remote-debugging-port=${port}`,
+      ...(context.apiServer === null ? [] : ['--perf-fixture']),
       ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
     ],
     {
@@ -561,6 +562,9 @@ function psRows() {
 function processTree(rootPid) {
   const rows = psRows();
   if (rows === null) {
+    return null;
+  }
+  if (!rows.some((row) => row.pid === rootPid)) {
     return null;
   }
   const children = new Map();
@@ -739,20 +743,22 @@ function summarizeProcessSamples(samples) {
   const processCounts = samples
     .map((sample) => sample.pids?.length)
     .filter((value) => typeof value === 'number');
+  const rssBytes = samples
+    .map((sample) => sample.rssBytes)
+    .filter((value) => typeof value === 'number');
+  const cpuPercent = samples
+    .map((sample) => sample.cpuPercent)
+    .filter((value) => typeof value === 'number');
+  const rootFootprintBytes = samples
+    .map((sample) => sample.rootFootprintBytes)
+    .filter((value) => typeof value === 'number');
   return {
     sampleCount: samples.length,
-    rssBytes: summarizeNumbers(
-      samples.map((sample) => sample.rssBytes).filter((value) => typeof value === 'number'),
-    ),
-    cpuPercent: summarizeNumbers(
-      samples.map((sample) => sample.cpuPercent).filter((value) => typeof value === 'number'),
-    ),
-    rootFootprintBytes: summarizeNumbers(
-      samples
-        .map((sample) => sample.rootFootprintBytes)
-        .filter((value) => value !== null),
-    ),
-    footprintAvailable: samples.some((sample) => sample.rootFootprintBytes !== null),
+    rssBytes: summarizeNumbers(rssBytes),
+    cpuPercent: summarizeNumbers(cpuPercent),
+    rootFootprintBytes: summarizeNumbers(rootFootprintBytes),
+    raw: { rssBytes, cpuPercent, rootFootprintBytes },
+    footprintAvailable: rootFootprintBytes.length > 0,
     processCount: processCounts.length === 0 ? null : Math.max(...processCounts),
   };
 }
@@ -1346,26 +1352,27 @@ function collectPath(runs, pathParts) {
   return summarizeNumbers(values);
 }
 
-function processSummariesForRun(run) {
-  return [
-    run.startup?.process,
-    run.restartStartup?.process,
-    run.preparation?.process,
-    ...(run.preparation?.imports?.map((entry) => entry.process) ?? []),
-    ...Object.values(run.views?.process?.navigation ?? {}),
-    ...Object.values(run.views?.process?.scroll ?? {}),
-    run.finalProcess,
-  ].filter((value) => value !== null && value !== undefined);
+function workloadProcessSummariesForRun(run) {
+  const summaries = [];
+  if (run.preparation?.process !== null && run.preparation?.process !== undefined) {
+    // preparation.process covers the complete initial session, including startup and imports.
+    summaries.push(run.preparation.process);
+  }
+  if (run.finalProcess !== null && run.finalProcess !== undefined) {
+    // finalProcess covers the complete final session, including navigation and scroll.
+    summaries.push(run.finalProcess);
+  }
+  if (summaries.length === 0) {
+    summaries.push(run.startup?.process, run.restartStartup?.process);
+  }
+  return summaries.filter((value) => value !== null && value !== undefined);
 }
 
-function collectProcessMetric(runs, metric, statistic) {
+function collectProcessMetric(runs, metric) {
   const values = [];
   for (const run of runs) {
-    for (const process of processSummariesForRun(run)) {
-      const value = process[metric]?.[statistic];
-      if (typeof value === 'number') {
-        values.push(value);
-      }
+    for (const process of workloadProcessSummariesForRun(run)) {
+      values.push(...(process.raw?.[metric] ?? []));
     }
   }
   return summarizeNumbers(values);
@@ -1509,9 +1516,9 @@ function buildSummary(runs) {
             'overviewHot',
             'requestCount',
           ]),
-          peakRssBytes: collectProcessMetric(selected, 'rssBytes', 'max'),
-          cpuPercent: collectProcessMetric(selected, 'cpuPercent', 'p95'),
-          peakFootprintBytes: collectProcessMetric(selected, 'rootFootprintBytes', 'max'),
+          peakRssBytes: collectProcessMetric(selected, 'rssBytes'),
+          cpuPercent: collectProcessMetric(selected, 'cpuPercent'),
+          peakFootprintBytes: collectProcessMetric(selected, 'rootFootprintBytes'),
         },
       ];
     }),

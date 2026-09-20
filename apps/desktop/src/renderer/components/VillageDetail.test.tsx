@@ -814,6 +814,52 @@ describe('VillageDetail', () => {
     );
   });
 
+  it('legacy 行 effective 等级变化时跳过 raw current-level PNG', () => {
+    const rawVisual = {
+      container: 'sc/buildings.sc',
+      exportName: 'cannon_lvl5',
+      renderedPath: 'icons/buildings/cannon_lvl5.png',
+      missingReason: null,
+    };
+    const itemVisual = {
+      container: 'sc/buildings.sc',
+      exportName: 'cannon',
+      renderedPath: 'icons/buildings/cannon.png',
+      missingReason: null,
+    };
+    const { container } = render(
+      <VillageDetail
+        state={applyVillageDetailSuccess(
+          villageDetailFixture({
+            items: [
+              {
+                ...recordFixture().item,
+                id: 'item-effective-asset',
+                currentLevel: 5,
+                effectiveCurrentLevel: 6,
+                currentLevelVisual: rawVisual,
+                levelVisual: itemVisual,
+              },
+            ],
+            flatRows: [
+              {
+                kind: 'legacy',
+                itemID: 'item-effective-asset',
+                groupID: 'g',
+                indented: false,
+                leadingDivider: false,
+              },
+            ],
+          }),
+        )}
+        {...baseProps()}
+      />,
+    );
+    expect(container.querySelector('img.detail-item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/buildings/cannon.png',
+    );
+  });
+
   it('传入 manual 时渲染手动升级面板', () => {
     render(
       <VillageDetail

@@ -230,6 +230,35 @@ describe('UpgradeOverview', () => {
     expect(container.querySelector('.overview-item-glyph')?.textContent).toBe('防');
   });
 
+  it('effective 等级变化时不使用 raw current-level 图标', () => {
+    const rec = recordFixture({
+      id: 'r-effective-asset',
+      item: {
+        ...recordFixture().item,
+        currentLevel: 5,
+        effectiveCurrentLevel: 6,
+        currentLevelVisual: {
+          container: 'sc',
+          exportName: 'cannon_lvl5',
+          renderedPath: 'icons/buildings/cannon_lvl5.png',
+          missingReason: null,
+        },
+        levelVisual: {
+          container: 'sc',
+          exportName: 'cannon',
+          renderedPath: 'icons/buildings/cannon.png',
+          missingReason: null,
+        },
+      },
+    });
+    const { container } = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />,
+    );
+    expect(container.querySelector('img.overview-item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/buildings/cannon.png',
+    );
+  });
+
   it('双候选首个失败回退到第二个（#277-C2 review 候选链）', () => {
     const rec = recordFixture({
       id: 'r-icon-fallback',

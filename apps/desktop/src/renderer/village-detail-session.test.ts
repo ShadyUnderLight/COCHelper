@@ -342,6 +342,45 @@ describe('primaryLevelAssets（#277-C2）', () => {
       }),
     ).toEqual([null, null, null, null]);
   });
+
+  it('effective 等级与 raw 不一致时跳过过期的 current-level 资产', () => {
+    const base = recordFixture().item;
+    const rawVisual = {
+      container: 'sc',
+      exportName: 'cannon_lvl5',
+      renderedPath: 'icons/cannon_lvl5.png',
+      missingReason: null,
+    } as const;
+    const rawIcon = {
+      container: 'sc',
+      exportName: 'cannon_icon_lvl5',
+      renderedPath: 'icons/cannon_icon_lvl5.png',
+      missingReason: null,
+    } as const;
+    const itemLevelVisual = {
+      container: 'sc',
+      exportName: 'cannon',
+      renderedPath: 'icons/cannon.png',
+      missingReason: null,
+    } as const;
+    const itemIcon = {
+      container: 'sc',
+      exportName: 'cannon_icon',
+      renderedPath: 'icons/cannon_icon.png',
+      missingReason: null,
+    } as const;
+    expect(
+      primaryLevelAssets({
+        ...base,
+        currentLevel: 5,
+        effectiveCurrentLevel: 6,
+        currentLevelVisual: rawVisual,
+        currentLevelIcon: rawIcon,
+        levelVisual: itemLevelVisual,
+        icon: itemIcon,
+      }),
+    ).toEqual([itemLevelVisual, itemIcon]);
+  });
 });
 
 describe('authoritativeLevelStatus（#277-C2 review）', () => {

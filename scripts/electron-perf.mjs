@@ -35,6 +35,7 @@ import {
   summarizeProcessSamples,
 } from './perf-metrics.mjs';
 import { readGitProvenance } from './perf-provenance.mjs';
+import { evaluateWithTimeout, PerfTimeoutError } from './perf-timeouts.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +69,9 @@ const warmupCount = nonNegativeInt(
 const scrollMs = positiveInt(optionValue('--scroll-ms') ?? process.env.COCHELPER_PERF_SCROLL_MS, 10_000);
 const outputDir = path.resolve(optionValue('--output') ?? process.env.COCHELPER_PERF_OUTPUT ?? defaultOutput);
 const importTimeoutMs = 120_000;
+const bridgeCallTimeoutMs = 10_000;
+const diagnosticsTimeoutMs = 5_000;
+const scrollGraceTimeoutMs = 5_000;
 const processSampleIntervalMs = 250;
 const footprintSampleEvery = 16;
 const failureOutputMaxChars = 20_000;
@@ -910,19 +914,32 @@ async function goToTab(page, name, ariaLabel) {
   return performance.now() - start;
 }
 
-async function getSnapshot(page) {
-  const result = await page.evaluate(() => globalThis.window.cocHelper.snapshot({}));
+async function getSnapshot(page, timeoutMs = bridgeCallTimeoutMs) {
+  const result = await evaluateWithTimeout(
+    page,
+    () => globalThis.window.cocHelper.snapshot({}),
+    undefined,
+    timeoutMs,
+    'app.snapshot',
+  );
   if (!result.ok) {
     throw new Error(`app.snapshot 失败：${result.error.message}`);
   }
   return result.value;
 }
 
-async function waitForCommittedImport(page, previousGeneration, expectedTag) {
-  const deadline = Date.now() + importTimeoutMs;
+async function waitForCommittedImport(page, previousGeneration, expectedTag, deadline) {
   let lastSnapshot = null;
   while (Date.now() < deadline) {
-    lastSnapshot = await getSnapshot(page);
+    const remainingMs = deadline - Date.now();
+    try {
+      lastSnapshot = await getSnapshot(page, Math.min(bridgeCallTimeoutMs, remainingMs));
+    } catch (error) {
+      if (error instanceof PerfTimeoutError) {
+        throw new Error(`等待导入提交时 app.snapshot 超时：${error.message}`);
+      }
+      throw error;
+    }
     const committed =
       lastSnapshot.generation > previousGeneration &&
       lastSnapshot.pendingImport === null &&
@@ -979,11 +996,25 @@ async function importFixture(page, text, expectedTag, context, label) {
   if (!(await confirmButton.isEnabled())) {
     throw new Error(`确认导入按钮不可用：${previewText}`);
   }
+
+  /**
+   * Fixture 注入边界：UI 预览与 enabled 状态仍通过 renderer 验证；实际提交使用同一
+   * typed bridge 和 prepared generation，以便 runner 能对 IPC Result 施加 hard timeout，
+   * 不依赖 renderer hook 的本地 cursor 生命周期。
+  */
+  const importDeadline = Date.now() + importTimeoutMs;
   context.phase = `${label}:bridge-commit`;
-  const commitResult = await page.evaluate(
-    async (expectedGeneration) =>
-      await globalThis.window.cocHelper.commitImport({ expectedGeneration }),
+  const commitTimeoutMs = importDeadline - Date.now();
+  if (commitTimeoutMs <= 0) {
+    throw new PerfTimeoutError('import.commit', importTimeoutMs);
+  }
+  const commitResult = await evaluateWithTimeout(
+    page,
+    (expectedGeneration) =>
+      globalThis.window.cocHelper.commitImport({ expectedGeneration }),
     preparedSnapshot.generation,
+    commitTimeoutMs,
+    'import.commit',
   );
   context.lastImport = {
     ...context.lastImport,
@@ -994,8 +1025,20 @@ async function importFixture(page, text, expectedTag, context, label) {
   if (!commitResult.ok) {
     throw new Error(`导入提交失败：${commitResult.error.message}`);
   }
+  assert(
+    commitResult.value.generation > preparedSnapshot.generation,
+    `导入提交 generation 未推进：${commitResult.value.generation}`,
+  );
+  const targetVillageId = preparedSnapshot.pendingImport?.targetVillageId ?? null;
+  if (targetVillageId !== null) {
+    assert.equal(
+      commitResult.value.selectedVillageId,
+      targetVillageId,
+      '导入提交 selectedVillageId 与目标村庄不一致',
+    );
+  }
   context.phase = `${label}:wait-commit-state`;
-  await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag);
+  await waitForCommittedImport(page, preparedSnapshot.generation, expectedTag, importDeadline);
   context.lastImport = {
     ...context.lastImport,
     commitStateObserved: true,
@@ -1236,68 +1279,79 @@ async function captureFailureDiagnostics(context, session, error) {
   };
   if (session?.page !== null && session?.page !== undefined) {
     try {
-      const pageEvidence = await session.page.evaluate(async () => {
-        const snapshotResult = await globalThis.window.cocHelper.snapshot({});
-        const snapshot = snapshotResult.ok
-          ? {
-              sessionId: snapshotResult.value.sessionId,
-              generation: snapshotResult.value.generation,
-              availability: snapshotResult.value.availability,
-              villageStatus: snapshotResult.value.villageStatus,
-              villageError: snapshotResult.value.villageError,
-              selectedVillageId: snapshotResult.value.selectedVillageId,
-              canWrite: snapshotResult.value.canWrite,
-              hasPendingJournal: snapshotResult.value.hasPendingJournal,
-              recoveryNotice: snapshotResult.value.recoveryNotice,
-              pendingImport: snapshotResult.value.pendingImport,
-              villages: snapshotResult.value.villages,
-            }
-          : { ok: false, error: snapshotResult.error };
-        const panelEvidence = (selector) => {
-          const panel = globalThis.document.querySelector(selector);
-          if (panel === null) return null;
-          return {
-            state: panel.getAttribute('data-perf-state'),
-            text: panel.textContent,
-            alertCount: panel.querySelectorAll('[role="alert"]').length,
-            retryCount: [...panel.querySelectorAll('button')].filter(
-              (button) => button.textContent?.trim() === '重试',
-            ).length,
-            buttons: [...panel.querySelectorAll('button')].map((button) => ({
-              text: button.textContent?.trim() ?? '',
-              disabled: button.disabled,
-            })),
-            textareas: [...panel.querySelectorAll('textarea')].map((textarea) => ({
-              disabled: textarea.disabled,
-              valueLength: textarea.value.length,
-            })),
+      const pageEvidence = await evaluateWithTimeout(
+        session.page,
+        async (maxTextChars) => {
+          const boundedText = (value) => {
+            const text = value ?? '';
+            return text.length <= maxTextChars ? text : text.slice(-maxTextChars);
           };
-        };
-        return {
-          snapshot,
-          sidebarText:
-            globalThis.document.querySelector('[role="complementary"][aria-label="村庄列表"]')
-              ?.textContent ?? null,
-          statusText: globalThis.document.getElementById('status')?.textContent ?? null,
-          appShell: (() => {
-            const shell = globalThis.document.querySelector('.app-shell');
-            return shell === null
-              ? null
-              : {
-                  smoke: shell.getAttribute('data-smoke'),
-                  availability: shell.getAttribute('data-availability'),
-                  canWrite: shell.getAttribute('data-can-write'),
-                };
-          })(),
-          alerts: [...globalThis.document.querySelectorAll('[role="alert"]')].map(
-            (element) => element.textContent?.trim() ?? '',
-          ),
-          bodyText: globalThis.document.body.innerText ?? '',
-          import: panelEvidence('section[aria-label="账号导入"]'),
-          overview: panelEvidence('section[aria-label="升级总览"]'),
-          detail: panelEvidence('section[aria-label="村庄详情"]'),
-        };
-      });
+          const snapshotResult = await globalThis.window.cocHelper.snapshot({});
+          const snapshot = snapshotResult.ok
+            ? {
+                sessionId: snapshotResult.value.sessionId,
+                generation: snapshotResult.value.generation,
+                availability: snapshotResult.value.availability,
+                villageStatus: snapshotResult.value.villageStatus,
+                villageError: snapshotResult.value.villageError,
+                selectedVillageId: snapshotResult.value.selectedVillageId,
+                canWrite: snapshotResult.value.canWrite,
+                hasPendingJournal: snapshotResult.value.hasPendingJournal,
+                recoveryNotice: snapshotResult.value.recoveryNotice,
+                pendingImport: snapshotResult.value.pendingImport,
+                villages: snapshotResult.value.villages.slice(0, 64),
+              }
+            : { ok: false, error: snapshotResult.error };
+          const panelEvidence = (selector) => {
+            const panel = globalThis.document.querySelector(selector);
+            if (panel === null) return null;
+            return {
+              state: panel.getAttribute('data-perf-state'),
+              text: boundedText(panel.textContent),
+              alertCount: panel.querySelectorAll('[role="alert"]').length,
+              retryCount: [...panel.querySelectorAll('button')].filter(
+                (button) => button.textContent?.trim() === '重试',
+              ).length,
+              buttons: [...panel.querySelectorAll('button')].slice(0, 64).map((button) => ({
+                text: boundedText(button.textContent?.trim() ?? ''),
+                disabled: button.disabled,
+              })),
+              textareas: [...panel.querySelectorAll('textarea')].slice(0, 16).map((textarea) => ({
+                disabled: textarea.disabled,
+                valueLength: textarea.value.length,
+              })),
+            };
+          };
+          return {
+            snapshot,
+            sidebarText: boundedText(
+              globalThis.document.querySelector('[role="complementary"][aria-label="村庄列表"]')
+                ?.textContent,
+            ),
+            statusText: boundedText(globalThis.document.getElementById('status')?.textContent),
+            appShell: (() => {
+              const shell = globalThis.document.querySelector('.app-shell');
+              return shell === null
+                ? null
+                : {
+                    smoke: shell.getAttribute('data-smoke'),
+                    availability: shell.getAttribute('data-availability'),
+                    canWrite: shell.getAttribute('data-can-write'),
+                  };
+            })(),
+            alerts: [...globalThis.document.querySelectorAll('[role="alert"]')]
+              .slice(0, 64)
+              .map((element) => boundedText(element.textContent?.trim() ?? '')),
+            bodyText: boundedText(globalThis.document.body.innerText ?? ''),
+            import: panelEvidence('section[aria-label="账号导入"]'),
+            overview: panelEvidence('section[aria-label="升级总览"]'),
+            detail: panelEvidence('section[aria-label="村庄详情"]'),
+          };
+        },
+        failureOutputMaxChars,
+        diagnosticsTimeoutMs,
+        'failure diagnostics',
+      );
       diagnostics.snapshot = pageEvidence.snapshot;
       diagnostics.renderer = {
           sidebarText: appendTail(pageEvidence.sidebarText ?? '', '', failureOutputMaxChars),
@@ -1341,7 +1395,8 @@ async function measureProcessPhase(session, task) {
 }
 
 async function measureIpc(page, kind, villageId, clanTag) {
-  return page.evaluate(
+  return evaluateWithTimeout(
+    page,
     async ({ requestKind, requestVillageId, requestClanTag }) => {
       const started = performance.now();
       let result;
@@ -1420,23 +1475,32 @@ async function measureIpc(page, kind, villageId, clanTag) {
       };
     },
     { requestKind: kind, requestVillageId: villageId, requestClanTag: clanTag },
+    bridgeCallTimeoutMs,
+    `${kind} IPC`,
   );
 }
 
 async function resourceSummary(page, probe, mark) {
   assert(probe !== null, 'catalog request probe 尚未安装');
   const requests = probe.summary(mark);
-  const images = await page.evaluate(() => {
-    const catalogImages = [...globalThis.document.images].filter((image) =>
-      image.currentSrc.startsWith('cochelper://catalog/'),
-    );
-    return {
-      imageCount: catalogImages.length,
-      loadedImageCount: catalogImages.filter((image) => image.naturalWidth > 0).length,
-      failedImageCount: catalogImages.filter((image) => image.complete && image.naturalWidth === 0)
-        .length,
-    };
-  });
+  const images = await evaluateWithTimeout(
+    page,
+    () => {
+      const catalogImages = [...globalThis.document.images].filter((image) =>
+        image.currentSrc.startsWith('cochelper://catalog/'),
+      );
+      return {
+        imageCount: catalogImages.length,
+        loadedImageCount: catalogImages.filter((image) => image.naturalWidth > 0).length,
+        failedImageCount: catalogImages.filter(
+          (image) => image.complete && image.naturalWidth === 0,
+        ).length,
+      };
+    },
+    undefined,
+    diagnosticsTimeoutMs,
+    'catalog image summary',
+  );
   if (requests.failedCount > 0 || images.failedImageCount > 0) {
     throw new Error(
       `catalog 资源失败：requestFailed=${requests.failedCount}, imageFailed=${images.failedImageCount}`,
@@ -1456,7 +1520,8 @@ async function resourceSummary(page, probe, mark) {
 }
 
 async function measureScroll(page, durationMs) {
-  return page.evaluate(
+  return evaluateWithTimeout(
+    page,
     ({ duration }) =>
       new Promise((resolve) => {
         const target = globalThis.document.scrollingElement;
@@ -1519,6 +1584,8 @@ async function measureScroll(page, durationMs) {
         }
       }),
     { duration: durationMs },
+    durationMs + scrollGraceTimeoutMs,
+    'scroll rAF measurement',
   );
 }
 
@@ -1699,7 +1766,13 @@ async function measureViews(session, includeOfficial) {
 
 async function readRuntimeDiagnostics(page) {
   try {
-    const result = await page.evaluate(() => globalThis.window.cocHelper.diagnosticsSnapshot({}));
+    const result = await evaluateWithTimeout(
+      page,
+      () => globalThis.window.cocHelper.diagnosticsSnapshot({}),
+      undefined,
+      diagnosticsTimeoutMs,
+      'diagnosticsSnapshot',
+    );
     return result.ok ? result.value.runtime : null;
   } catch {
     return null;

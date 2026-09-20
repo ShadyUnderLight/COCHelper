@@ -943,6 +943,12 @@ async function importFixture(page, text, expectedTag, context, label) {
   const previewText = await preview.innerText();
   assert.match(previewText, new RegExp(expectedTag.replace('#', '\\#')));
   const preparedSnapshot = await getSnapshot(page);
+  context.lastImport = {
+    label,
+    expectedTag,
+    preparedGeneration: preparedSnapshot.generation,
+    preparedPendingImport: preparedSnapshot.pendingImport,
+  };
   context.phase = `${label}:commit`;
   const confirmButton = preview.getByRole('button', { name: '确认导入', exact: true });
   if (!(await confirmButton.isEnabled())) {
@@ -964,6 +970,10 @@ async function importFixture(page, text, expectedTag, context, label) {
     { previousGeneration: preparedSnapshot.generation, expectedTag },
     { timeout: importTimeoutMs },
   );
+  context.lastImport = {
+    ...context.lastImport,
+    commitStateObserved: true,
+  };
   context.phase = `${label}:wait-sidebar`;
   await page
     .getByRole('complementary', { name: '村庄列表' })
@@ -1186,6 +1196,7 @@ async function captureFailureDiagnostics(context, session, error) {
     snapshot: null,
     renderer: null,
     process: null,
+    import: context?.lastImport ?? null,
     appOutput: session?.output ?? null,
     session: session
       ? {
@@ -1242,6 +1253,20 @@ async function captureFailureDiagnostics(context, session, error) {
             globalThis.document.querySelector('[role="complementary"][aria-label="村庄列表"]')
               ?.textContent ?? null,
           statusText: globalThis.document.getElementById('status')?.textContent ?? null,
+          appShell: (() => {
+            const shell = globalThis.document.querySelector('.app-shell');
+            return shell === null
+              ? null
+              : {
+                  smoke: shell.getAttribute('data-smoke'),
+                  availability: shell.getAttribute('data-availability'),
+                  canWrite: shell.getAttribute('data-can-write'),
+                };
+          })(),
+          alerts: [...globalThis.document.querySelectorAll('[role="alert"]')].map(
+            (element) => element.textContent?.trim() ?? '',
+          ),
+          bodyText: globalThis.document.body.innerText ?? '',
           import: panelEvidence('section[aria-label="账号导入"]'),
           overview: panelEvidence('section[aria-label="升级总览"]'),
           detail: panelEvidence('section[aria-label="村庄详情"]'),
@@ -1251,6 +1276,9 @@ async function captureFailureDiagnostics(context, session, error) {
       diagnostics.renderer = {
           sidebarText: appendTail(pageEvidence.sidebarText ?? '', '', failureOutputMaxChars),
           statusText: pageEvidence.statusText,
+          appShell: pageEvidence.appShell,
+          alerts: pageEvidence.alerts,
+          bodyText: appendTail(pageEvidence.bodyText ?? '', '', failureOutputMaxChars),
           import: pageEvidence.import,
           overview: pageEvidence.overview,
           detail: pageEvidence.detail,

@@ -426,19 +426,22 @@ function makeEffectiveState(input: {
     });
   }
 
-  const targetLevel = activeRecords[0]?.targetLevel ?? representative?.nextLevel ?? null;
-  const catalogLevel =
-    effectiveCatalogProjection?.catalogLevel ??
-    (targetLevel !== null
-      ? (input.catalog
-          ?.item(input.key.rawSection, input.key.dataID)
-          ?.levels.find((level) => level.level === targetLevel) ?? null)
-      : null);
-
   let catalogDuration: CatalogDurationState | null;
   let catalogCosts: CatalogLevel['upgradeCosts'] | null;
-  if (
-    effectiveCatalogProjection?.nextUpgrade.kind === 'globalMaxed' ||
+  if (status === 'manualCompleted') {
+    // effective sidecar 是 authoritative：manualCompleted 只认 effective
+    // projection 明确给出的 catalog level。unknown / unverified /
+    // globalMaxed（以及 mixed distribution 导致 effective 等级无法唯一
+    // 确定、或条目不在 catalog 中）时 catalogLevel 为 null，一律
+    // fail closed——不再用 raw target/nextLevelDurationState 兜底，避免
+    // “升级：未知 + 时长：raw 旧时长” 这类混合视图。
+    const effectiveLevel = effectiveCatalogProjection?.catalogLevel ?? null;
+    catalogDuration =
+      effectiveLevel === null
+        ? null
+        : catalogDurationState(effectiveLevel.durationSeconds, effectiveLevel.missingReason);
+    catalogCosts = effectiveLevel?.upgradeCosts ?? null;
+  } else if (
     status === 'unknown' ||
     status === 'conflict' ||
     status === 'needsReimport' ||
@@ -447,8 +450,18 @@ function makeEffectiveState(input: {
     catalogDuration = null;
     catalogCosts = null;
   } else {
+    // 只有无 effective projection 的状态（manualActive / observed /
+    // importedActive）才使用 raw 目标与时长的 fallback；raw 计算局部化在
+    // 这里，避免它出现在 authoritative 分支上方被误用。
+    const targetLevel = activeRecords[0]?.targetLevel ?? representative?.nextLevel ?? null;
+    const catalogLevel =
+      targetLevel !== null
+        ? (input.catalog
+            ?.item(input.key.rawSection, input.key.dataID)
+            ?.levels.find((level) => level.level === targetLevel) ?? null)
+        : null;
     catalogDuration =
-      (catalogLevel !== null && catalogLevel !== undefined
+      (catalogLevel !== null
         ? catalogDurationState(catalogLevel.durationSeconds, catalogLevel.missingReason)
         : null) ??
       representative?.nextLevelDurationState ??

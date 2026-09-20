@@ -437,8 +437,20 @@ function makeEffectiveState(input: {
 
   let catalogDuration: CatalogDurationState | null;
   let catalogCosts: CatalogLevel['upgradeCosts'] | null;
-  if (
-    effectiveCatalogProjection?.nextUpgrade.kind === 'globalMaxed' ||
+  if (status === 'manualCompleted') {
+    // effective sidecar 是 authoritative：manualCompleted 只认 effective
+    // projection 明确给出的 catalog level。unknown / unverified /
+    // globalMaxed（以及 mixed distribution 导致 effective 等级无法唯一
+    // 确定、或条目不在 catalog 中）时 catalogLevel 为 null，一律
+    // fail closed——不再用 raw target/nextLevelDurationState 兜底，避免
+    // “升级：未知 + 时长：raw 旧时长” 这类混合视图。
+    const effectiveLevel = effectiveCatalogProjection?.catalogLevel ?? null;
+    catalogDuration =
+      effectiveLevel === null
+        ? null
+        : catalogDurationState(effectiveLevel.durationSeconds, effectiveLevel.missingReason);
+    catalogCosts = effectiveLevel?.upgradeCosts ?? null;
+  } else if (
     status === 'unknown' ||
     status === 'conflict' ||
     status === 'needsReimport' ||

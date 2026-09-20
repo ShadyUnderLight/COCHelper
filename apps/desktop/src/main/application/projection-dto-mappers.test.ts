@@ -11,6 +11,7 @@ import {
   type CatalogAssetRef,
   type CatalogItem,
   type CatalogLevel,
+  type EffectiveVillageItemState,
 } from '@coc-helper/domain';
 import { describe, expect, it } from 'vitest';
 
@@ -132,6 +133,52 @@ describe('projection DTO effective state mapping', () => {
     expect(dto.effectiveCurrentLevel).toBe(2);
     expect(dto.currentLevelVisual?.renderedPath).toBe('icons/buildings/cannon_lvl1.png');
     expect(dto.effectiveNextUpgrade).toEqual({ kind: 'globalMaxed' });
+    expect(dto.effectiveNextLevelDurationState).toBeNull();
+  });
+
+  it('manualCompleted 且 effective 等级不唯一时不泄漏 raw 时长', () => {
+    const itemKey = trackerItemKeyRoot('home', 'buildings', ITEM_DATA_ID);
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: { revision: 'snapshot-1', lineageID: null },
+          imported: createManualLevelDistributionFromPairs([[1, 1n]]),
+          manual: createManualLevelDistributionFromPairs([
+            [1, 1n],
+            [2, 1n],
+          ]),
+          status: 'manualCompleted',
+          sourceTimestampMs: IMPORTED_AT_MS,
+        }),
+      ],
+    });
+    const village = createVillageProfile({
+      id: '00000000-0000-0000-0000-0000000000ab',
+      name: 'DTO mixed 测试村',
+      accountSnapshot: snapshot(),
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog: catalog(),
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+      manualUpgradeCore,
+    });
+
+    const projected = projection.items[0]!;
+    const sidecar = projected.effectiveState as EffectiveVillageItemState;
+    // effective distribution 是 mixed（Lv1×1 + Lv2×1）：等级无法唯一确定，
+    // projection 层必须 fail closed，catalogDurationState 不得回退 raw。
+    expect(sidecar.status).toBe('manualCompleted');
+    expect(sidecar.effectiveCompletedLevel).toBeNull();
+    expect(sidecar.catalogNextUpgrade).toEqual({ kind: 'unknown' });
+    expect(sidecar.catalogDurationState).toBeNull();
+
+    const dto = toVillageItemStateDto(projected);
+    expect(dto.effectiveStatus).toBe('manualCompleted');
+    expect(dto.effectiveNextUpgrade).toEqual({ kind: 'unknown' });
+    expect(dto.effectiveTargetLevel).toBeNull();
     expect(dto.effectiveNextLevelDurationState).toBeNull();
   });
 });

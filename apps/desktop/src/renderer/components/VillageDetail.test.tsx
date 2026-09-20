@@ -104,6 +104,7 @@ describe('VillageDetail', () => {
   it('idle 显示选择提示', () => {
     render(<VillageDetail state={idleVillageDetailState()} {...baseProps()} />);
     expect(screen.getByText('先选择村庄查看详情')).toBeTruthy();
+    expect(screen.getByLabelText('村庄详情').getAttribute('data-perf-state')).toBe('idle');
   });
 
   it('loading 显示加载文案', () => {
@@ -114,6 +115,7 @@ describe('VillageDetail', () => {
       />,
     );
     expect(screen.getByText('正在加载村庄详情…')).toBeTruthy();
+    expect(screen.getByLabelText('村庄详情').getAttribute('data-perf-state')).toBe('loading');
   });
 
   it('error 无 last-good 显示错误与重试', () => {
@@ -126,6 +128,7 @@ describe('VillageDetail', () => {
       />,
     );
     expect(screen.getByRole('alert').textContent).toMatch(/加载失败/);
+    expect(screen.getByLabelText('村庄详情').getAttribute('data-perf-state')).toBe('error');
     fireEvent.click(screen.getByText('重试'));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -136,6 +139,7 @@ describe('VillageDetail', () => {
     );
     expect(screen.getByText('该村庄暂无详情数据')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByLabelText('村庄详情').getAttribute('data-perf-state')).toBe('ready');
   });
 
   it('传入 official 时详情页渲染官方玩家卡，不自动当成导入页部落卡', () => {

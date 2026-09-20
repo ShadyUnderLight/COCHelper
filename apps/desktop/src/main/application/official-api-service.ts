@@ -109,6 +109,25 @@ function configuredCoAPIConfig(): CoAPIConfig {
   if (scheme === undefined || scheme.length === 0) {
     throw new Error('COCHELPER_PERF_API_SCHEME is required in perf fixture mode');
   }
+  if (scheme !== 'http') {
+    throw new Error('perf fixture API scheme must be http');
+  }
+  let parsedHost: URL;
+  try {
+    parsedHost = new URL(`${scheme}://${host}`);
+  } catch {
+    throw new Error('COCHELPER_PERF_API_HOST must be a valid loopback host');
+  }
+  if (
+    parsedHost.hostname !== '127.0.0.1' ||
+    parsedHost.username !== '' ||
+    parsedHost.password !== '' ||
+    parsedHost.pathname !== '/' ||
+    parsedHost.search !== '' ||
+    parsedHost.hash !== ''
+  ) {
+    throw new Error('COCHELPER_PERF_API_HOST must resolve to 127.0.0.1');
+  }
 
   return {
     ...DEFAULT_CO_API_CONFIG,

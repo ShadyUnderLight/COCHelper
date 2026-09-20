@@ -9,7 +9,7 @@
  * - 不把缺失的 footprint 或 hitch 数据记为 0/通过。
  */
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import {
@@ -24,15 +24,29 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { promisify } from 'node:util';
 
 import { chromium } from 'playwright-core';
 
-import { resolvePackagedBinary } from './electron-package.mjs';
+import { readPackagedBuildProvenance, resolvePackagedBinary } from './electron-package.mjs';
+
+const execFileAsync = promisify(execFile);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(root, 'e2e/fixtures/perf-manifest.json');
 const manifest = readJson(manifestPath);
-const binary = resolvePackagedBinary(root);
+const sourceProvenance = getSourceProvenance(root);
+if (sourceProvenance.commitSha === 'unknown') {
+  throw new Error('无法读取当前源码 commit，不能绑定 packaged binary provenance');
+}
+if (sourceProvenance.dirty) {
+  throw new Error('当前 worktree 有未提交源码变更，请先提交后再运行 perf:release');
+}
+const binary = resolvePackagedBinary(root, sourceProvenance.commitSha);
+const binaryProvenance = readPackagedBuildProvenance(binary);
+if (binaryProvenance === null) {
+  throw new Error('packaged binary 缺少有效的 perf-build-provenance.json');
+}
 const runId = `${new Date().toISOString().replaceAll(':', '-')}-${process.pid}`;
 const defaultOutput = path.join(root, 'e2e-artifacts', 'perf', runId);
 
@@ -137,11 +151,21 @@ function validatePerfFixtures() {
 
 validatePerfFixtures();
 
-function getCommitSha() {
+function getSourceProvenance(projectRoot) {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    return {
+      commitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: projectRoot,
+        encoding: 'utf8',
+      }).trim(),
+      dirty:
+        execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+          cwd: projectRoot,
+          encoding: 'utf8',
+        }).trim().length > 0,
+    };
   } catch {
-    return 'unknown';
+    return { commitSha: 'unknown', dirty: true };
   }
 }
 
@@ -156,6 +180,42 @@ async function withTimeout(task, timeoutMs, fallback) {
       task,
       new Promise((resolve) => {
         timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+async function connectOverCDPWithTimeout(endpoint, timeoutMs) {
+  let timedOut = false;
+  let timer;
+  const connection = chromium.connectOverCDP(endpoint);
+  const observedConnection = connection.then(
+    async (browser) => {
+      if (timedOut) {
+        await withTimeout(browser.close().catch(() => undefined), 5_000, undefined);
+        return null;
+      }
+      return browser;
+    },
+    (error) => {
+      if (timedOut) {
+        return null;
+      }
+      throw error;
+    },
+  );
+  try {
+    return await Promise.race([
+      observedConnection,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          resolve(null);
+        }, timeoutMs);
       }),
     ]);
   } finally {
@@ -193,6 +253,7 @@ function fixturePage(file) {
 
 async function startFixtureApiServer() {
   const requests = [];
+  const sockets = new Set();
   const server = createHttpServer((request, response) => {
     const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
     const pathname = decodeURIComponent(requestUrl.pathname);
@@ -210,6 +271,10 @@ async function startFixtureApiServer() {
     let pageIndex = 0;
     if (after !== null) {
       const previousIndex = files.findIndex((file) => fixturePage(file).after === after);
+      if (previousIndex < 0) {
+        response.writeHead(404).end();
+        return;
+      }
       pageIndex = previousIndex + 1;
     }
     const file = files[pageIndex];
@@ -221,6 +286,10 @@ async function startFixtureApiServer() {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(fixtureText(file));
   });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -230,10 +299,27 @@ async function startFixtureApiServer() {
   return {
     port: address.port,
     requests,
+    closed: false,
     async close() {
-      await new Promise((resolve, reject) => {
-        server.close((error) => (error === undefined ? resolve() : reject(error)));
-      });
+      if (this.closed) {
+        return;
+      }
+      const result = await withTimeout(
+        new Promise((resolve) => {
+          server.close((error) =>
+            resolve(error === undefined ? { kind: 'closed' } : { kind: 'error', error }),
+          );
+        }),
+        5_000,
+        { kind: 'timeout' },
+      );
+      if (result.kind === 'timeout') {
+        throw new Error(`fixture API server close 超时，仍有 ${sockets.size} 个连接`);
+      }
+      if (result.kind === 'error') {
+        throw result.error;
+      }
+      this.closed = true;
     },
   };
 }
@@ -463,17 +549,19 @@ async function launchApp(context) {
     page: null,
     catalogProbe: null,
     processSampler: null,
+    knownPids: new Set([child.pid]),
     port,
     spawnAt,
     startup: null,
   };
   sessions.add(session);
-  const startupSampler = startProcessSampler(session, context.tempRoot);
-  session.processSampler = startupSampler;
+  let startupSampler = null;
   try {
+    startupSampler = await startProcessSampler(session, context.tempRoot);
+    session.processSampler = startupSampler;
     const endpoint = await waitForDevTools(child, port);
     const devToolsReadyAt = performance.now();
-    session.browser = await withTimeout(chromium.connectOverCDP(endpoint), 20_000, null);
+    session.browser = await connectOverCDPWithTimeout(endpoint, 20_000);
     if (session.browser === null) {
       throw new Error('连接 packaged app CDP 超时');
     }
@@ -481,7 +569,7 @@ async function launchApp(context) {
       session.catalogProbe = attachCatalogRequestProbe(page);
     });
     const rendererReadyAt = performance.now();
-    const startupProcess = startupSampler.snapshot();
+    const startupProcess = await startupSampler.snapshot();
     await settleCatalogRequests(session.page, session.catalogProbe);
     session.startup = {
       // startupMs 是进程启动到 CDP 可用；ttiMs 是到 renderer app-shell ready。
@@ -491,8 +579,15 @@ async function launchApp(context) {
     };
     return session;
   } catch (error) {
-    await startupSampler.stop();
-    await closeSession(session);
+    try {
+      await startupSampler?.stop();
+    } catch {
+      // closeSession records sampler failures together with process cleanup failures.
+    }
+    const cleanupError = await closeSession(session);
+    if (cleanupError !== null) {
+      throw new AggregateError([error, cleanupError], 'packaged app launch cleanup failed');
+    }
     throw error;
   }
 }
@@ -517,32 +612,132 @@ async function waitForExit(child, timeoutMs) {
 
 async function closeSession(session) {
   if (session === null || session === undefined) {
-    return;
+    return null;
   }
+  const failures = [];
   if (session.processSampler !== null) {
-    session.processFinal = await session.processSampler.stop();
+    try {
+      session.processFinal = await session.processSampler.stop();
+    } catch (error) {
+      failures.push(`process sampler: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   if (session.browser !== null) {
-    await withTimeout(session.browser.close().catch(() => undefined), 5_000, undefined);
-    session.browser = null;
+    const browserClosed = await withTimeout(
+      session.browser
+        .close()
+        .then(() => true)
+        .catch(() => false),
+      5_000,
+      false,
+    );
+    if (browserClosed) {
+      session.browser = null;
+    } else {
+      failures.push('browser close 超时或失败');
+    }
   }
-  if (session.child.exitCode === null && session.child.signalCode === null) {
-    session.child.kill('SIGTERM');
-    await waitForExit(session.child, 10_000);
+  session.knownPids.add(session.child.pid);
+  const childAlive = () => session.child.exitCode === null && session.child.signalCode === null;
+  if (childAlive()) {
+    try {
+      session.child.kill('SIGTERM');
+    } catch (error) {
+      failures.push(`SIGTERM 失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  if (session.child.exitCode === null && session.child.signalCode === null) {
-    session.child.kill('SIGKILL');
-    await waitForExit(session.child, 5_000);
+  signalKnownProcesses(session, 'SIGTERM', failures);
+  await waitForExit(session.child, 10_000);
+  if (childAlive()) {
+    try {
+      session.child.kill('SIGKILL');
+    } catch (error) {
+      failures.push(`SIGKILL 失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  signalKnownProcesses(session, 'SIGKILL', failures);
+  await waitForExit(session.child, 5_000);
+  const processTreeStatus = await waitForKnownProcessesExit(session, 5_000);
+  if (processTreeStatus.kind === 'unknown') {
+    failures.push(processTreeStatus.message);
+  } else if (processTreeStatus.kind === 'timeout') {
+    failures.push(
+      `packaged app process tree 在 cleanup 超时后仍存活：${processTreeStatus.pids.join(',')}`,
+    );
+  }
+  if (childAlive()) {
+    failures.push('packaged app 在 SIGKILL 后仍未退出');
   }
   sessions.delete(session);
+  if (failures.length > 0) {
+    session.cleanupError = failures.join('; ');
+    return new Error(`session cleanup failed: ${session.cleanupError}`);
+  }
+  return null;
 }
 
-function psRows() {
+function signalKnownProcesses(session, signal, failures) {
+  for (const pid of session.knownPids) {
+    if (pid === process.pid || pid === session.child.pid) {
+      continue;
+    }
+    try {
+      process.kill(pid, signal);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') {
+        failures.push(`${signal} PID ${pid} 失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+}
+
+async function closeSessionOrThrow(session) {
+  const cleanupError = await closeSession(session);
+  if (cleanupError !== null) {
+    throw cleanupError;
+  }
+}
+
+async function closeContextServer(context) {
+  if (context.apiServer === null) {
+    return null;
+  }
   try {
-    const raw = execFileSync('ps', ['-axo', 'pid=,ppid=,rss=,%cpu=,command='], {
+    await context.apiServer.close();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+async function waitForKnownProcessesExit(session, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastPids = [...session.knownPids];
+  while (Date.now() < deadline) {
+    const rows = await psRows();
+    if (rows === null) {
+      return { kind: 'unknown', message: '无法用 ps 验证 packaged app process tree 是否退出' };
+    }
+    lastPids = rows
+      .filter((row) => session.knownPids.has(row.pid))
+      .map((row) => row.pid);
+    if (lastPids.length === 0) {
+      return { kind: 'gone' };
+    }
+    await sleep(100);
+  }
+  return { kind: 'timeout', pids: lastPids };
+}
+
+async function psRows() {
+  try {
+    const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,rss=,%cpu=,command='], {
       encoding: 'utf8',
+      timeout: 5_000,
+      killSignal: 'SIGTERM',
+      maxBuffer: 1_048_576,
     });
-    const rows = raw
+    const rows = stdout
       .split('\n')
       .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(.*)$/))
       .filter((match) => match !== null)
@@ -559,8 +754,8 @@ function psRows() {
   }
 }
 
-function processTree(rootPid) {
-  const rows = psRows();
+async function processTree(rootPid) {
+  const rows = await psRows();
   if (rows === null) {
     return null;
   }
@@ -593,15 +788,17 @@ function processTree(rootPid) {
   return selected;
 }
 
-function footprintForPid(pid, tempRoot) {
+async function footprintForPid(pid, tempRoot) {
   if (process.platform !== 'darwin' || !existsSync('/usr/bin/footprint')) {
     return null;
   }
   const jsonPath = path.join(tempRoot, `footprint-${pid}.json`);
   try {
-    spawnSync('/usr/bin/footprint', ['-j', jsonPath, String(pid)], {
+    await execFileAsync('/usr/bin/footprint', ['-j', jsonPath, String(pid)], {
       encoding: 'utf8',
-      stdio: 'ignore',
+      timeout: 5_000,
+      killSignal: 'SIGTERM',
+      maxBuffer: 1_048_576,
     });
     if (!existsSync(jsonPath)) {
       return null;
@@ -654,56 +851,84 @@ function footprintForPid(pid, tempRoot) {
   }
 }
 
-function sampleProcess(session, tempRoot, index, forceFootprint = false) {
-  const rows = processTree(session.child.pid);
+async function sampleProcess(session, tempRoot, index, forceFootprint = false) {
+  const startedAt = performance.now();
+  const rows = await processTree(session.child.pid);
   if (rows === null) {
+    const atMs = performance.now();
     return {
-      atMs: performance.now(),
+      atMs,
       pids: null,
       rssBytes: null,
       cpuPercent: null,
       rootFootprintBytes: null,
+      samplingDurationMs: atMs - startedAt,
     };
   }
+  for (const row of rows) {
+    session.knownPids.add(row.pid);
+  }
+  const rootFootprintBytes =
+    forceFootprint || index % footprintSampleEvery === 0
+      ? await footprintForPid(session.child.pid, tempRoot)
+      : null;
+  const atMs = performance.now();
   return {
-    atMs: performance.now(),
+    atMs,
     pids: rows.map((row) => row.pid),
     rssBytes: rows.reduce((total, row) => total + row.rssBytes, 0),
     cpuPercent: rows.reduce((total, row) => total + row.cpuPercent, 0),
-    rootFootprintBytes:
-      forceFootprint || index % footprintSampleEvery === 0
-        ? footprintForPid(session.child.pid, tempRoot)
-        : null,
+    rootFootprintBytes,
+    samplingDurationMs: atMs - startedAt,
   };
 }
 
-function startProcessSampler(session, tempRoot) {
+async function startProcessSampler(session, tempRoot) {
   const samples = [];
   let index = 0;
   let stopped = false;
-  const collect = (forceFootprint = false) => {
-    samples.push(sampleProcess(session, tempRoot, index, forceFootprint));
+  let inFlight = false;
+  let tail = Promise.resolve();
+  const collect = async (forceFootprint = false) => {
+    samples.push(await sampleProcess(session, tempRoot, index, forceFootprint));
     index += 1;
   };
-  collect(true);
-  const timer = setInterval(collect, processSampleIntervalMs);
+  const enqueue = (forceFootprint = false) => {
+    if (!forceFootprint && inFlight) {
+      return tail;
+    }
+    inFlight = true;
+    const run = async () => {
+      try {
+        await collect(forceFootprint);
+      } finally {
+        inFlight = false;
+      }
+    };
+    tail = tail.then(run, run);
+    return tail;
+  };
+  await enqueue(true);
+  const timer = setInterval(() => {
+    void enqueue().catch(() => undefined);
+  }, processSampleIntervalMs);
   return {
-    mark() {
-      collect();
+    async mark() {
+      await enqueue(true);
       return samples.length;
     },
-    snapshot() {
-      collect(true);
+    async snapshot() {
+      await enqueue(true);
       return summarizeProcessSamples(samples);
     },
-    summarySince(mark) {
-      collect(true);
+    async summarySince(mark) {
+      await enqueue(true);
       return summarizeProcessSamples(samples.slice(mark));
     },
     async stop() {
       if (!stopped) {
         clearInterval(timer);
-        collect(true);
+        await enqueue(true);
         stopped = true;
       }
       return summarizeProcessSamples(samples);
@@ -752,12 +977,16 @@ function summarizeProcessSamples(samples) {
   const rootFootprintBytes = samples
     .map((sample) => sample.rootFootprintBytes)
     .filter((value) => typeof value === 'number');
+  const samplingDurationMs = samples
+    .map((sample) => sample.samplingDurationMs)
+    .filter((value) => typeof value === 'number');
   return {
     sampleCount: samples.length,
     rssBytes: summarizeNumbers(rssBytes),
     cpuPercent: summarizeNumbers(cpuPercent),
     rootFootprintBytes: summarizeNumbers(rootFootprintBytes),
     raw: { rssBytes, cpuPercent, rootFootprintBytes },
+    samplingDurationMs: summarizeNumbers(samplingDurationMs),
     footprintAvailable: rootFootprintBytes.length > 0,
     processCount: processCounts.length === 0 ? null : Math.max(...processCounts),
   };
@@ -765,12 +994,32 @@ function summarizeProcessSamples(samples) {
 
 function waitForPanel(page, ariaLabel) {
   const selector = `section[aria-label="${ariaLabel}"]`;
+  const panel = page.locator(selector);
   return (async () => {
-    await page.locator(selector).waitFor({ state: 'visible' });
+    await panel.waitFor({ state: 'visible' });
     await page.waitForFunction(
-      (query) => !globalThis.document.querySelector(query)?.textContent?.includes('正在加载'),
+      (query) => {
+        const element = globalThis.document.querySelector(query);
+        const state = element?.getAttribute('data-perf-state');
+        return state !== null && state !== 'loading';
+      },
       selector,
     );
+    const evidence = await panel.evaluate((element) => ({
+      state: element.getAttribute('data-perf-state'),
+      alertCount: element.querySelectorAll('[role="alert"]').length,
+      retryCount: [...element.querySelectorAll('button')].filter(
+        (button) => button.textContent?.trim() === '重试',
+      ).length,
+    }));
+    if (evidence.state !== 'ready') {
+      throw new Error(`${ariaLabel} renderer 未进入 ready 状态：${evidence.state ?? 'missing'}`);
+    }
+    if (evidence.alertCount > 0 || evidence.retryCount > 0) {
+      throw new Error(
+        `${ariaLabel} renderer 存在错误状态：alert=${evidence.alertCount}, retry=${evidence.retryCount}`,
+      );
+    }
   })();
 }
 
@@ -948,16 +1197,20 @@ async function prepareScenario(scenario, repetition) {
         ['after', after],
       ]) {
         const startedAt = performance.now();
-        const mark = session.processSampler.mark();
+        const mark = await session.processSampler.mark();
         await importFixture(pageOf(session), text, manifest.largeWalls.tag);
         imports.push({
           label,
           durationMs: performance.now() - startedAt,
-          process: session.processSampler.summarySince(mark),
+          process: await session.processSampler.summarySince(mark),
         });
       }
-      preparation = { kind: 'large-walls-import', imports, process: session.processSampler.snapshot() };
-      await closeSession(session);
+      preparation = {
+        kind: 'large-walls-import',
+        imports,
+        process: await session.processSampler.snapshot(),
+      };
+      await closeSessionOrThrow(session);
       session = await launchApp(context);
       restartStartup = session.startup;
     } else if (scenario === 'history-24') {
@@ -965,7 +1218,7 @@ async function prepareScenario(scenario, repetition) {
       const imports = [];
       for (let index = 0; index < manifest.history24.entries; index += 1) {
         const startedAt = performance.now();
-        const mark = session.processSampler.mark();
+        const mark = await session.processSampler.mark();
         await importFixture(
           pageOf(session),
           markedFixture(
@@ -978,18 +1231,28 @@ async function prepareScenario(scenario, repetition) {
         imports.push({
           index: index + 1,
           durationMs: performance.now() - startedAt,
-          process: session.processSampler.summarySince(mark),
+          process: await session.processSampler.summarySince(mark),
         });
       }
-      preparation = { kind: 'history-import', imports, process: session.processSampler.snapshot() };
-      await closeSession(session);
+      preparation = {
+        kind: 'history-import',
+        imports,
+        process: await session.processSampler.snapshot(),
+      };
+      await closeSessionOrThrow(session);
       session = await launchApp(context);
       restartStartup = session.startup;
     }
   } catch (error) {
-    await closeSession(session);
-    await context.apiServer?.close();
+    const cleanupErrors = [];
+    const sessionCleanupError = await closeSession(session);
+    if (sessionCleanupError !== null) cleanupErrors.push(sessionCleanupError);
+    const serverCleanupError = await closeContextServer(context);
+    if (serverCleanupError !== null) cleanupErrors.push(serverCleanupError);
     rmSync(context.tempRoot, { recursive: true, force: true });
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([error, ...cleanupErrors], 'scenario preparation cleanup failed');
+    }
     throw error;
   }
 
@@ -1003,9 +1266,9 @@ function pageOf(session) {
 
 async function measureProcessPhase(session, task) {
   assert(session.processSampler !== null, 'process sampler 尚未安装');
-  const mark = session.processSampler.mark();
+  const mark = await session.processSampler.mark();
   const value = await task();
-  return { value, process: session.processSampler.summarySince(mark) };
+  return { value, process: await session.processSampler.summarySince(mark) };
 }
 
 async function measureIpc(page, kind, villageId, clanTag) {
@@ -1034,10 +1297,56 @@ async function measureIpc(page, kind, villageId, clanTag) {
           `${requestKind} IPC 返回失败：${result.error.code} ${result.error.message}`,
         );
       }
+      let rendered = null;
+      if (requestKind === 'overview' || requestKind === 'detail') {
+        const panel = globalThis.document.querySelector(
+          requestKind === 'overview'
+            ? 'section[aria-label="升级总览"]'
+            : 'section[aria-label="村庄详情"]',
+        );
+        if (panel === null) {
+          throw new Error(`${requestKind} renderer section 不存在`);
+        }
+        const state = panel.getAttribute('data-perf-state');
+        const alertCount = panel.querySelectorAll('[role="alert"]').length;
+        const retryCount = [...panel.querySelectorAll('button')].filter(
+          (button) => button.textContent?.trim() === '重试',
+        ).length;
+        if (state !== 'ready' || alertCount > 0 || retryCount > 0) {
+          throw new Error(
+            `${requestKind} renderer 未成功消费 payload：state=${state ?? 'missing'}, alert=${alertCount}, retry=${retryCount}`,
+          );
+        }
+        const expectedCount =
+          requestKind === 'overview'
+            ? [
+                result.value.active,
+                result.value.pending,
+                result.value.state?.attentionRecords,
+                result.value.state?.needsReimportRecords,
+              ].reduce(
+                (total, records) => total + (Array.isArray(records) ? records.length : 0),
+                0,
+              )
+            : Array.isArray(result.value.flatRows)
+              ? result.value.flatRows.length
+              : 0;
+        const actualCount =
+          requestKind === 'overview'
+            ? panel.querySelectorAll('.overview-list > li').length
+            : panel.querySelectorAll('.detail-rows > *').length;
+        if (actualCount !== expectedCount) {
+          throw new Error(
+            `${requestKind} renderer 数量不匹配：expected=${expectedCount}, actual=${actualCount}`,
+          );
+        }
+        rendered = { state, expectedCount, actualCount, alertCount, retryCount };
+      }
       const encoded = JSON.stringify(result);
       return {
         durationMs: performance.now() - started,
         payloadBytes: new TextEncoder().encode(encoded).byteLength,
+        rendered,
         ok: true,
       };
     },
@@ -1082,8 +1391,17 @@ async function measureScroll(page, durationMs) {
     ({ duration }) =>
       new Promise((resolve) => {
         const target = globalThis.document.scrollingElement;
-        if (target === null) {
-          resolve({ durationMs: 0, frameCount: 0, longFrameCount: 0, hitchCount: 0, frameMs: summarize([]) });
+        const initialMax =
+          target === null ? 0 : Math.max(0, target.scrollHeight - target.clientHeight);
+        if (target === null || initialMax <= 0) {
+          resolve({
+            notApplicable: true,
+            durationMs: 0,
+            frameCount: 0,
+            longFrameCount: 0,
+            hitchCount: 0,
+            frameMs: summarize([]),
+          });
           return;
         }
         const frameDurations = [];
@@ -1102,6 +1420,7 @@ async function measureScroll(page, durationMs) {
           if (now - started >= duration) {
             target.scrollTop = 0;
             resolve({
+              notApplicable: false,
               durationMs: now - started,
               frameCount: frameDurations.length,
               longFrameCount: frameDurations.filter((value) => value > 16.7).length,
@@ -1243,6 +1562,7 @@ async function measureViews(session, includeOfficial) {
   const detailColdResources = await resourceSummary(page, probe, detailColdMark);
   const detailIpc = await measureIpc(page, 'detail', snapshot.selectedVillageId, null);
   const detailScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
+  assert.equal(detailScroll.value.notApplicable, false, '村庄详情没有可滚动内容');
 
   for (let index = 0; index < warmupCount; index += 1) {
     await goToTab(page, '升级总览', '升级总览');
@@ -1294,6 +1614,7 @@ async function measureViews(session, includeOfficial) {
     const warLog = await measureIpc(page, 'warLog', snapshot.selectedVillageId, clanTag);
     const capitalRaid = await measureIpc(page, 'capitalRaid', snapshot.selectedVillageId, clanTag);
     const officialScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
+    assert.equal(officialScroll.value.notApplicable, false, '官方列表没有可滚动内容');
     result.ipc.warLog = warLog;
     result.ipc.capitalRaid = capitalRaid;
     result.pagination = officialNavigation.value;
@@ -1318,13 +1639,15 @@ async function runScenario(scenario, repetition) {
   const session = prepared.session;
   session.context = prepared.context;
   const page = pageOf(session);
+  let runResult = null;
+  let runError = null;
   try {
     const snapshot = await getSnapshot(page);
     const views = await measureViews(session, scenario === 'official-lists');
     const runtime = await readRuntimeDiagnostics(page);
     assert(session.processSampler !== null, 'process sampler 尚未安装');
-    const finalProcess = session.processSampler.snapshot();
-    return {
+    const finalProcess = await session.processSampler.snapshot();
+    runResult = {
       scenario,
       repetition,
       startup: prepared.initialStartup,
@@ -1335,11 +1658,25 @@ async function runScenario(scenario, repetition) {
       views,
       runtime,
     };
-  } finally {
-    await closeSession(session);
-    await prepared.context.apiServer?.close();
-    rmSync(prepared.context.tempRoot, { recursive: true, force: true });
+  } catch (error) {
+    runError = error;
   }
+  const cleanupErrors = [];
+  const sessionCleanupError = await closeSession(session);
+  if (sessionCleanupError !== null) cleanupErrors.push(sessionCleanupError);
+  const serverCleanupError = await closeContextServer(prepared.context);
+  if (serverCleanupError !== null) cleanupErrors.push(serverCleanupError);
+  rmSync(prepared.context.tempRoot, { recursive: true, force: true });
+  if (runError !== null && cleanupErrors.length > 0) {
+    throw new AggregateError([runError, ...cleanupErrors], 'scenario execution and cleanup failed');
+  }
+  if (runError !== null) {
+    throw runError;
+  }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, 'scenario cleanup failed');
+  }
+  return runResult;
 }
 
 function collectPath(runs, pathParts) {
@@ -1532,12 +1869,15 @@ function markdownReport(report) {
     `- protocol: ${report.protocol}`,
     `- generatedAt: ${report.generatedAt}`,
     `- commit: ${report.commitSha}`,
+    `- binary commit: ${report.binaryProvenance.commitSha}`,
+    `- binary dirty at package time: ${report.binaryProvenance.dirty}`,
     `- platform: ${report.environment.platform}/${report.environment.arch}`,
     `- repetitions: ${report.options.repetitions}`,
     `- warmup: ${report.options.warmup}`,
     `- scrollMs: ${report.options.scrollMs}`,
+    `- gate: ${report.gate.kind}${report.gate.acceptanceEligible ? '' : ' (diagnostic only)'}`,
     '',
-    '> 本报告只记录 observed baseline；unknown 不等于 0，也不等于通过。',
+    '> 本报告只记录 observed baseline；unknown 不等于 0，也不等于通过。all 场景是连续 workload 诊断，不是本 PR 的绿色验收门禁。',
     '',
     '| 场景 | 启动/CDP p50 | TTI p50 | Overview cold p50 | Detail cold p50 | Detail IPC p95 | 进程 CPU p95 | Workload 峰值 RSS | Workload 峰值 footprint |',
     '|---|---:|---:|---:|---:|---:|---:|---:|---:|',
@@ -1639,14 +1979,19 @@ async function main() {
   const report = {
     protocol: manifest.protocol,
     generatedAt: new Date().toISOString(),
-    commitSha: getCommitSha(),
+    commitSha: sourceProvenance.commitSha,
     binary,
+    binaryProvenance,
     environment: {
       platform: process.platform,
       arch: process.arch,
       node: process.version,
     },
     options: { scenario: scenarioArg, repetitions, warmup: warmupCount, scrollMs },
+    gate: {
+      kind: scenarioArg === 'all' ? 'diagnostic' : 'independent-scenario',
+      acceptanceEligible: scenarioArg !== 'all',
+    },
     manifest,
     summary: buildSummary(runs),
     runs,
@@ -1665,6 +2010,9 @@ try {
   await main();
 } finally {
   for (const session of [...sessions]) {
-    await closeSession(session);
+    const cleanupError = await closeSession(session);
+    if (cleanupError !== null) {
+      console.error(`[perf] 最终 cleanup 失败：${cleanupError.message}`);
+    }
   }
 }

@@ -122,6 +122,8 @@ jobs:
         run: pnpm smoke
       - name: Packaged .app E2E
         run: pnpm test:e2e:packaged
+      - name: Packaged Release perf smoke
+        run: pnpm perf:release --scenario=official-lists --repetitions=1 --warmup=0 --scroll-ms=1000 --output=e2e-artifacts/perf-official-lists
       - name: Upload packaged E2E failure artifacts
         if: always()
         uses: actions/upload-artifact@v4

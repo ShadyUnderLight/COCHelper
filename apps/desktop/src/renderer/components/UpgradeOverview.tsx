@@ -35,7 +35,7 @@ export function UpgradeOverview({
   if (payload === null) {
     if (status === 'error') {
       return (
-        <section className="overview-panel" aria-label="升级总览">
+        <section className="overview-panel" aria-label="升级总览" data-perf-state="error">
           <p className="error-text" role="alert">
             {lastError ?? '升级总览加载失败'}
           </p>
@@ -46,7 +46,7 @@ export function UpgradeOverview({
       );
     }
     return (
-      <section className="overview-panel" aria-label="升级总览">
+      <section className="overview-panel" aria-label="升级总览" data-perf-state="loading">
         <p className="muted">正在加载升级总览…</p>
       </section>
     );
@@ -56,7 +56,7 @@ export function UpgradeOverview({
   const empty = isEmptyOverview(payload);
 
   return (
-    <section className="overview-panel" aria-label="升级总览">
+    <section className="overview-panel" aria-label="升级总览" data-perf-state="ready">
       {lastError !== null ? (
         <p className="notice-text" role="alert">
           数据可能过期：{lastError}

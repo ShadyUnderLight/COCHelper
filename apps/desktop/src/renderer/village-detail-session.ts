@@ -387,9 +387,19 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
   }
 }
 
-/** 图标候选链（复刻 preferredAssetURLs 顺序：currentLevelVisual → currentLevelIcon → levelVisual → icon；craftTable 模组图标无 renderer 数据源，不在链内）。空位保留 null，由调用方按序探测。 */
+/**
+ * 图标候选链（复刻 preferredAssetURLs 顺序：currentLevelVisual → currentLevelIcon →
+ * levelVisual → icon；craftTable 模组图标无 renderer 数据源，不在链内）。
+ *
+ * effective 等级与 raw currentLevel 不一致时，raw current-level 资产已经不能证明
+ * 当前有效等级；只保留 item-level 资产，避免文字显示 Lv6 却展示 Lv5 图片。
+ * 空位保留 null，由调用方按序探测。
+ */
 export function primaryLevelAssets(
   item: VillageItemStateDto,
 ): readonly (CatalogAssetRefDto | null)[] {
+  if (item.effectiveCurrentLevel !== item.currentLevel) {
+    return [item.levelVisual, item.icon];
+  }
   return [item.currentLevelVisual, item.currentLevelIcon, item.levelVisual, item.icon];
 }

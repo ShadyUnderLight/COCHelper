@@ -13,6 +13,13 @@ import {
   makeTestVillage,
   TEST_IMPORTED_AT_MS,
 } from './test-fixtures';
+import {
+  createManualItemStateForStatus,
+  createManualLevelDistributionFromPairs,
+  createManualUpgradeCoreState,
+} from '../manual/core';
+import { trackerItemKeyRoot } from '../manual/types';
+import type { EffectiveVillageItemState } from './effective-projection';
 
 const catalog = createSyntheticCatalog();
 
@@ -97,6 +104,46 @@ describe('VillageCatalogProjection', () => {
       nowMs: TEST_IMPORTED_AT_MS,
     });
     expect(projection.items[0]?.status).toBe('maxed');
+  });
+
+  it('真实 effective projection：globalMaxed 清除 raw 回退时长', () => {
+    const village = makeTestVillage({
+      buildings: [
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+        }),
+      ],
+    });
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: { revision: 'snapshot-1', lineageID: null },
+          imported: createManualLevelDistributionFromPairs([[1, 1n]]),
+          manual: createManualLevelDistributionFromPairs([[2, 1n]]),
+          status: 'manualCompleted',
+          sourceTimestampMs: TEST_IMPORTED_AT_MS,
+        }),
+      ],
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog,
+      base: 'home',
+      nowMs: TEST_IMPORTED_AT_MS,
+      manualUpgradeCore,
+    });
+    const item = projection.items[0];
+    const effective = item?.effectiveState as EffectiveVillageItemState | undefined;
+    expect(item?.nextLevelDurationState).toEqual({ kind: 'timed', seconds: 300n });
+    expect(effective?.status).toBe('manualCompleted');
+    expect(effective?.catalogNextUpgrade).toEqual({ kind: 'globalMaxed' });
+    expect(effective?.catalogDurationState).toBeNull();
   });
 
   it('未知 dataID 保留诊断', () => {

@@ -247,6 +247,29 @@ describe('LevelDetailSheet（#277-C2）', () => {
     expect(document.querySelector('.level-sheet .item-icon-glyph')?.textContent).toBe('防');
   });
 
+  it('effective 等级变化时详情底片不使用 raw current-level 图标', () => {
+    const item = itemWith({
+      currentLevel: 5,
+      effectiveCurrentLevel: 6,
+      currentLevelVisual: {
+        container: 'sc',
+        exportName: 'cannon_lvl5',
+        renderedPath: 'icons/buildings/cannon_lvl5.png',
+        missingReason: null,
+      },
+      levelVisual: {
+        container: 'sc',
+        exportName: 'cannon',
+        renderedPath: 'icons/buildings/cannon.png',
+        missingReason: null,
+      },
+    });
+    render(<LevelDetailSheet item={item} catalogVersion="18.400.13" onClose={() => undefined} />);
+    expect(document.querySelector('.level-sheet img.item-icon')?.getAttribute('src')).toBe(
+      'cochelper://catalog/18.400.13/icons/buildings/cannon.png',
+    );
+  });
+
   it('图标全空显示分类 glyph', () => {
     render(
       <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,

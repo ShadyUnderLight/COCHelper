@@ -11,8 +11,9 @@ import type {
   VillageItemStateDto,
 } from '@coc-helper/contracts';
 
-import { baseLabel, effectiveStatusLabel, statusLabel } from '../overview-session';
+import { baseLabel, effectiveStatusLabel } from '../overview-session';
 import {
+  authoritativeLevelStatus,
   categoryGlyph,
   compatibilityAlertText,
   compatibilityVersionText,
@@ -511,10 +512,8 @@ function FlatRow(props: {
             />
             <span className="detail-item-name">{item.name}</span>
             <span className="muted">
-              {levelTransitionText(item.currentLevel, item.nextLevel)} · {statusLabel(item.status)}
-              {item.effectiveStatus === null
-                ? ''
-                : ` · ${effectiveStatusLabel(item.effectiveStatus) ?? ''}`}
+              {levelTransitionText(item.effectiveCurrentLevel, item.effectiveTargetLevel)} ·{' '}
+              {authoritativeLevelStatus(item)}
             </span>
           </button>
         </div>

@@ -3,13 +3,16 @@ import type { UpgradeDisplayRecordDto } from '@coc-helper/contracts';
 import {
   availabilityLabel,
   baseLabel,
-  effectiveStatusLabel,
   isCatalogUnavailable,
   isEmptyOverview,
-  statusLabel,
   type OverviewState,
 } from '../overview-session';
-import { categoryGlyph, primaryLevelAssets } from '../village-detail-session';
+import {
+  authoritativeLevelStatus,
+  categoryGlyph,
+  levelTransitionText,
+  primaryLevelAssets,
+} from '../village-detail-session';
 import { AssetImage } from './AssetImage';
 
 type UpgradeOverviewProps = {
@@ -155,9 +158,12 @@ function RecordList(props: {
               />
               <span className="overview-item-name">{record.item.name}</span>
               <span className="muted">
-                {record.villageName} · {baseLabel(record.base)} · {levelText(record)} ·{' '}
-                {statusLabel(record.item.status)}
-                {effectiveText(record)}
+                {record.villageName} · {baseLabel(record.base)} ·{' '}
+                {levelTransitionText(
+                  record.item.effectiveCurrentLevel,
+                  record.item.effectiveTargetLevel,
+                )}{' '}
+                · {authoritativeLevelStatus(record.item)}
                 {availabilityText(record)}
               </span>
             </button>
@@ -166,23 +172,6 @@ function RecordList(props: {
       </ul>
     </div>
   );
-}
-
-function levelText(record: UpgradeDisplayRecordDto): string {
-  const current = record.item.currentLevel;
-  const next = record.item.nextLevel;
-  if (current !== null && next !== null) {
-    return `${current} → ${next} 级`;
-  }
-  if (next !== null) {
-    return `下一级 ${next} 级`;
-  }
-  return '等级未知';
-}
-
-function effectiveText(record: UpgradeDisplayRecordDto): string {
-  const label = effectiveStatusLabel(record.item.effectiveStatus);
-  return label === null ? '' : ` · ${label}`;
 }
 
 function availabilityText(record: UpgradeDisplayRecordDto): string {

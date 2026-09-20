@@ -74,4 +74,21 @@ describe('packaged Electron provenance', () => {
     expect(resolvePackagedBinary(projectRoot, 'current')).toBe(current.binary);
     expect(() => resolvePackagedBinary(projectRoot, 'missing')).toThrow(/匹配且干净/);
   });
+
+  it('拒绝 commit 匹配但 dirty 的 packaged binary', () => {
+    const projectRoot = mkdtempSync(path.join(tmpdir(), 'coc-electron-package-'));
+    roots.push(projectRoot);
+    const outRoot = path.join(projectRoot, 'apps', 'desktop', 'out');
+    const dirty = binaryAndResources(outRoot, 'dirty');
+    mkdirSync(path.dirname(dirty.binary), { recursive: true });
+    mkdirSync(dirty.resources, { recursive: true });
+    writeFileSync(dirty.binary, 'binary');
+    chmodSync(dirty.binary, 0o755);
+    writeFileSync(
+      path.join(dirty.resources, 'perf-build-provenance.json'),
+      JSON.stringify({ commitSha: 'current', dirty: true, generatedAt: '2026-09-20T00:00:00.000Z' }),
+    );
+
+    expect(() => resolvePackagedBinary(projectRoot, 'current')).toThrow(/匹配且干净/);
+  });
 });

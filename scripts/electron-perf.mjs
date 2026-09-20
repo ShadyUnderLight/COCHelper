@@ -9,8 +9,7 @@
  * - 不把缺失的 footprint 或 hitch 数据记为 0/通过。
  */
 import assert from 'node:assert/strict';
-import { execFile, execFileSync, spawn } from 'node:child_process';
-import { createServer as createHttpServer } from 'node:http';
+import { execFile, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import {
   existsSync,
@@ -29,13 +28,20 @@ import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
 
 import { readPackagedBuildProvenance, resolvePackagedBinary } from './electron-package.mjs';
+import { startPerfFixtureApiServer } from './perf-fixture-server.mjs';
+import {
+  collectProcessMetric,
+  summarizeNumbers,
+  summarizeProcessSamples,
+} from './perf-metrics.mjs';
+import { readGitProvenance } from './perf-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(root, 'e2e/fixtures/perf-manifest.json');
 const manifest = readJson(manifestPath);
-const sourceProvenance = getSourceProvenance(root);
+const sourceProvenance = readGitProvenance(root);
 if (sourceProvenance.commitSha === 'unknown') {
   throw new Error('无法读取当前源码 commit，不能绑定 packaged binary provenance');
 }
@@ -151,24 +157,6 @@ function validatePerfFixtures() {
 
 validatePerfFixtures();
 
-function getSourceProvenance(projectRoot) {
-  try {
-    return {
-      commitSha: execFileSync('git', ['rev-parse', 'HEAD'], {
-        cwd: projectRoot,
-        encoding: 'utf8',
-      }).trim(),
-      dirty:
-        execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
-          cwd: projectRoot,
-          encoding: 'utf8',
-        }).trim().length > 0,
-    };
-  } catch {
-    return { commitSha: 'unknown', dirty: true };
-  }
-}
-
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -252,76 +240,12 @@ function fixturePage(file) {
 }
 
 async function startFixtureApiServer() {
-  const requests = [];
-  const sockets = new Set();
-  const server = createHttpServer((request, response) => {
-    const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const pathname = decodeURIComponent(requestUrl.pathname);
-    const endpoint = pathname.endsWith('/warlog')
-      ? 'warLog'
-      : pathname.endsWith('/capitalraidseasons')
-        ? 'capitalRaid'
-        : null;
-    if (endpoint === null) {
-      response.writeHead(404).end();
-      return;
-    }
-    const files = endpoint === 'warLog' ? manifest.warLogPages : manifest.capitalRaidPages;
-    const after = requestUrl.searchParams.get('after');
-    let pageIndex = 0;
-    if (after !== null) {
-      const previousIndex = files.findIndex((file) => fixturePage(file).after === after);
-      if (previousIndex < 0) {
-        response.writeHead(404).end();
-        return;
-      }
-      pageIndex = previousIndex + 1;
-    }
-    const file = files[pageIndex];
-    if (file === undefined) {
-      response.writeHead(404).end();
-      return;
-    }
-    requests.push({ endpoint, after, file, url: requestUrl.toString() });
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(fixtureText(file));
+  return startPerfFixtureApiServer({
+    warLogPages: manifest.warLogPages,
+    capitalRaidPages: manifest.capitalRaidPages,
+    readPage: fixturePage,
+    readText: fixtureText,
   });
-  server.on('connection', (socket) => {
-    sockets.add(socket);
-    socket.once('close', () => sockets.delete(socket));
-  });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  assert(address !== null && typeof address !== 'string');
-  return {
-    port: address.port,
-    requests,
-    closed: false,
-    async close() {
-      if (this.closed) {
-        return;
-      }
-      const result = await withTimeout(
-        new Promise((resolve) => {
-          server.close((error) =>
-            resolve(error === undefined ? { kind: 'closed' } : { kind: 'error', error }),
-          );
-        }),
-        5_000,
-        { kind: 'timeout' },
-      );
-      if (result.kind === 'timeout') {
-        throw new Error(`fixture API server close 超时，仍有 ${sockets.size} 个连接`);
-      }
-      if (result.kind === 'error') {
-        throw result.error;
-      }
-      this.closed = true;
-    },
-  };
 }
 
 async function waitForDevTools(child, port) {
@@ -936,62 +860,6 @@ async function startProcessSampler(session, tempRoot) {
   };
 }
 
-function sortedNumbers(values) {
-  return values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
-}
-
-function percentile(values, ratio) {
-  const sorted = sortedNumbers(values);
-  if (sorted.length === 0) {
-    return null;
-  }
-  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1);
-  return sorted[index];
-}
-
-function summarizeNumbers(values) {
-  const sorted = sortedNumbers(values);
-  if (sorted.length === 0) {
-    return { count: 0, min: null, p50: null, p95: null, max: null, mean: null };
-  }
-  return {
-    count: sorted.length,
-    min: sorted[0],
-    p50: percentile(sorted, 0.5),
-    p95: percentile(sorted, 0.95),
-    max: sorted[sorted.length - 1],
-    mean: sorted.reduce((total, value) => total + value, 0) / sorted.length,
-  };
-}
-
-function summarizeProcessSamples(samples) {
-  const processCounts = samples
-    .map((sample) => sample.pids?.length)
-    .filter((value) => typeof value === 'number');
-  const rssBytes = samples
-    .map((sample) => sample.rssBytes)
-    .filter((value) => typeof value === 'number');
-  const cpuPercent = samples
-    .map((sample) => sample.cpuPercent)
-    .filter((value) => typeof value === 'number');
-  const rootFootprintBytes = samples
-    .map((sample) => sample.rootFootprintBytes)
-    .filter((value) => typeof value === 'number');
-  const samplingDurationMs = samples
-    .map((sample) => sample.samplingDurationMs)
-    .filter((value) => typeof value === 'number');
-  return {
-    sampleCount: samples.length,
-    rssBytes: summarizeNumbers(rssBytes),
-    cpuPercent: summarizeNumbers(cpuPercent),
-    rootFootprintBytes: summarizeNumbers(rootFootprintBytes),
-    raw: { rssBytes, cpuPercent, rootFootprintBytes },
-    samplingDurationMs: summarizeNumbers(samplingDurationMs),
-    footprintAvailable: rootFootprintBytes.length > 0,
-    processCount: processCounts.length === 0 ? null : Math.max(...processCounts),
-  };
-}
-
 function waitForPanel(page, ariaLabel) {
   const selector = `section[aria-label="${ariaLabel}"]`;
   const panel = page.locator(selector);
@@ -1408,19 +1276,22 @@ async function measureScroll(page, durationMs) {
         const started = performance.now();
         let previous = started;
         let direction = 1;
+        let moved = false;
         const step = (now) => {
           frameDurations.push(now - previous);
           previous = now;
           const max = Math.max(0, target.scrollHeight - target.clientHeight);
           if (max > 0) {
+            const previousScrollTop = target.scrollTop;
             target.scrollTop += direction * Math.max(12, Math.round(target.clientHeight / 12));
+            moved ||= target.scrollTop !== previousScrollTop;
             if (target.scrollTop >= max) direction = -1;
             if (target.scrollTop <= 0) direction = 1;
           }
           if (now - started >= duration) {
             target.scrollTop = 0;
             resolve({
-              notApplicable: false,
+              notApplicable: !moved,
               durationMs: now - started,
               frameCount: frameDurations.length,
               longFrameCount: frameDurations.filter((value) => value > 16.7).length,
@@ -1689,32 +1560,6 @@ function collectPath(runs, pathParts) {
   return summarizeNumbers(values);
 }
 
-function workloadProcessSummariesForRun(run) {
-  const summaries = [];
-  if (run.preparation?.process !== null && run.preparation?.process !== undefined) {
-    // preparation.process covers the complete initial session, including startup and imports.
-    summaries.push(run.preparation.process);
-  }
-  if (run.finalProcess !== null && run.finalProcess !== undefined) {
-    // finalProcess covers the complete final session, including navigation and scroll.
-    summaries.push(run.finalProcess);
-  }
-  if (summaries.length === 0) {
-    summaries.push(run.startup?.process, run.restartStartup?.process);
-  }
-  return summaries.filter((value) => value !== null && value !== undefined);
-}
-
-function collectProcessMetric(runs, metric) {
-  const values = [];
-  for (const run of runs) {
-    for (const process of workloadProcessSummariesForRun(run)) {
-      values.push(...(process.raw?.[metric] ?? []));
-    }
-  }
-  return summarizeNumbers(values);
-}
-
 function collectPreparationEntry(runs, kind, label) {
   const values = [];
   for (const run of runs) {
@@ -1869,6 +1714,7 @@ function markdownReport(report) {
     `- protocol: ${report.protocol}`,
     `- generatedAt: ${report.generatedAt}`,
     `- commit: ${report.commitSha}`,
+    `- untracked source inputs: ${report.sourceProvenance.untrackedInputs.length}`,
     `- binary commit: ${report.binaryProvenance.commitSha}`,
     `- binary dirty at package time: ${report.binaryProvenance.dirty}`,
     `- platform: ${report.environment.platform}/${report.environment.arch}`,
@@ -1980,6 +1826,7 @@ async function main() {
     protocol: manifest.protocol,
     generatedAt: new Date().toISOString(),
     commitSha: sourceProvenance.commitSha,
+    sourceProvenance,
     binary,
     binaryProvenance,
     environment: {

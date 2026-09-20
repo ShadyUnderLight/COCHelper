@@ -216,6 +216,15 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
 
   const commitImport = useCallback(async () => {
     const resolution = resolveCommitGeneration(previewRef.current, cursorRef.current);
+    const perfCommitDebug = globalThis as typeof globalThis & {
+      __cocHelperPerfCommitDebug?: unknown;
+    };
+    perfCommitDebug.__cocHelperPerfCommitDebug = {
+      phase: 'resolve',
+      previewGeneration: previewRef.current?.preparedGeneration ?? null,
+      cursorGeneration: cursorRef.current?.generation ?? null,
+      resolution,
+    };
     if (!resolution.ok) {
       setPreview(null);
       setState((prev) => applyActionError({ ...prev, preview: null }, resolution.reason));
@@ -224,6 +233,11 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
     }
     const expectedGeneration = resolution.expectedGeneration;
     const ok = await runWrite(async () => bridge.commitImport({ expectedGeneration }));
+    perfCommitDebug.__cocHelperPerfCommitDebug = {
+      phase: 'result',
+      expectedGeneration,
+      ok,
+    };
     if (ok) {
       pasteRef.current = '';
       setPreview(null);

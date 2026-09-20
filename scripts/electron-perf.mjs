@@ -70,6 +70,7 @@ const outputDir = path.resolve(optionValue('--output') ?? process.env.COCHELPER_
 const importTimeoutMs = 120_000;
 const processSampleIntervalMs = 250;
 const footprintSampleEvery = 16;
+const failureOutputMaxChars = 20_000;
 
 const SCENARIOS = ['overview', 'village-detail', 'history-24', 'official-lists'];
 const selectedScenarios = scenarioArg === 'all' ? SCENARIOS : scenarioArg.split(',').filter(Boolean);
@@ -314,15 +315,20 @@ function collectOutput(child) {
   const output = { stdout: '', stderr: '' };
   child.stdout.on('data', (chunk) => {
     const text = chunk.toString();
-    output.stdout += text;
+    output.stdout = appendTail(output.stdout, text, failureOutputMaxChars);
     process.stdout.write(text);
   });
   child.stderr.on('data', (chunk) => {
     const text = chunk.toString();
-    output.stderr += text;
+    output.stderr = appendTail(output.stderr, text, failureOutputMaxChars);
     process.stderr.write(text);
   });
   return output;
+}
+
+function appendTail(previous, next, maxChars) {
+  const combined = `${previous}${next}`;
+  return combined.length <= maxChars ? combined : combined.slice(-maxChars);
 }
 
 function attachCatalogRequestProbe(page) {
@@ -413,6 +419,7 @@ function createContext(scenario, repetition) {
     dataRoot: path.join(tempRoot, 'electron-data'),
     userDataDirectory: path.join(tempRoot, 'electron-user-data'),
     apiServer: null,
+    phase: 'setup',
   };
   mkdirSync(context.homeDirectory, { recursive: true });
   mkdirSync(context.dataRoot, { recursive: true });
@@ -445,6 +452,7 @@ function createEnvironment(context) {
 }
 
 async function launchApp(context) {
+  context.phase = 'launch:spawn';
   const port = await findFreePort();
   const spawnAt = performance.now();
   const child = spawn(
@@ -503,6 +511,7 @@ async function launchApp(context) {
     };
     return session;
   } catch (error) {
+    const diagnostics = await captureFailureDiagnostics(context, session, error);
     try {
       await startupSampler?.stop();
     } catch {
@@ -510,9 +519,12 @@ async function launchApp(context) {
     }
     const cleanupError = await closeSession(session);
     if (cleanupError !== null) {
-      throw new AggregateError([error, cleanupError], 'packaged app launch cleanup failed');
+      throw attachFailureDiagnostics(
+        new AggregateError([error, cleanupError], 'packaged app launch cleanup failed'),
+        diagnostics,
+      );
     }
-    throw error;
+    throw attachFailureDiagnostics(error, diagnostics);
   }
 }
 
@@ -906,7 +918,8 @@ async function getSnapshot(page) {
   return result.value;
 }
 
-async function importFixture(page, text, expectedTag) {
+async function importFixture(page, text, expectedTag, context, label) {
+  context.phase = `${label}:open-import`;
   await page.getByRole('button', { name: '导入', exact: true }).click();
   const input = page.locator('#account-json');
   await input.evaluate((element, value) => {
@@ -923,13 +936,16 @@ async function importFixture(page, text, expectedTag) {
       (globalThis.document.querySelector(selector)?.value?.length ?? 0) === length,
     { selector: '#account-json', length: text.length },
   );
+  context.phase = `${label}:prepare`;
   await page.getByRole('button', { name: '解析预览', exact: true }).click();
   const preview = page.getByRole('region', { name: '导入预览' });
   await preview.waitFor({ state: 'visible' });
   const previewText = await preview.innerText();
   assert.match(previewText, new RegExp(expectedTag.replace('#', '\\#')));
   const preparedSnapshot = await getSnapshot(page);
+  context.phase = `${label}:commit`;
   await preview.getByRole('button', { name: '确认导入', exact: true }).click();
+  context.phase = `${label}:wait-generation`;
   await page.waitForFunction(
     async (previousGeneration) => {
       const result = await globalThis.window.cocHelper.snapshot({});
@@ -938,6 +954,7 @@ async function importFixture(page, text, expectedTag) {
     preparedSnapshot.generation,
     { timeout: importTimeoutMs },
   );
+  context.phase = `${label}:wait-sidebar`;
   await page
     .getByRole('complementary', { name: '村庄列表' })
     .getByText(expectedTag, { exact: true })
@@ -1055,6 +1072,7 @@ async function prepareScenario(scenario, repetition) {
   try {
     session = await launchApp(context);
     initialStartup = session.startup;
+    context.phase = 'prepare:ready';
 
     if (scenario === 'village-detail') {
       const before = fixtureText(manifest.largeWalls.before);
@@ -1066,7 +1084,13 @@ async function prepareScenario(scenario, repetition) {
       ]) {
         const startedAt = performance.now();
         const mark = await session.processSampler.mark();
-        await importFixture(pageOf(session), text, manifest.largeWalls.tag);
+        await importFixture(
+          pageOf(session),
+          text,
+          manifest.largeWalls.tag,
+          context,
+          `prepare:large-walls:${label}`,
+        );
         imports.push({
           label,
           durationMs: performance.now() - startedAt,
@@ -1078,7 +1102,9 @@ async function prepareScenario(scenario, repetition) {
         imports,
         process: await session.processSampler.snapshot(),
       };
+      context.phase = 'restart:close-initial';
       await closeSessionOrThrow(session);
+      context.phase = 'restart:launch-final';
       session = await launchApp(context);
       restartStartup = session.startup;
     } else if (scenario === 'history-24') {
@@ -1095,6 +1121,8 @@ async function prepareScenario(scenario, repetition) {
             `history-${String(index + 1).padStart(2, '0')}`,
           ),
           manifest.accountSnapshots[manifest.history24.source].tag,
+          context,
+          `prepare:history-24:${String(index + 1).padStart(2, '0')}`,
         );
         imports.push({
           index: index + 1,
@@ -1107,11 +1135,14 @@ async function prepareScenario(scenario, repetition) {
         imports,
         process: await session.processSampler.snapshot(),
       };
+      context.phase = 'restart:close-initial';
       await closeSessionOrThrow(session);
+      context.phase = 'restart:launch-final';
       session = await launchApp(context);
       restartStartup = session.startup;
     }
   } catch (error) {
+    const diagnostics = await captureFailureDiagnostics(context, session, error);
     const cleanupErrors = [];
     const sessionCleanupError = await closeSession(session);
     if (sessionCleanupError !== null) cleanupErrors.push(sessionCleanupError);
@@ -1119,9 +1150,12 @@ async function prepareScenario(scenario, repetition) {
     if (serverCleanupError !== null) cleanupErrors.push(serverCleanupError);
     rmSync(context.tempRoot, { recursive: true, force: true });
     if (cleanupErrors.length > 0) {
-      throw new AggregateError([error, ...cleanupErrors], 'scenario preparation cleanup failed');
+      throw attachFailureDiagnostics(
+        new AggregateError([error, ...cleanupErrors], 'scenario preparation cleanup failed'),
+        diagnostics,
+      );
     }
-    throw error;
+    throw attachFailureDiagnostics(error, diagnostics);
   }
 
   return { context, session, initialStartup, preparation, restartStartup };
@@ -1130,6 +1164,96 @@ async function prepareScenario(scenario, repetition) {
 function pageOf(session) {
   assert(session.page !== null, 'session page 尚未就绪');
   return session.page;
+}
+
+async function captureFailureDiagnostics(context, session, error) {
+  const diagnostics = {
+    phase: context?.phase ?? 'unknown',
+    error: {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack ?? null : null,
+    },
+    snapshot: null,
+    renderer: null,
+    process: null,
+    appOutput: session?.output ?? null,
+    session: session
+      ? {
+          startup: session.startup,
+          childPid: session.child.pid,
+          knownPids: [...session.knownPids],
+          exitCode: session.child.exitCode,
+          signalCode: session.child.signalCode,
+        }
+      : null,
+  };
+  if (session?.page !== null && session?.page !== undefined) {
+    try {
+      const pageEvidence = await session.page.evaluate(async () => {
+        const snapshotResult = await globalThis.window.cocHelper.snapshot({});
+        const snapshot = snapshotResult.ok
+          ? {
+              sessionId: snapshotResult.value.sessionId,
+              generation: snapshotResult.value.generation,
+              availability: snapshotResult.value.availability,
+              villageStatus: snapshotResult.value.villageStatus,
+              villageError: snapshotResult.value.villageError,
+              selectedVillageId: snapshotResult.value.selectedVillageId,
+              pendingImport: snapshotResult.value.pendingImport,
+              villages: snapshotResult.value.villages,
+            }
+          : { ok: false, error: snapshotResult.error };
+        const panelEvidence = (selector) => {
+          const panel = globalThis.document.querySelector(selector);
+          if (panel === null) return null;
+          return {
+            state: panel.getAttribute('data-perf-state'),
+            text: panel.textContent,
+            alertCount: panel.querySelectorAll('[role="alert"]').length,
+            retryCount: [...panel.querySelectorAll('button')].filter(
+              (button) => button.textContent?.trim() === '重试',
+            ).length,
+          };
+        };
+        return {
+          snapshot,
+          sidebarText:
+            globalThis.document.querySelector('[role="complementary"][aria-label="村庄列表"]')
+              ?.textContent ?? null,
+          statusText: globalThis.document.getElementById('status')?.textContent ?? null,
+          overview: panelEvidence('section[aria-label="升级总览"]'),
+          detail: panelEvidence('section[aria-label="村庄详情"]'),
+        };
+      });
+      diagnostics.snapshot = pageEvidence.snapshot;
+      diagnostics.renderer = {
+        sidebarText: appendTail(pageEvidence.sidebarText ?? '', '', failureOutputMaxChars),
+        statusText: pageEvidence.statusText,
+        overview: pageEvidence.overview,
+        detail: pageEvidence.detail,
+      };
+    } catch (captureError) {
+      diagnostics.renderer = {
+        captureError: captureError instanceof Error ? captureError.message : String(captureError),
+      };
+    }
+  }
+  if (session?.processSampler !== null && session?.processSampler !== undefined) {
+    try {
+      diagnostics.process = await session.processSampler.snapshot();
+    } catch (captureError) {
+      diagnostics.process = {
+        captureError: captureError instanceof Error ? captureError.message : String(captureError),
+      };
+    }
+  }
+  return diagnostics;
+}
+
+function attachFailureDiagnostics(error, diagnostics) {
+  const target = error instanceof Error ? error : new Error(String(error));
+  target.perfDiagnostics = diagnostics;
+  return target;
 }
 
 async function measureProcessPhase(session, task) {
@@ -1512,8 +1636,11 @@ async function runScenario(scenario, repetition) {
   const page = pageOf(session);
   let runResult = null;
   let runError = null;
+  let runDiagnostics = null;
   try {
+    prepared.context.phase = 'measure:snapshot';
     const snapshot = await getSnapshot(page);
+    prepared.context.phase = 'measure:views';
     const views = await measureViews(session, scenario === 'official-lists');
     const runtime = await readRuntimeDiagnostics(page);
     assert(session.processSampler !== null, 'process sampler 尚未安装');
@@ -1531,6 +1658,7 @@ async function runScenario(scenario, repetition) {
     };
   } catch (error) {
     runError = error;
+    runDiagnostics = await captureFailureDiagnostics(prepared.context, session, error);
   }
   const cleanupErrors = [];
   const sessionCleanupError = await closeSession(session);
@@ -1539,13 +1667,19 @@ async function runScenario(scenario, repetition) {
   if (serverCleanupError !== null) cleanupErrors.push(serverCleanupError);
   rmSync(prepared.context.tempRoot, { recursive: true, force: true });
   if (runError !== null && cleanupErrors.length > 0) {
-    throw new AggregateError([runError, ...cleanupErrors], 'scenario execution and cleanup failed');
+    throw attachFailureDiagnostics(
+      new AggregateError([runError, ...cleanupErrors], 'scenario execution and cleanup failed'),
+      runDiagnostics,
+    );
   }
   if (runError !== null) {
-    throw runError;
+    throw attachFailureDiagnostics(runError, runDiagnostics);
   }
   if (cleanupErrors.length > 0) {
-    throw new AggregateError(cleanupErrors, 'scenario cleanup failed');
+    throw attachFailureDiagnostics(
+      new AggregateError(cleanupErrors, 'scenario cleanup failed'),
+      runDiagnostics,
+    );
   }
   return runResult;
 }
@@ -1796,8 +1930,16 @@ function markdownReport(report) {
     '- IPC payload 是 bridge 返回 Result 的 JSON UTF-8 字节数，不声称等于 Chromium 内部 structured-clone 字节数。',
     '- 图标冷/热请求来自 Playwright catalog protocol request 事件；hot=0 表示该视图未观察到新的 catalog 请求，不等于证明所有缓存层命中。',
     '- 滚动指标来自 renderer requestAnimationFrame 间隔；未把空 hitch 表解释为无卡顿。',
-    '- 原始进程日志和临时数据不进入报告。',
+    '- 成功 run 不写入原始进程日志；失败 run 会额外写入 bounded stdout/stderr、snapshot、renderer、phase 和最后 process summary 诊断 artifact。',
   );
+  if (report.failures.length > 0) {
+    lines.push('', '## 失败诊断', '');
+    for (const failure of report.failures) {
+      lines.push(
+        `- ${failure.scenario} repetition=${failure.repetition} phase=${failure.phase ?? 'unknown'}: ${failure.diagnosticsFile ?? 'no diagnostics artifact'}`,
+      );
+    }
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -1811,10 +1953,20 @@ async function main() {
       try {
         runs.push(await runScenario(scenario, repetition));
       } catch (error) {
+        const diagnostics = error?.perfDiagnostics ?? null;
+        const diagnosticsFile =
+          diagnostics === null
+            ? null
+            : path.join(outputDir, `failure-${scenario}-${String(repetition).padStart(2, '0')}.json`);
+        if (diagnosticsFile !== null) {
+          writeFileSync(diagnosticsFile, `${JSON.stringify(diagnostics, null, 2)}\n`);
+        }
         const failure = {
           scenario,
           repetition,
           message: error instanceof Error ? error.message : String(error),
+          phase: diagnostics?.phase ?? null,
+          diagnosticsFile,
         };
         failures.push(failure);
         console.error(`[perf] 失败：${failure.message}`);

@@ -990,6 +990,27 @@ async function goToTab(page, name, ariaLabel) {
   return performance.now() - start;
 }
 
+async function beginRendererCommitMeasure(page, kind) {
+  await page.evaluate((phase) => {
+    const endMark = `coc-helper:renderer:${phase}:commit`;
+    globalThis.performance.clearMarks(endMark);
+    globalThis.performance.clearMarks(`${endMark}:start`);
+    globalThis.performance.mark(`${endMark}:start`);
+  }, kind);
+}
+
+async function readRendererCommitMeasure(page, kind) {
+  return page.evaluate((phase) => {
+    const endMark = `coc-helper:renderer:${phase}:commit`;
+    const start = globalThis.performance.getEntriesByName(`${endMark}:start`).at(-1);
+    const end = globalThis.performance.getEntriesByName(endMark).at(-1);
+    if (start === undefined || end === undefined || end.startTime < start.startTime) {
+      return null;
+    }
+    return end.startTime - start.startTime;
+  }, kind);
+}
+
 async function getSnapshot(page, timeoutMs = bridgeCallTimeoutMs) {
   const result = await evaluateWithTimeout(
     page,
@@ -1758,20 +1779,24 @@ async function measureViews(session, includeOfficial) {
 
   // probe 在 renderer ready 前已安装；当前 session 的全部 catalog 请求属于 cold 视图。
   const overviewColdMark = 0;
+  await beginRendererCommitMeasure(page, 'overview');
   const overviewCold = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '升级总览', '升级总览');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const overviewColdRendererCommitMs = await readRendererCommitMeasure(page, 'overview');
   const overviewColdResources = await resourceSummary(page, probe, overviewColdMark);
   const overviewIpc = await measureIpc(page, 'overview', snapshot.selectedVillageId, null);
 
   const detailColdMark = probe.mark();
+  await beginRendererCommitMeasure(page, 'village-detail');
   const detailCold = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '村庄详情', '村庄详情');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const detailColdRendererCommitMs = await readRendererCommitMeasure(page, 'village-detail');
   const detailColdResources = await resourceSummary(page, probe, detailColdMark);
   const detailIpc = await measureIpc(page, 'detail', snapshot.selectedVillageId, null);
   const detailScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
@@ -1785,11 +1810,13 @@ async function measureViews(session, includeOfficial) {
   }
 
   const overviewHotMark = probe.mark();
+  await beginRendererCommitMeasure(page, 'overview');
   const overviewHot = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '升级总览', '升级总览');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const overviewHotRendererCommitMs = await readRendererCommitMeasure(page, 'overview');
   const overviewHotResources = await resourceSummary(page, probe, overviewHotMark);
 
   const result = {
@@ -1797,6 +1824,11 @@ async function measureViews(session, includeOfficial) {
       overviewCold: overviewCold.value,
       detailCold: detailCold.value,
       overviewHot: overviewHot.value,
+    },
+    rendererCommitMs: {
+      overviewCold: overviewColdRendererCommitMs,
+      detailCold: detailColdRendererCommitMs,
+      overviewHot: overviewHotRendererCommitMs,
     },
     process: {
       navigation: {
@@ -1978,6 +2010,21 @@ function buildSummary(runs) {
           overviewColdMs: collectPath(selected, ['views', 'navigationMs', 'overviewCold']),
           detailColdMs: collectPath(selected, ['views', 'navigationMs', 'detailCold']),
           overviewHotMs: collectPath(selected, ['views', 'navigationMs', 'overviewHot']),
+          overviewColdRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'overviewCold',
+          ]),
+          detailColdRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'detailCold',
+          ]),
+          overviewHotRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'overviewHot',
+          ]),
           detailPayloadBytes: collectPath(selected, ['views', 'ipc', 'detail', 'payloadBytes']),
           overviewPayloadBytes: collectPath(selected, ['views', 'ipc', 'overview', 'payloadBytes']),
           warLogPayloadBytes: collectPath(selected, ['views', 'ipc', 'warLog', 'payloadBytes']),
@@ -2159,6 +2206,18 @@ function markdownReport(report) {
       `${formatNumber(phases[key].p50)}/${formatNumber(phases[key].p95)} ms`;
     lines.push(
       `| ${scenario} | ${formatPhase('projectionCatalog')} | ${formatPhase('projectionDetailRows')} | ${formatPhase('projectionDetailDto')} |`,
+    );
+  }
+  lines.push('', '## Renderer commit effect', '');
+  lines.push(
+    '| 场景 | Overview cold p50/p95 | Detail cold p50/p95 | Overview hot p50/p95 |',
+    '|---|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const summary = report.summary[scenario];
+    const formatPhase = (value) => `${formatNumber(value.p50)}/${formatNumber(value.p95)} ms`;
+    lines.push(
+      `| ${scenario} | ${formatPhase(summary.overviewColdRendererCommitMs)} | ${formatPhase(summary.detailColdRendererCommitMs)} | ${formatPhase(summary.overviewHotRendererCommitMs)} |`,
     );
   }
   lines.push('', '## IPC payload', '');

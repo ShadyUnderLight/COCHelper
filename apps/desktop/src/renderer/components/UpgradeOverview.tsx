@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { UpgradeDisplayRecordDto } from '@coc-helper/contracts';
 
 import {
@@ -31,6 +32,12 @@ export function UpgradeOverview({
   onRetry,
 }: UpgradeOverviewProps) {
   const { status, payload, lastError } = state;
+
+  useEffect(() => {
+    if (payload !== null) {
+      globalThis.performance.mark('coc-helper:renderer:overview:commit');
+    }
+  }, [payload]);
 
   if (payload === null) {
     if (status === 'error') {

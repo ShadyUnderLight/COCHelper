@@ -77,6 +77,9 @@ export function VillageDetail({
   useEffect(() => {
     // payload 切换（切村/切 base/重拉）即关底片：旧 item 不得留在新上下文。
     setOpenItem(null);
+    if (payload !== null) {
+      globalThis.performance.mark('coc-helper:renderer:village-detail:commit');
+    }
   }, [payload]);
 
   if (payload === null || lookups === null) {

@@ -149,8 +149,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Package
         run: pnpm package
-      - name: Independent packaged Release perf
-        run: pnpm perf:release --scenario=${{ matrix.scenario }} --repetitions=1 --warmup=0 --scroll-ms=1000 --output=e2e-artifacts/perf-${{ matrix.scenario }}
+      - name: Frozen packaged Release perf baseline
+        run: pnpm perf:release --profile=baseline --scenario=${{ matrix.scenario }} --repetitions=3 --warmup=1 --scroll-ms=10000 --output=e2e-artifacts/perf-${{ matrix.scenario }}
       - name: Upload packaged perf artifacts
         if: always()
         uses: actions/upload-artifact@v4

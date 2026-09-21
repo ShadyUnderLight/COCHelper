@@ -28,6 +28,7 @@ import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
 
 import { readPackagedBuildProvenance, resolvePackagedBinary } from './electron-package.mjs';
+import { FROZEN_RELEASE_BASELINE, validatePerfProfile } from './perf-config.mjs';
 import { startPerfFixtureApiServer } from './perf-fixture-server.mjs';
 import {
   collectProcessMetric,
@@ -62,6 +63,7 @@ const runId = `${new Date().toISOString().replaceAll(':', '-')}-${process.pid}`;
 const defaultOutput = path.join(root, 'e2e-artifacts', 'perf', runId);
 
 const scenarioArg = optionValue('--scenario') ?? process.env.COCHELPER_PERF_SCENARIO ?? 'all';
+const profile = optionValue('--profile') ?? process.env.COCHELPER_PERF_PROFILE ?? 'diagnostic';
 const repetitions = positiveInt(
   optionValue('--repetitions') ?? process.env.COCHELPER_PERF_REPETITIONS,
   3,
@@ -76,8 +78,8 @@ const importTimeoutMs = 120_000;
 const bridgeCallTimeoutMs = 10_000;
 const diagnosticsTimeoutMs = 5_000;
 const scrollGraceTimeoutMs = 5_000;
-const processSampleIntervalMs = 250;
-const footprintSampleEvery = 16;
+const processSampleIntervalMs = FROZEN_RELEASE_BASELINE.processSampleIntervalMs;
+const footprintSampleEvery = FROZEN_RELEASE_BASELINE.footprintSampleEvery;
 const failureOutputMaxChars = 20_000;
 
 const SCENARIOS = ['overview', 'village-detail', 'history-24', 'official-lists'];
@@ -87,6 +89,13 @@ for (const scenario of selectedScenarios) {
     throw new Error(`未知性能场景：${scenario}；可选值：${SCENARIOS.join(', ')}`);
   }
 }
+const profileContract = validatePerfProfile({
+  profile,
+  scenario: scenarioArg,
+  repetitions,
+  warmup: warmupCount,
+  scrollMs,
+});
 
 const sessions = new Set();
 
@@ -2007,6 +2016,9 @@ function markdownReport(report) {
     `- repetitions: ${report.options.repetitions}`,
     `- warmup: ${report.options.warmup}`,
     `- scrollMs: ${report.options.scrollMs}`,
+    `- profile: ${report.options.profile}`,
+    `- processSampleIntervalMs: ${report.sampling.processSampleIntervalMs}`,
+    `- footprintSampleEvery: ${report.sampling.footprintSampleEvery}`,
     `- gate: ${report.gate.kind}${report.gate.acceptanceEligible ? '' : ' (diagnostic only)'}`,
     '',
     '> 本报告只记录 observed baseline；unknown 不等于 0，也不等于通过。all 场景是连续 workload 诊断，不是本 PR 的绿色验收门禁。',
@@ -2138,10 +2150,14 @@ async function main() {
       arch: process.arch,
       node: process.version,
     },
-    options: { scenario: scenarioArg, repetitions, warmup: warmupCount, scrollMs },
+    options: { scenario: scenarioArg, repetitions, warmup: warmupCount, scrollMs, profile },
+    sampling: {
+      processSampleIntervalMs,
+      footprintSampleEvery,
+    },
     gate: {
-      kind: scenarioArg === 'all' ? 'diagnostic' : 'independent-scenario',
-      acceptanceEligible: scenarioArg !== 'all',
+      kind: profile === 'baseline' ? FROZEN_RELEASE_BASELINE.profile : 'diagnostic',
+      acceptanceEligible: profileContract.acceptanceEligible,
     },
     manifest,
     summary: buildSummary(runs),

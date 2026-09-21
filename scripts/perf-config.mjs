@@ -13,7 +13,7 @@ export function validatePerfProfile({ profile, scenario, repetitions, warmup, sc
   }
 
   if (profile === 'diagnostic') {
-    return { profile, acceptanceEligible: scenario !== 'all' };
+    return { profile, acceptanceEligible: false };
   }
 
   const selectedScenarioCount =

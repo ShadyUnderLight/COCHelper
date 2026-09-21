@@ -33,6 +33,7 @@ import {
   type SnapshotHistoryStore,
   type SnapshotImportTransactionCoordinator,
   type VillageProfile,
+  type PerformanceTraceSink,
 } from '@coc-helper/domain';
 import {
   generateUuid,
@@ -59,6 +60,7 @@ export type SnapshotImportServiceOptions = {
   readonly history: SnapshotHistoryStore | null;
   readonly manual: ManualTrackerStore | null;
   readonly manualTracker: ManualTrackerService | null;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 export class SnapshotImportService {
@@ -68,6 +70,7 @@ export class SnapshotImportService {
   private readonly history: SnapshotHistoryStore | null;
   private readonly manual: ManualTrackerStore | null;
   private readonly manualTracker: ManualTrackerService | null;
+  private readonly performanceTrace: PerformanceTraceSink | undefined;
   /**
    * 快捷导入待确认态：只保存在 Main 内存，Renderer 不得回传 preview。
    * 与普通 pending 走同一个 GenerationBoundSlot 不变量：
@@ -82,6 +85,7 @@ export class SnapshotImportService {
     this.history = options.history;
     this.manual = options.manual;
     this.manualTracker = options.manualTracker;
+    this.performanceTrace = options.performanceTrace;
   }
 
   prepare(request: ImportPrepareRequest): ImportPreparePayload {
@@ -98,13 +102,15 @@ export class SnapshotImportService {
       }
     }
 
-    const result = parsePendingImport({
-      text: request.text,
-      villages,
-      selectedVillageId: explicitVillageId,
-      importIntoCurrentVillage: explicitVillageId !== null,
-      clock: this.clock,
-    });
+    const result = this.measure('import', 'parse', () =>
+      parsePendingImport({
+        text: request.text,
+        villages,
+        selectedVillageId: explicitVillageId,
+        importIntoCurrentVillage: explicitVillageId !== null,
+        clock: this.clock,
+      }),
+    );
     if (!result.ok) {
       if ('kind' in result.error && result.error.kind === 'ambiguous') {
         throw new AppServiceError('conflict', result.error.message);
@@ -166,11 +172,13 @@ export class SnapshotImportService {
     );
 
     const appliedAtMs = this.clock.nowMs();
-    const historyService = new HistoryService(this.history);
-    const historyEnvelope = historyService.loadOrMigrate({
-      villages,
-      nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
-    });
+    const historyService = new HistoryService(this.history, this.performanceTrace);
+    const historyEnvelope = this.measure('history', 'load', () =>
+      historyService.loadOrMigrate({
+        villages,
+        nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
+      }),
+    );
     const villageID = requireUuid(targetVillage.id, '目标村庄 ID');
     const previousEntry = historyService.activeEntry(historyEnvelope, villageID);
     const historyDecision = historyService.planImport({
@@ -183,20 +191,25 @@ export class SnapshotImportService {
       appliedAtRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
 
-    const reconciled = this.manualTracker.buildReconciledManualEnvelope({
-      villageID,
-      previousEntry,
-      decision: historyDecision,
-      appliedAtMs,
-      reconciliationDecision,
-    });
+    const reconciled = this.measure('reconciliation', 'build', () =>
+      this.manualTracker!.buildReconciledManualEnvelope({
+        villageID,
+        previousEntry,
+        decision: historyDecision,
+        appliedAtMs,
+        reconciliationDecision,
+        performanceTrace: this.performanceTrace,
+      }),
+    );
 
     try {
-      this.importTransaction.commit({
-        currentData: encodeVillageStoreBytes(nextVillages),
-        envelope: historyDecision.envelope,
-        manualEnvelope: reconciled.envelope,
-      });
+      this.measure('storage', 'commit', () =>
+        this.importTransaction!.commit({
+          currentData: encodeVillageStoreBytes(nextVillages),
+          envelope: historyDecision.envelope,
+          manualEnvelope: reconciled.envelope,
+        }),
+      );
     } catch (error) {
       throw new AppServiceError('unavailable', formatTransactionError(error));
     }
@@ -350,11 +363,13 @@ export class SnapshotImportService {
     nextVillages[index] = updated;
 
     const appliedAtMs = this.clock.nowMs();
-    const historyService = new HistoryService(this.history);
-    const historyEnvelope = historyService.loadOrMigrate({
-      villages,
-      nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
-    });
+    const historyService = new HistoryService(this.history, this.performanceTrace);
+    const historyEnvelope = this.measure('history', 'load', () =>
+      historyService.loadOrMigrate({
+        villages,
+        nowRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
+      }),
+    );
     const villageID = requireUuid(previous.id, '目标村庄 ID');
     const previousEntry = historyService.activeEntry(historyEnvelope, villageID);
     const historyDecision = historyService.planImport({
@@ -366,20 +381,25 @@ export class SnapshotImportService {
       appliedAtRefSeconds: unixSecondsToRefSeconds(appliedAtMs / 1000),
     });
 
-    const reconciled = this.manualTracker.buildReconciledManualEnvelope({
-      villageID,
-      previousEntry,
-      decision: historyDecision,
-      appliedAtMs,
-      reconciliationDecision: input.reconciliationDecision,
-    });
+    const reconciled = this.measure('reconciliation', 'build', () =>
+      this.manualTracker!.buildReconciledManualEnvelope({
+        villageID,
+        previousEntry,
+        decision: historyDecision,
+        appliedAtMs,
+        reconciliationDecision: input.reconciliationDecision,
+        performanceTrace: this.performanceTrace,
+      }),
+    );
 
     try {
-      this.importTransaction.commit({
-        currentData: encodeVillageStoreBytes(nextVillages),
-        envelope: historyDecision.envelope,
-        manualEnvelope: reconciled.envelope,
-      });
+      this.measure('storage', 'commit', () =>
+        this.importTransaction!.commit({
+          currentData: encodeVillageStoreBytes(nextVillages),
+          envelope: historyDecision.envelope,
+          manualEnvelope: reconciled.envelope,
+        }),
+      );
     } catch (error) {
       throw new AppServiceError('unavailable', formatTransactionError(error));
     }
@@ -391,6 +411,12 @@ export class SnapshotImportService {
       store.setSelectedVillageId(input.targetVillageId);
     }
     return input.targetVillageId;
+  }
+
+  private measure<T>(scope: string, phase: string, task: () => T): T {
+    return this.performanceTrace === undefined
+      ? task()
+      : this.performanceTrace.measure(scope, phase, task);
   }
 }
 

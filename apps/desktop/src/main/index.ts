@@ -11,6 +11,7 @@ import { getCatalogService } from './catalog-service';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
 import { isAllowedRendererUrl } from './security-policy';
 import { createMainWindow, registerApplicationHandlers } from './windows';
+import { createPerformanceTraceSink } from './performance-trace';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 
@@ -109,6 +110,9 @@ function initializeApplicationServices(): void {
   if (perfFixtureMode && (perfFixtureToken === undefined || perfFixtureToken.length === 0)) {
     throw new Error('COCHELPER_PERF_API_TOKEN is required in perf fixture mode');
   }
+  const performanceTrace = perfFixtureMode
+    ? createPerformanceTraceSink((line) => process.stdout.write(line))
+    : undefined;
   applicationServices = createApplicationServices({
     tokenProvider: () => {
       try {
@@ -117,6 +121,7 @@ function initializeApplicationServices(): void {
         return undefined;
       }
     },
+    performanceTrace,
   });
   const persistence = applicationServices.boot.persistence;
   if (persistence !== null) {

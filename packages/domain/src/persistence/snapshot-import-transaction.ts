@@ -19,6 +19,7 @@ import { base64ToBytes, bytesToBase64 } from './bytes';
 import type { WriteFaultInjector } from './fault';
 import type { CurrentVillagePersistence } from './village-file-store';
 import { validateVillageStoreBytes } from './village-codec';
+import type { PerformanceTraceSink } from '../performance';
 
 export type SnapshotImportJournalPhase = 'prepared' | 'committed';
 
@@ -43,6 +44,7 @@ export type SnapshotImportTransactionCoordinatorOptions = {
   readonly journalURL: string | null;
   readonly manual?: ManualTrackerStore | null;
   readonly fault?: WriteFaultInjector;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 export class SnapshotImportTransactionCoordinator {
@@ -51,6 +53,7 @@ export class SnapshotImportTransactionCoordinator {
   private readonly journalURL: string | null;
   private readonly manual: ManualTrackerStore | null;
   private readonly fault: WriteFaultInjector | undefined;
+  private readonly performanceTrace: PerformanceTraceSink | undefined;
 
   constructor(options: SnapshotImportTransactionCoordinatorOptions) {
     this.current = options.current;
@@ -58,6 +61,7 @@ export class SnapshotImportTransactionCoordinator {
     this.journalURL = options.journalURL;
     this.manual = options.manual ?? null;
     this.fault = options.fault;
+    this.performanceTrace = options.performanceTrace;
   }
 
   recoverIfNeeded(): void {
@@ -98,8 +102,18 @@ export class SnapshotImportTransactionCoordinator {
         base64ToBytes(journal.newCurrentData),
         '事务记录中的新当前村庄数据',
       );
-      validateHistoryBytes(decodeOptionalBase64(journal.previousHistoryData), '事务记录中的旧历史');
-      validateHistoryBytes(base64ToBytes(journal.newHistoryData), '事务记录中的新历史');
+      validateHistoryBytes(
+        decodeOptionalBase64(journal.previousHistoryData),
+        '事务记录中的旧历史',
+        this.performanceTrace,
+        'recovery.validate-previous-history',
+      );
+      validateHistoryBytes(
+        base64ToBytes(journal.newHistoryData),
+        '事务记录中的新历史',
+        this.performanceTrace,
+        'recovery.validate-new-history',
+      );
     } catch (error) {
       throw asJournalCorrupt(error);
     }
@@ -161,8 +175,10 @@ export class SnapshotImportTransactionCoordinator {
     readonly envelope: SnapshotHistoryEnvelope;
     readonly manualEnvelope?: ManualTrackerEnvelope | null;
   }): void {
-    const newHistoryData = new TextEncoder().encode(
-      encodeSnapshotHistoryEnvelopeWire(validateSnapshotHistoryEnvelope(input.envelope)),
+    const newHistoryData = this.measure('history', 'validate-input', () =>
+      new TextEncoder().encode(
+        encodeSnapshotHistoryEnvelopeWire(validateSnapshotHistoryEnvelope(input.envelope)),
+      ),
     );
     const existingHistory = this.history.load();
     if (existingHistory === null || !envelopeIsMigrated(existingHistory)) {
@@ -189,8 +205,18 @@ export class SnapshotImportTransactionCoordinator {
     try {
       validateVillageStoreBytes(previousCurrentData, '旧当前村庄数据');
       validateVillageStoreBytes(input.currentData, '新当前村庄数据');
-      validateHistoryBytes(previousHistoryData, '旧历史');
-      validateHistoryBytes(newHistoryData, '新历史');
+      validateHistoryBytes(
+        previousHistoryData,
+        '旧历史',
+        this.performanceTrace,
+        'validate-previous-history',
+      );
+      validateHistoryBytes(
+        newHistoryData,
+        '新历史',
+        this.performanceTrace,
+        'validate-wire-history',
+      );
       if (input.manualEnvelope != null) {
         validateManualBytes(previousManualData, '旧手动状态');
         validateManualBytes(newManualData, '新手动状态');
@@ -209,14 +235,16 @@ export class SnapshotImportTransactionCoordinator {
       manualIncluded: input.manualEnvelope != null,
       newManualData: newManualData === null ? null : bytesToBase64(newManualData),
     };
-    this.writeJournal(prepared);
+    this.measure('storage', 'journal-prepared', () => this.writeJournal(prepared));
 
     try {
-      this.current.writeData(input.currentData);
-      this.history.writeRawData(newHistoryData);
-      if (newManualData !== null) {
-        this.manual!.writeRawData(newManualData);
-      }
+      this.measure('storage', 'write', () => {
+        this.current.writeData(input.currentData);
+        this.history.writeRawData(newHistoryData);
+        if (newManualData !== null) {
+          this.manual!.writeRawData(newManualData);
+        }
+      });
     } catch (error) {
       try {
         this.current.restoreData(previousCurrentData);
@@ -238,10 +266,12 @@ export class SnapshotImportTransactionCoordinator {
       return;
     }
     try {
-      this.writeJournal({
-        ...prepared,
-        phase: 'committed',
-      });
+      this.measure('storage', 'journal-committed', () =>
+        this.writeJournal({
+          ...prepared,
+          phase: 'committed',
+        }),
+      );
     } catch (error) {
       try {
         this.current.restoreData(previousCurrentData);
@@ -289,6 +319,12 @@ export class SnapshotImportTransactionCoordinator {
     }
     rmSync(this.journalURL);
   }
+
+  private measure<T>(scope: string, phase: string, task: () => T): T {
+    return this.performanceTrace === undefined
+      ? task()
+      : this.performanceTrace.measure(scope, phase, task);
+  }
 }
 
 function normalizeImportJournal(journal: SnapshotImportJournalV1): SnapshotImportJournalV1 {
@@ -301,18 +337,30 @@ function normalizeImportJournal(journal: SnapshotImportJournalV1): SnapshotImpor
   };
 }
 
-function validateHistoryBytes(data: Uint8Array | null, label: string): void {
+function validateHistoryBytes(
+  data: Uint8Array | null,
+  label: string,
+  performanceTrace: PerformanceTraceSink | undefined,
+  phase: string,
+): void {
   if (data === null) {
     return;
   }
-  try {
-    const envelope = decodeSnapshotHistoryEnvelopeWire(new TextDecoder().decode(data));
-    validateSnapshotHistoryEnvelope(envelope, { allowUnmigratedPersistedHistory: true });
-  } catch (error) {
-    throw {
-      kind: 'journalCorrupt',
-      message: `${label} 无效：${error instanceof Error ? error.message : String(error)}`,
-    } satisfies SnapshotImportTransactionError;
+  const validate = () => {
+    try {
+      const envelope = decodeSnapshotHistoryEnvelopeWire(new TextDecoder().decode(data));
+      validateSnapshotHistoryEnvelope(envelope, { allowUnmigratedPersistedHistory: true });
+    } catch (error) {
+      throw {
+        kind: 'journalCorrupt',
+        message: `${label} 无效：${error instanceof Error ? error.message : String(error)}`,
+      } satisfies SnapshotImportTransactionError;
+    }
+  };
+  if (performanceTrace === undefined) {
+    validate();
+  } else {
+    performanceTrace.measure('history', phase, validate);
   }
 }
 

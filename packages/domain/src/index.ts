@@ -7,6 +7,7 @@ export {
   SystemClock,
 } from './primitives';
 export type { Clock, LineageId, StableId, UuidSource } from './primitives';
+export type { PerformanceTraceSink } from './performance';
 export * from './account';
 export * from './import';
 export * from './catalog';

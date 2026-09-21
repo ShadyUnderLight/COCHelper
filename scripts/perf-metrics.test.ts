@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectProcessMetric,
+  collectTracePhase,
   summarizeNumbers,
   summarizeProcessSamples,
 } from './perf-metrics.mjs';
@@ -42,5 +43,23 @@ describe('perf metrics', () => {
       max: null,
       mean: null,
     });
+  });
+
+  it('只聚合匹配 scope/phase 的主进程阶段事件', () => {
+    expect(
+      collectTracePhase(
+        [
+          {
+            phaseEvents: [
+              { scope: 'history', phase: 'validate-wire-history', durationMs: 8 },
+              { scope: 'history', phase: 'validate-wire-history', durationMs: 12 },
+              { scope: 'storage', phase: 'write', durationMs: 99 },
+            ],
+          },
+        ],
+        'history',
+        'validate-wire-history',
+      ),
+    ).toMatchObject({ count: 2, p50: 8, p95: 12, max: 12 });
   });
 });

@@ -17,6 +17,7 @@ import { envelopeIsMigrated, createSnapshotHistoryEnvelope } from './store-types
 import type { SnapshotHistoryEnvelope } from './store-types';
 import type { SnapshotHistoryStore } from './store-port';
 import type { SnapshotCoverageProof, SnapshotCoverageSourceUniverse } from './types';
+import type { PerformanceTraceSink } from '../performance';
 
 export type SnapshotHistoryService = {
   readonly store: SnapshotHistoryStore;
@@ -46,6 +47,7 @@ export type PlanSnapshotHistoryImportForServiceInput = {
   readonly craftTableCatalog?: CraftTableCatalog;
   readonly sectionProofs?: Readonly<Record<string, SnapshotCoverageProof>>;
   readonly sourceUniverse?: SnapshotCoverageSourceUniverse | null;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 export function envelopeHasPersistedHistory(envelope: SnapshotHistoryEnvelope): boolean {

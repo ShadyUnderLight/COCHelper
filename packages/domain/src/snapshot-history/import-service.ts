@@ -18,6 +18,7 @@ import type {
   SnapshotLineageResolution,
   SnapshotCoverageProof,
 } from './types';
+import type { PerformanceTraceSink } from '../performance';
 
 export type SnapshotHistoryImportDecision = {
   readonly envelope: SnapshotHistoryEnvelope;
@@ -38,6 +39,7 @@ export type PlanSnapshotHistoryImportInput = {
   readonly craftTableCatalog?: CraftTableCatalog;
   readonly sectionProofs?: Readonly<Record<string, SnapshotCoverageProof>>;
   readonly sourceUniverse?: SnapshotCoverageSourceUniverse | null;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 function serviceError(error: SnapshotHistoryServiceError): SnapshotHistoryServiceError {
@@ -85,15 +87,17 @@ export function planSnapshotHistoryImport(
   const appliedAtRefSeconds =
     input.appliedAtRefSeconds ?? unixSecondsToRefSeconds(Date.now() / 1000);
 
-  const candidate = canonicalizeSnapshotHistoryWithLineage(input.snapshot, {
-    villageID: input.villageID,
-    lineage,
-    appliedAtRefSeconds,
-    catalog: input.catalog,
-    craftTableCatalog: input.craftTableCatalog,
-    sectionProofs: input.sectionProofs,
-    sourceUniverse: input.sourceUniverse,
-  });
+  const canonicalize = () =>
+    canonicalizeSnapshotHistoryWithLineage(input.snapshot, {
+      villageID: input.villageID,
+      lineage,
+      appliedAtRefSeconds,
+      catalog: input.catalog,
+      craftTableCatalog: input.craftTableCatalog,
+      sectionProofs: input.sectionProofs,
+      sourceUniverse: input.sourceUniverse,
+    });
+  const candidate = measure(input.performanceTrace, 'history', 'canonicalization', canonicalize);
 
   let updated: SnapshotHistoryEnvelope = {
     ...input.envelope,
@@ -145,4 +149,13 @@ export function planSnapshotHistoryImport(
     appended: true,
     duplicate: false,
   };
+}
+
+function measure<T>(
+  trace: PerformanceTraceSink | undefined,
+  scope: string,
+  phase: string,
+  task: () => T,
+): T {
+  return trace === undefined ? task() : trace.measure(scope, phase, task);
 }

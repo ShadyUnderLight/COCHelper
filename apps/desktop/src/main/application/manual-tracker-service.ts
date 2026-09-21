@@ -51,6 +51,7 @@ import {
   type ManualTrackerStore,
   type ManualTrackerVillageState,
   type ManualUpgradeRecord,
+  type PerformanceTraceSink,
   type QueueCapacityGateError,
   type SnapshotHistoryEntry,
   type SnapshotHistoryImportDecision,
@@ -484,6 +485,7 @@ export class ManualTrackerService {
     readonly appliedAtMs: number;
     readonly reconciliationDecision?: ManualReconciliationDecision;
     readonly seedEnvelope?: ManualTrackerEnvelope | null;
+    readonly performanceTrace?: PerformanceTraceSink;
   }): {
     readonly envelope: ManualTrackerEnvelope;
     readonly attentionCount: number;
@@ -510,6 +512,7 @@ export class ManualTrackerService {
         villageID: input.villageID,
         previousEntry: input.previousEntry,
         decision: input.decision,
+        performanceTrace: input.performanceTrace,
       }),
       currentState.baselineReference,
     );

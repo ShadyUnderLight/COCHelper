@@ -511,13 +511,13 @@ function createEnvironment(context) {
     ...process.env,
     COCHELPER_E2E_DATA_ROOT: context.dataRoot,
     COCHELPER_PERF_TRACE_FILE: context.performanceTraceFile,
+    COCHELPER_PERF_API_TOKEN: 'perf-fixture-token',
     ELECTRON_ENABLE_LOGGING: '1',
     ...(context.apiServer === null
       ? {}
       : {
           COCHELPER_PERF_API_HOST: `127.0.0.1:${context.apiServer.port}`,
           COCHELPER_PERF_API_SCHEME: 'http',
-          COCHELPER_PERF_API_TOKEN: 'perf-fixture-token',
         }),
     ...(process.platform !== 'darwin'
       ? {
@@ -541,7 +541,7 @@ async function launchApp(context) {
       `--user-data-dir=${context.userDataDirectory}`,
       '--remote-debugging-address=127.0.0.1',
       `--remote-debugging-port=${port}`,
-      ...(context.apiServer === null ? [] : ['--perf-fixture']),
+      '--perf-fixture',
       ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
     ],
     {

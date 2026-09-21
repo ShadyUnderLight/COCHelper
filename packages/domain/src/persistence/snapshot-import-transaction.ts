@@ -107,12 +107,14 @@ export class SnapshotImportTransactionCoordinator {
         '事务记录中的旧历史',
         this.performanceTrace,
         'recovery.validate-previous-history',
+        true,
       );
       validateHistoryBytes(
         base64ToBytes(journal.newHistoryData),
         '事务记录中的新历史',
         this.performanceTrace,
         'recovery.validate-new-history',
+        true,
       );
     } catch (error) {
       throw asJournalCorrupt(error);
@@ -215,12 +217,14 @@ export class SnapshotImportTransactionCoordinator {
         '旧历史',
         this.performanceTrace,
         'validate-previous-history',
+        true,
       );
       validateHistoryBytes(
         newHistoryData,
         '新历史',
         this.performanceTrace,
         'validate-wire-history',
+        false,
       );
       if (input.manualEnvelope != null) {
         validateManualBytes(previousManualData, '旧手动状态');
@@ -347,6 +351,7 @@ function validateHistoryBytes(
   label: string,
   performanceTrace: PerformanceTraceSink | undefined,
   phase: string,
+  allowUnmigratedPersistedHistory: boolean,
 ): void {
   if (data === null) {
     return;
@@ -354,7 +359,7 @@ function validateHistoryBytes(
   const validate = () => {
     try {
       const envelope = decodeSnapshotHistoryEnvelopeWire(new TextDecoder().decode(data));
-      validateSnapshotHistoryEnvelope(envelope, { allowUnmigratedPersistedHistory: true });
+      validateSnapshotHistoryEnvelope(envelope, { allowUnmigratedPersistedHistory });
     } catch (error) {
       throw {
         kind: 'journalCorrupt',

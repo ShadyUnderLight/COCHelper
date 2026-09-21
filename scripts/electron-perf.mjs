@@ -346,10 +346,9 @@ async function waitForRendererReady(browser, onPage) {
 }
 
 function collectOutput(child) {
-  const output = { stdout: '', stderr: '', phaseEvents: [], partialLine: '' };
+  const output = { stdout: '', stderr: '' };
   child.stdout.on('data', (chunk) => {
     const text = chunk.toString();
-    collectPerformanceTraceEvents(output, text);
     output.stdout = appendTail(output.stdout, text, failureOutputMaxChars);
     process.stdout.write(text);
   });
@@ -359,28 +358,6 @@ function collectOutput(child) {
     process.stderr.write(text);
   });
   return output;
-}
-
-function collectPerformanceTraceEvents(output, text) {
-  const lines = `${output.partialLine}${text}`.split('\n');
-  output.partialLine = lines.pop() ?? '';
-  for (const line of lines) {
-    if (!line.startsWith(PERFORMANCE_TRACE_PREFIX)) {
-      continue;
-    }
-    try {
-      const event = JSON.parse(line.slice(PERFORMANCE_TRACE_PREFIX.length));
-      if (
-        typeof event?.scope === 'string' &&
-        typeof event?.phase === 'string' &&
-        typeof event?.durationMs === 'number'
-      ) {
-        output.phaseEvents.push(event);
-      }
-    } catch {
-      // Keep raw child output for failure diagnostics; malformed trace lines are ignored.
-    }
-  }
 }
 
 function readPerformanceTraceEvents(context) {

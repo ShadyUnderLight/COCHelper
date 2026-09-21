@@ -26,16 +26,16 @@
 
 环境：macOS arm64，Node `v26.0.0`，每次 `repetitions=3`、`warmup=1`、`scrollMs=10000`。本机 Node 26 与项目声明/CI 的 Node 24 不同，以下数字是 observed 对比，不是跨环境性能门禁。
 
-| 指标 | 优化前 `b614a6f` | 优化后 `e92fc00` | 变化 |
+| 指标 | 优化前 `b614a6f` | 最终 head `79dd377` | 变化 |
 |---|---:|---:|---:|
-| History-24 总导入 p50 | 83,241 ms | 53,379 ms | 约 -35.9% |
+| History-24 总导入 p50 | 83,241 ms | 53,522 ms | 约 -35.7% |
 | history.load p50 | 675 ms | 675 ms | 保持 |
 | history canonicalization p50 | 9 ms | 9 ms | 保持 |
 | history previous validation p50 | 502 ms | 502 ms | 保持 |
-| history wire validation p50 | 537 ms | 543 ms | 保持在方差内 |
-| storage.commit p50 | 2,312 ms | 1,137 ms | 约 -50.8% |
+| history wire validation p50 | 537 ms | 528 ms | 保持在方差内 |
+| storage.commit p50 | 2,312 ms | 1,097 ms | 约 -52.6% |
 | storage.write p50 | 14 ms | 14 ms | 保持 |
-| reconciliation diff p50 | 6.6 ms | 6.5 ms | 保持 |
+| reconciliation diff p50 | 6.6 ms | 6.6 ms | 保持 |
 
 优化前阶段显示每次 import 还有约 `551ms` 的 input envelope validation，以及事务内部再次 `history.load` 的约 `675ms`。优化后：
 

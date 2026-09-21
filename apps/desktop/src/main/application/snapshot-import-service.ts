@@ -207,6 +207,7 @@ export class SnapshotImportService {
         this.importTransaction!.commit({
           currentData: encodeVillageStoreBytes(nextVillages),
           envelope: historyDecision.envelope,
+          existingHistory: historyEnvelope,
           manualEnvelope: reconciled.envelope,
         }),
       );
@@ -397,6 +398,7 @@ export class SnapshotImportService {
         this.importTransaction!.commit({
           currentData: encodeVillageStoreBytes(nextVillages),
           envelope: historyDecision.envelope,
+          existingHistory: historyEnvelope,
           manualEnvelope: reconciled.envelope,
         }),
       );

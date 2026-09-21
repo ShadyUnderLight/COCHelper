@@ -91,7 +91,7 @@ const PERFORMANCE_TRACE_PHASES = [
   { key: 'historyCanonicalization', scope: 'history', phase: 'canonicalization' },
   { key: 'reconciliationBuild', scope: 'reconciliation', phase: 'build' },
   { key: 'reconciliationDiff', scope: 'reconciliation', phase: 'diff' },
-  { key: 'historyValidateInput', scope: 'history', phase: 'validate-input' },
+  { key: 'historyEncode', scope: 'history', phase: 'encode' },
   { key: 'historyValidatePrevious', scope: 'history', phase: 'validate-previous-history' },
   { key: 'historyValidateWire', scope: 'history', phase: 'validate-wire-history' },
   { key: 'storageCommit', scope: 'storage', phase: 'commit' },
@@ -2137,7 +2137,7 @@ function markdownReport(report) {
   }
   lines.push('', '## Main 阶段时间', '');
   lines.push(
-    '| 场景 | parse p50/p95 | canonicalization p50/p95 | reconciliation diff p50/p95 | history validate input p50/p95 | history validate wire p50/p95 | storage commit p50/p95 | storage write p50/p95 |',
+    '| 场景 | parse p50/p95 | canonicalization p50/p95 | reconciliation diff p50/p95 | history encode p50/p95 | history validate wire p50/p95 | storage commit p50/p95 | storage write p50/p95 |',
     '|---|---:|---:|---:|---:|---:|---:|---:|',
   );
   for (const scenario of SCENARIOS) {
@@ -2145,7 +2145,7 @@ function markdownReport(report) {
     const formatPhase = (key) =>
       `${formatNumber(phases[key].p50)}/${formatNumber(phases[key].p95)} ms`;
     lines.push(
-      `| ${scenario} | ${formatPhase('importParse')} | ${formatPhase('historyCanonicalization')} | ${formatPhase('reconciliationDiff')} | ${formatPhase('historyValidateInput')} | ${formatPhase('historyValidateWire')} | ${formatPhase('storageCommit')} | ${formatPhase('storageWrite')} |`,
+      `| ${scenario} | ${formatPhase('importParse')} | ${formatPhase('historyCanonicalization')} | ${formatPhase('reconciliationDiff')} | ${formatPhase('historyEncode')} | ${formatPhase('historyValidateWire')} | ${formatPhase('storageCommit')} | ${formatPhase('storageWrite')} |`,
     );
   }
   lines.push('', '## Projection 阶段时间', '');

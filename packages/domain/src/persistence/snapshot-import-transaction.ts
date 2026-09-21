@@ -173,14 +173,19 @@ export class SnapshotImportTransactionCoordinator {
   commit(input: {
     readonly currentData: Uint8Array;
     readonly envelope: SnapshotHistoryEnvelope;
+    /** 已由调用方从同一 import 生命周期加载并校验的当前 history。 */
+    readonly existingHistory?: SnapshotHistoryEnvelope | null;
     readonly manualEnvelope?: ManualTrackerEnvelope | null;
   }): void {
-    const newHistoryData = this.measure('history', 'validate-input', () =>
-      new TextEncoder().encode(
-        encodeSnapshotHistoryEnvelopeWire(validateSnapshotHistoryEnvelope(input.envelope)),
-      ),
-    );
-    const existingHistory = this.history.load();
+    let newHistoryData: Uint8Array;
+    try {
+      newHistoryData = this.measure('history', 'encode', () =>
+        new TextEncoder().encode(encodeSnapshotHistoryEnvelopeWire(input.envelope)),
+      );
+    } catch (error) {
+      throw asJournalCorrupt(error);
+    }
+    const existingHistory = input.existingHistory ?? this.history.load();
     if (existingHistory === null || !envelopeIsMigrated(existingHistory)) {
       throw {
         kind: 'unavailable',

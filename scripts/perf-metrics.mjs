@@ -75,3 +75,17 @@ export function collectProcessMetric(runs, metric) {
   }
   return summarizeNumbers(values);
 }
+
+export function collectTracePhase(runs, scope, phase) {
+  const values = [];
+  for (const run of runs) {
+    for (const event of run.phaseEvents ?? []) {
+      if (event?.scope === scope && event?.phase === phase) {
+        if (typeof event.durationMs === 'number' && Number.isFinite(event.durationMs)) {
+          values.push(event.durationMs);
+        }
+      }
+    }
+  }
+  return summarizeNumbers(values);
+}

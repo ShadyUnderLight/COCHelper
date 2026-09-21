@@ -43,10 +43,12 @@ import {
   villageStoreStatusRequiresRecovery,
 } from './village-codec';
 import { VillageFileStore } from './village-file-store';
+import type { PerformanceTraceSink } from '../performance';
 
 export type PersistenceBootstrapOptions = {
   readonly homeDirectory?: string;
   readonly paths?: ElectronPersistencePaths;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 export type PersistenceBootstrapResult = {
@@ -102,6 +104,7 @@ export function bootstrapPersistence(
     history,
     journalURL: paths.snapshotImportJournal,
     manual,
+    performanceTrace: options.performanceTrace,
   });
   const manualTransaction = new ManualTrackerTransactionCoordinator({
     current: villages,

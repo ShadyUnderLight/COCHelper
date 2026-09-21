@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
+import { parseAccountSnapshot } from '../account/parser';
 import { createVillageProfile } from '../import/types';
 import { FileManualTrackerStore } from '../manual/file-store';
 import { emptyManualTrackerEnvelope } from '../manual/tracker-envelope';
 import {
+  canonicalizeSnapshotHistory,
   createSnapshotHistoryEnvelope,
   createSnapshotHistoryMigrationMarker,
   FileSnapshotHistoryStore,
@@ -184,6 +186,76 @@ describe('SnapshotImportTransactionCoordinator', () => {
     expect(current.readData()).toEqual(beforeVillages);
     expect(failingHistory.readRawData()).toEqual(beforeHistory);
     expect(existsSync(journalURL)).toBe(false);
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('提交时拒绝未迁移的 new history envelope', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'coc-import-legacy-history-'));
+    const villagesURL = join(directory, 'villages-v1.json');
+    const historyURL = join(directory, 'snapshot-history-v1.json');
+    const journalURL = join(directory, 'snapshot-import-v1.transaction.json');
+    const current = new VillageFileStore(villagesURL);
+    const history = new FileSnapshotHistoryStore(historyURL, {
+      hydrationPolicy: 'testsAllowTestFixture',
+    });
+    const villageID = parseUuid('00000000-0000-0000-0000-000000000072')!;
+    const lineageID = parseUuid('00000000-0000-0000-0000-000000000073')!;
+    const snapshotID = parseUuid('00000000-0000-0000-0000-000000000074')!;
+    current.save([createVillageProfile({ id: villageID, name: '村' })]);
+    const existingHistory = createSnapshotHistoryEnvelope({
+      migrationMarker: createSnapshotHistoryMigrationMarker(1),
+    });
+    history.save(validateSnapshotHistoryEnvelope(existingHistory));
+
+    const parsed = parseAccountSnapshot('{"tag":"#2QJQ8J88","buildings":[]}', {
+      clock: { nowMs: () => 1_700_000_000_000 },
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const entry = canonicalizeSnapshotHistory(parsed.value, {
+      villageID,
+      lineageID,
+      appliedAtRefSeconds: 20,
+      snapshotID,
+    });
+    const legacyHistory = createSnapshotHistoryEnvelope({
+      entries: [entry],
+      lineages: [
+        {
+          villageID,
+          lineageID,
+          normalizedPlayerTag: entry.normalizedPlayerTag,
+          lastEntryID: snapshotID,
+          lastAppliedAtRefSeconds: 20,
+          hasConflict: false,
+          isActive: true,
+        },
+      ],
+      migrationMarker: null,
+    });
+
+    const coordinator = new SnapshotImportTransactionCoordinator({
+      current,
+      history,
+      journalURL,
+    });
+    const beforeVillages = current.readData();
+    const beforeHistory = history.readRawData();
+    expect(() =>
+      coordinator.commit({
+        currentData: encodeVillageStoreBytes([
+          createVillageProfile({ id: villageID, name: '新名' }),
+        ]),
+        envelope: legacyHistory,
+        existingHistory,
+      }),
+    ).toThrow();
+    expect(current.readData()).toEqual(beforeVillages);
+    expect(history.readRawData()).toEqual(beforeHistory);
+    expect(existsSync(journalURL)).toBe(false);
+
     rmSync(directory, { recursive: true, force: true });
   });
 });

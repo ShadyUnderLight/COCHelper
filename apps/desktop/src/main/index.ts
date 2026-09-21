@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+
 import { app, BrowserWindow, safeStorage } from 'electron';
 
 import {
@@ -11,6 +13,7 @@ import { getCatalogService } from './catalog-service';
 import { installAppProtocolHandler, registerAppScheme } from './protocol';
 import { isAllowedRendererUrl } from './security-policy';
 import { createMainWindow, registerApplicationHandlers } from './windows';
+import { createPerformanceTraceSink } from './performance-trace';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 
@@ -109,6 +112,17 @@ function initializeApplicationServices(): void {
   if (perfFixtureMode && (perfFixtureToken === undefined || perfFixtureToken.length === 0)) {
     throw new Error('COCHELPER_PERF_API_TOKEN is required in perf fixture mode');
   }
+  const performanceTraceFile = process.env.COCHELPER_PERF_TRACE_FILE?.trim();
+  const performanceTrace =
+    perfFixtureMode || (performanceTraceFile !== undefined && performanceTraceFile.length > 0)
+      ? createPerformanceTraceSink((line) => {
+          if (performanceTraceFile !== undefined && performanceTraceFile.length > 0) {
+            appendFileSync(performanceTraceFile, line, 'utf8');
+          } else {
+            process.stdout.write(line);
+          }
+        })
+      : undefined;
   applicationServices = createApplicationServices({
     tokenProvider: () => {
       try {
@@ -117,6 +131,7 @@ function initializeApplicationServices(): void {
         return undefined;
       }
     },
+    performanceTrace,
   });
   const persistence = applicationServices.boot.persistence;
   if (persistence !== null) {

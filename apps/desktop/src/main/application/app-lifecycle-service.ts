@@ -7,6 +7,7 @@ import {
   SystemClock,
   bootstrapPersistence,
   type Clock,
+  type PerformanceTraceSink,
   type PersistenceBootstrapResult,
 } from '@coc-helper/domain';
 
@@ -47,6 +48,7 @@ export function bootApplicationServices(
     readonly clock?: Clock;
     readonly persistence?: PersistenceBootstrapResult | null;
     readonly bootError?: string | null;
+    readonly performanceTrace?: PerformanceTraceSink;
   } = {},
 ): AppLifecycleBootResult {
   const clock = options.clock ?? new SystemClock();
@@ -55,7 +57,7 @@ export function bootApplicationServices(
 
   if (options.persistence === undefined) {
     try {
-      persistence = bootstrapPersistence();
+      persistence = bootstrapPersistence({ performanceTrace: options.performanceTrace });
     } catch (error) {
       persistence = null;
       bootError = error instanceof Error ? error.message : String(error);

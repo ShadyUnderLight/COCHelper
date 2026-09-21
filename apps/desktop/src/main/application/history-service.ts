@@ -15,12 +15,16 @@ import {
   type VillageProfile,
 } from '@coc-helper/domain';
 import type { UuidString } from '@coc-helper/wire';
+import type { PerformanceTraceSink } from '@coc-helper/domain';
 
 export class HistoryService {
   private readonly store: SnapshotHistoryStore;
   private readonly inner: ReturnType<typeof createSnapshotHistoryService>;
 
-  constructor(store: SnapshotHistoryStore) {
+  constructor(
+    store: SnapshotHistoryStore,
+    private readonly performanceTrace?: PerformanceTraceSink,
+  ) {
     this.store = store;
     this.inner = createSnapshotHistoryService(store);
   }
@@ -33,7 +37,10 @@ export class HistoryService {
   }
 
   planImport(input: PlanSnapshotHistoryImportForServiceInput): SnapshotHistoryImportDecision {
-    return this.inner.planImport(input);
+    return this.inner.planImport({
+      ...input,
+      performanceTrace: this.performanceTrace,
+    });
   }
 
   activeEntry(

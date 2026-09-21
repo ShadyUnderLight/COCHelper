@@ -25,6 +25,7 @@ import {
   type Clock,
   type ManualTrackerStore,
   type ManualUpgradeCore,
+  type PerformanceTraceSink,
   type VillageProgressMetrics,
   type VillageProfile,
 } from '@coc-helper/domain';
@@ -41,6 +42,7 @@ export type ProjectionServiceOptions = {
   readonly clock: Clock;
   readonly catalog: ProjectionCatalogPort;
   readonly manual: ManualTrackerStore | null;
+  readonly performanceTrace?: PerformanceTraceSink;
 };
 
 export class ProjectionService {
@@ -48,12 +50,14 @@ export class ProjectionService {
   private readonly clock: Clock;
   private readonly catalog: ProjectionCatalogPort;
   private readonly manual: ManualTrackerStore | null;
+  private readonly performanceTrace: PerformanceTraceSink | undefined;
 
   constructor(options: ProjectionServiceOptions) {
     this.state = options.state;
     this.clock = options.clock;
     this.catalog = options.catalog;
     this.manual = options.manual;
+    this.performanceTrace = options.performanceTrace;
   }
 
   async upgradeOverview(): Promise<UpgradeOverviewPayload> {
@@ -65,30 +69,36 @@ export class ProjectionService {
     const villages = this.state.listVillages();
     const manualUpgradeCores = this.loadManualCores();
 
-    const render = upgradeOverviewRender({
-      villages,
-      catalog: bundle.gameCatalog,
-      craftTableCatalog: bundle.craftTableCatalog,
-      seasonalPhases: bundle.seasonalPhaseTable,
-      manualUpgradeCores,
-      nowMs,
-    });
+    const render = this.measure('projection', 'overview-render', () =>
+      upgradeOverviewRender({
+        villages,
+        catalog: bundle.gameCatalog,
+        craftTableCatalog: bundle.craftTableCatalog,
+        seasonalPhases: bundle.seasonalPhaseTable,
+        manualUpgradeCores,
+        nowMs,
+      }),
+    );
     let payload: UpgradeOverviewPayload;
     try {
-      payload = toUpgradeOverviewPayload({
-        generation,
-        nowMs,
-        catalogVersion: bundle.version,
-        catalogIsUsable: bundle.gameCatalog !== null,
-        render,
-      });
+      payload = this.measure('projection', 'overview-dto', () =>
+        toUpgradeOverviewPayload({
+          generation,
+          nowMs,
+          catalogVersion: bundle.version,
+          catalogIsUsable: bundle.gameCatalog !== null,
+          render,
+        }),
+      );
     } catch (error) {
       if (error instanceof RangeError) {
         throw new AppServiceError('validation', '升级总览包含无法经 IPC 传递的数值。');
       }
       throw error;
     }
-    const parsed = upgradeOverviewPayloadSchema.safeParse(payload);
+    const parsed = this.measure('projection', 'overview-schema', () =>
+      upgradeOverviewPayloadSchema.safeParse(payload),
+    );
     if (!parsed.success) {
       throw new AppServiceError('validation', '升级总览无法经 IPC schema 校验。');
     }
@@ -105,78 +115,88 @@ export class ProjectionService {
     const village = this.requireVillage(request.villageId);
     const manualCore = this.loadManualCores()[village.id] ?? null;
 
-    const projection = projectVillageCatalog({
-      village,
-      catalog: bundle.gameCatalog,
-      craftTableCatalog: bundle.craftTableCatalog,
-      seasonalPhases: bundle.seasonalPhaseTable,
-      base,
-      nowMs,
-      manualUpgradeCore: manualCore,
-    });
-    const groups = villageDetailGroups(projection.items);
-    const completion = villageDetailCompletionStats(projection.items, projection.catalogIsUsable);
-    const totalCompletion = villageDetailTotalCompletion(
-      projection.items,
-      projection.catalogIsUsable,
+    const projection = this.measure('projection', 'catalog', () =>
+      projectVillageCatalog({
+        village,
+        catalog: bundle.gameCatalog,
+        craftTableCatalog: bundle.craftTableCatalog,
+        seasonalPhases: bundle.seasonalPhaseTable,
+        base,
+        nowMs,
+        manualUpgradeCore: manualCore,
+      }),
     );
-    const buildingGroups = projectBuildingGroupsFromProjection({
-      projection,
-      catalog: bundle.gameCatalog,
-      base,
-      manualUpgradeCore: manualCore,
-    });
-    const statsByKey: Record<string, (typeof completion)[number]> = {};
-    for (const entry of completion) {
-      statsByKey[entry.id] = entry;
-    }
-    const groupByInstanceID: Record<string, (typeof buildingGroups)[number]> = {};
-    for (const group of buildingGroups) {
-      for (const instance of group.instances) {
-        groupByInstanceID[rawRecordID(instance.id)] = group;
-        groupByInstanceID[rawRecordID(instance.item.id)] = group;
+    const detailRows = this.measure('projection', 'detail-rows', () => {
+      const groups = villageDetailGroups(projection.items);
+      const completion = villageDetailCompletionStats(projection.items, projection.catalogIsUsable);
+      const totalCompletion = villageDetailTotalCompletion(
+        projection.items,
+        projection.catalogIsUsable,
+      );
+      const buildingGroups = projectBuildingGroupsFromProjection({
+        projection,
+        catalog: bundle.gameCatalog,
+        base,
+        manualUpgradeCore: manualCore,
+      });
+      const statsByKey: Record<string, (typeof completion)[number]> = {};
+      for (const entry of completion) {
+        statsByKey[entry.id] = entry;
       }
-    }
-    const flatRows = buildVillageDetailFlatRows({
-      displayGroups: groups,
-      statsByKey,
-      groupByInstanceID,
+      const groupByInstanceID: Record<string, (typeof buildingGroups)[number]> = {};
+      for (const group of buildingGroups) {
+        for (const instance of group.instances) {
+          groupByInstanceID[rawRecordID(instance.id)] = group;
+          groupByInstanceID[rawRecordID(instance.item.id)] = group;
+        }
+      }
+      const flatRows = buildVillageDetailFlatRows({
+        displayGroups: groups,
+        statsByKey,
+        groupByInstanceID,
+      });
+      return { groups, completion, totalCompletion, buildingGroups, flatRows };
     });
+    const { groups, completion, totalCompletion, buildingGroups, flatRows } = detailRows;
     const metrics = projection.progressMetrics as VillageProgressMetrics;
 
     let payload: VillageDetailPayload;
     try {
-      payload = toVillageDetailPayload({
-        generation,
-        nowMs,
-        village,
-        base,
-        catalogVersion: projection.catalogVersion ?? bundle.version,
-        catalogIsUsable: projection.catalogIsUsable,
-        compatibility: projection.compatibility,
-        items: projection.items,
-        instanceItems: projection.rawItems,
-        groups,
-        completion,
-        totalCompletion,
-        metrics,
-        buildingGroups,
-        flatRows,
-        manualContext: {
-          catalog: bundle.gameCatalog,
-          catalogIsUsable: projection.catalogIsUsable,
-          manualUpgradeCore: manualCore,
-          progressCoverage: projection.progressCoverage,
+      payload = this.measure('projection', 'detail-dto', () =>
+        toVillageDetailPayload({
+          generation,
           nowMs,
-        },
-      });
+          village,
+          base,
+          catalogVersion: projection.catalogVersion ?? bundle.version,
+          catalogIsUsable: projection.catalogIsUsable,
+          compatibility: projection.compatibility,
+          items: projection.items,
+          instanceItems: projection.rawItems,
+          groups,
+          completion,
+          totalCompletion,
+          metrics,
+          buildingGroups,
+          flatRows,
+          manualContext: {
+            catalog: bundle.gameCatalog,
+            catalogIsUsable: projection.catalogIsUsable,
+            manualUpgradeCore: manualCore,
+            progressCoverage: projection.progressCoverage,
+            nowMs,
+          },
+        }),
+      );
     } catch (error) {
       if (error instanceof RangeError) {
         throw new AppServiceError('validation', '村庄详情包含无法经 IPC 传递的数值。');
       }
       throw error;
     }
-    const parsed = villageDetailPayloadSchema.safeParse(payload);
+    const parsed = this.measure('projection', 'detail-schema', () =>
+      villageDetailPayloadSchema.safeParse(payload),
+    );
     if (!parsed.success) {
       throw new AppServiceError('validation', '村庄详情无法经 IPC schema 校验。');
     }
@@ -212,6 +232,12 @@ export class ProjectionService {
       cores[village.villageID] = village.core;
     }
     return cores;
+  }
+
+  private measure<T>(scope: string, phase: string, task: () => T): T {
+    return this.performanceTrace === undefined
+      ? task()
+      : this.performanceTrace.measure(scope, phase, task);
   }
 }
 

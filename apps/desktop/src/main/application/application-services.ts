@@ -2,7 +2,12 @@
  * Main application services 组装入口（#276）。
  */
 
-import { SystemClock, type Clock, type CoAPITokenProvider } from '@coc-helper/domain';
+import {
+  SystemClock,
+  type Clock,
+  type CoAPITokenProvider,
+  type PerformanceTraceSink,
+} from '@coc-helper/domain';
 
 import {
   AppLifecycleService,
@@ -38,10 +43,12 @@ export function createApplicationServices(
     readonly boot?: AppLifecycleBootResult;
     readonly catalog?: ProjectionCatalogPort;
     readonly tokenProvider?: CoAPITokenProvider;
+    readonly performanceTrace?: PerformanceTraceSink;
   } = {},
 ): ApplicationServices {
   const clock = options.clock ?? new SystemClock();
-  const boot = options.boot ?? bootApplicationServices({ clock });
+  const boot =
+    options.boot ?? bootApplicationServices({ clock, performanceTrace: options.performanceTrace });
   const lifecycle = new AppLifecycleService(boot.state, boot.persistence);
   /** 延迟解析 catalog，避免非 Electron 测试在构造时触碰 app.isPackaged。 */
   const catalog: ProjectionCatalogPort = options.catalog ?? {
@@ -50,7 +57,7 @@ export function createApplicationServices(
 
   const history =
     boot.persistence?.history !== undefined && boot.persistence?.history !== null
-      ? new HistoryService(boot.persistence.history)
+      ? new HistoryService(boot.persistence.history, options.performanceTrace)
       : null;
 
   const manual =
@@ -85,12 +92,14 @@ export function createApplicationServices(
       history: boot.persistence?.history ?? null,
       manual: boot.persistence?.manual ?? null,
       manualTracker: manual,
+      performanceTrace: options.performanceTrace,
     }),
     projections: new ProjectionService({
       state: boot.state,
       clock,
       catalog,
       manual: boot.persistence?.manual ?? null,
+      performanceTrace: options.performanceTrace,
     }),
     history,
     manual,

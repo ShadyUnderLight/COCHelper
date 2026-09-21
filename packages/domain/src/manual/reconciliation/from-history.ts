@@ -5,6 +5,7 @@
 
 import { INT64_MAX, refSecondsToUnixSeconds, saturatingAdd } from '@coc-helper/wire';
 import type { UuidString } from '@coc-helper/wire';
+import type { PerformanceTraceSink } from '../../performance';
 
 import { SnapshotDiffEngine } from '../../snapshot-history/diff-engine';
 import type { SnapshotChange } from '../../snapshot-history/diff-types';
@@ -81,6 +82,7 @@ export function buildReconciliationEvidenceFromHistory(input: {
   readonly villageID: UuidString;
   readonly previousEntry: SnapshotHistoryEntry | null;
   readonly decision: SnapshotHistoryImportDecision;
+  readonly performanceTrace?: PerformanceTraceSink;
 }): ManualReconciliationEvidence {
   return buildReconciliationEvidenceFromEntries({
     villageID: input.villageID,
@@ -88,6 +90,7 @@ export function buildReconciliationEvidenceFromHistory(input: {
     entry: input.decision.entry,
     envelope: input.decision.envelope,
     duplicate: input.decision.duplicate,
+    performanceTrace: input.performanceTrace,
     historyLineageComparable:
       input.previousEntry === null ||
       (input.previousEntry.lineageID === input.decision.entry.lineageID &&
@@ -148,6 +151,7 @@ function buildReconciliationEvidenceFromEntries(input: {
   readonly envelope: SnapshotHistoryEnvelope;
   readonly duplicate: boolean;
   readonly historyLineageComparable: boolean;
+  readonly performanceTrace?: PerformanceTraceSink;
 }): ManualReconciliationEvidence {
   const { villageID, previousEntry, entry } = input;
   if (entry.villageID !== villageID) {
@@ -166,7 +170,9 @@ function buildReconciliationEvidenceFromEntries(input: {
   const observationsBuilt = observationsInEntry(entry);
   const previousBuilt = previousEntry === null ? null : observationsInEntry(previousEntry);
   const relatedChangesByStableID =
-    previousEntry === null ? undefined : relatedChangesFromDiff(previousEntry, entry);
+    previousEntry === null
+      ? undefined
+      : relatedChangesFromDiff(previousEntry, entry, input.performanceTrace);
 
   return createManualReconciliationEvidence({
     villageID,
@@ -334,10 +340,16 @@ function observationsInEntry(entry: SnapshotHistoryEntry): {
 function relatedChangesFromDiff(
   previousEntry: SnapshotHistoryEntry,
   nextEntry: SnapshotHistoryEntry,
+  performanceTrace?: PerformanceTraceSink,
 ): ReadonlyMap<string, readonly RelatedChangeEvidence[]> {
   const from = hydrateVerifiedCoverageOnEntry({ entry: previousEntry, policy: 'production' });
   const to = hydrateVerifiedCoverageOnEntry({ entry: nextEntry, policy: 'production' });
-  const diff = SnapshotDiffEngine.compare(from, to);
+  const diff =
+    performanceTrace === undefined
+      ? SnapshotDiffEngine.compare(from, to)
+      : performanceTrace.measure('reconciliation', 'diff', () =>
+          SnapshotDiffEngine.compare(from, to),
+        );
   const byKey = new Map<string, RelatedChangeEvidence[]>();
 
   for (const change of diff.changes) {

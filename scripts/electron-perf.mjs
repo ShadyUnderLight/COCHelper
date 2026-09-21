@@ -32,6 +32,7 @@ import { FROZEN_RELEASE_BASELINE, validatePerfProfile } from './perf-config.mjs'
 import { startPerfFixtureApiServer } from './perf-fixture-server.mjs';
 import {
   collectProcessMetric,
+  collectTracePhase,
   summarizeNumbers,
   summarizeProcessSamples,
 } from './perf-metrics.mjs';
@@ -83,6 +84,22 @@ const footprintSampleEvery = FROZEN_RELEASE_BASELINE.footprintSampleEvery;
 const failureOutputMaxChars = 20_000;
 
 const SCENARIOS = ['overview', 'village-detail', 'history-24', 'official-lists'];
+const PERFORMANCE_TRACE_PREFIX = 'COCHELPER_PERF_PHASE ';
+const PERFORMANCE_TRACE_PHASES = [
+  { key: 'importParse', scope: 'import', phase: 'parse' },
+  { key: 'historyLoad', scope: 'history', phase: 'load' },
+  { key: 'historyCanonicalization', scope: 'history', phase: 'canonicalization' },
+  { key: 'reconciliationBuild', scope: 'reconciliation', phase: 'build' },
+  { key: 'reconciliationDiff', scope: 'reconciliation', phase: 'diff' },
+  { key: 'historyEncode', scope: 'history', phase: 'encode' },
+  { key: 'historyValidatePrevious', scope: 'history', phase: 'validate-previous-history' },
+  { key: 'historyValidateWire', scope: 'history', phase: 'validate-wire-history' },
+  { key: 'storageCommit', scope: 'storage', phase: 'commit' },
+  { key: 'storageWrite', scope: 'storage', phase: 'write' },
+  { key: 'projectionCatalog', scope: 'projection', phase: 'catalog' },
+  { key: 'projectionDetailRows', scope: 'projection', phase: 'detail-rows' },
+  { key: 'projectionDetailDto', scope: 'projection', phase: 'detail-dto' },
+];
 const selectedScenarios = scenarioArg === 'all' ? SCENARIOS : scenarioArg.split(',').filter(Boolean);
 for (const scenario of selectedScenarios) {
   if (!SCENARIOS.includes(scenario)) {
@@ -343,6 +360,27 @@ function collectOutput(child) {
   return output;
 }
 
+function readPerformanceTraceEvents(context) {
+  if (!existsSync(context.performanceTraceFile)) {
+    return [];
+  }
+  return readFileSync(context.performanceTraceFile, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith(PERFORMANCE_TRACE_PREFIX))
+    .flatMap((line) => {
+      try {
+        const event = JSON.parse(line.slice(PERFORMANCE_TRACE_PREFIX.length));
+        return typeof event?.scope === 'string' &&
+          typeof event?.phase === 'string' &&
+          typeof event?.durationMs === 'number'
+          ? [event]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
 function appendTail(previous, next, maxChars) {
   const combined = `${previous}${next}`;
   return combined.length <= maxChars ? combined : combined.slice(-maxChars);
@@ -435,6 +473,7 @@ function createContext(scenario, repetition) {
     homeDirectory: path.join(tempRoot, 'home'),
     dataRoot: path.join(tempRoot, 'electron-data'),
     userDataDirectory: path.join(tempRoot, 'electron-user-data'),
+    performanceTraceFile: path.join(tempRoot, 'electron-data', 'main-performance-trace.ndjson'),
     apiServer: null,
     phase: 'setup',
   };
@@ -448,13 +487,14 @@ function createEnvironment(context) {
   return {
     ...process.env,
     COCHELPER_E2E_DATA_ROOT: context.dataRoot,
+    COCHELPER_PERF_TRACE_FILE: context.performanceTraceFile,
+    COCHELPER_PERF_API_TOKEN: 'perf-fixture-token',
     ELECTRON_ENABLE_LOGGING: '1',
     ...(context.apiServer === null
       ? {}
       : {
           COCHELPER_PERF_API_HOST: `127.0.0.1:${context.apiServer.port}`,
           COCHELPER_PERF_API_SCHEME: 'http',
-          COCHELPER_PERF_API_TOKEN: 'perf-fixture-token',
         }),
     ...(process.platform !== 'darwin'
       ? {
@@ -925,6 +965,27 @@ async function goToTab(page, name, ariaLabel) {
   await page.getByRole('button', { name, exact: true }).click();
   await waitForPanel(page, ariaLabel);
   return performance.now() - start;
+}
+
+async function beginRendererCommitMeasure(page, kind) {
+  await page.evaluate((phase) => {
+    const endMark = `coc-helper:renderer:${phase}:commit`;
+    globalThis.performance.clearMarks(endMark);
+    globalThis.performance.clearMarks(`${endMark}:start`);
+    globalThis.performance.mark(`${endMark}:start`);
+  }, kind);
+}
+
+async function readRendererCommitMeasure(page, kind) {
+  return page.evaluate((phase) => {
+    const endMark = `coc-helper:renderer:${phase}:commit`;
+    const start = globalThis.performance.getEntriesByName(`${endMark}:start`).at(-1);
+    const end = globalThis.performance.getEntriesByName(endMark).at(-1);
+    if (start === undefined || end === undefined || end.startTime < start.startTime) {
+      return null;
+    }
+    return end.startTime - start.startTime;
+  }, kind);
 }
 
 async function getSnapshot(page, timeoutMs = bridgeCallTimeoutMs) {
@@ -1695,20 +1756,24 @@ async function measureViews(session, includeOfficial) {
 
   // probe 在 renderer ready 前已安装；当前 session 的全部 catalog 请求属于 cold 视图。
   const overviewColdMark = 0;
+  await beginRendererCommitMeasure(page, 'overview');
   const overviewCold = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '升级总览', '升级总览');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const overviewColdRendererCommitMs = await readRendererCommitMeasure(page, 'overview');
   const overviewColdResources = await resourceSummary(page, probe, overviewColdMark);
   const overviewIpc = await measureIpc(page, 'overview', snapshot.selectedVillageId, null);
 
   const detailColdMark = probe.mark();
+  await beginRendererCommitMeasure(page, 'village-detail');
   const detailCold = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '村庄详情', '村庄详情');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const detailColdRendererCommitMs = await readRendererCommitMeasure(page, 'village-detail');
   const detailColdResources = await resourceSummary(page, probe, detailColdMark);
   const detailIpc = await measureIpc(page, 'detail', snapshot.selectedVillageId, null);
   const detailScroll = await measureProcessPhase(session, () => measureScroll(page, scrollMs));
@@ -1722,11 +1787,13 @@ async function measureViews(session, includeOfficial) {
   }
 
   const overviewHotMark = probe.mark();
+  await beginRendererCommitMeasure(page, 'overview');
   const overviewHot = await measureProcessPhase(session, async () => {
     const navigationMs = await goToTab(page, '升级总览', '升级总览');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
+  const overviewHotRendererCommitMs = await readRendererCommitMeasure(page, 'overview');
   const overviewHotResources = await resourceSummary(page, probe, overviewHotMark);
 
   const result = {
@@ -1734,6 +1801,11 @@ async function measureViews(session, includeOfficial) {
       overviewCold: overviewCold.value,
       detailCold: detailCold.value,
       overviewHot: overviewHot.value,
+    },
+    rendererCommitMs: {
+      overviewCold: overviewColdRendererCommitMs,
+      detailCold: detailColdRendererCommitMs,
+      overviewHot: overviewHotRendererCommitMs,
     },
     process: {
       navigation: {
@@ -1814,6 +1886,7 @@ async function runScenario(scenario, repetition) {
       preparation: prepared.preparation,
       finalProcess,
       selectedVillageId: snapshot.selectedVillageId,
+      phaseEvents: readPerformanceTraceEvents(prepared.context),
       views,
       runtime,
     };
@@ -1914,6 +1987,21 @@ function buildSummary(runs) {
           overviewColdMs: collectPath(selected, ['views', 'navigationMs', 'overviewCold']),
           detailColdMs: collectPath(selected, ['views', 'navigationMs', 'detailCold']),
           overviewHotMs: collectPath(selected, ['views', 'navigationMs', 'overviewHot']),
+          overviewColdRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'overviewCold',
+          ]),
+          detailColdRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'detailCold',
+          ]),
+          overviewHotRendererCommitMs: collectPath(selected, [
+            'views',
+            'rendererCommitMs',
+            'overviewHot',
+          ]),
           detailPayloadBytes: collectPath(selected, ['views', 'ipc', 'detail', 'payloadBytes']),
           overviewPayloadBytes: collectPath(selected, ['views', 'ipc', 'overview', 'payloadBytes']),
           warLogPayloadBytes: collectPath(selected, ['views', 'ipc', 'warLog', 'payloadBytes']),
@@ -1996,6 +2084,12 @@ function buildSummary(runs) {
           peakRssBytes: collectProcessMetric(selected, 'rssBytes'),
           cpuPercent: collectProcessMetric(selected, 'cpuPercent'),
           peakFootprintBytes: collectProcessMetric(selected, 'rootFootprintBytes'),
+          phaseDurations: Object.fromEntries(
+            PERFORMANCE_TRACE_PHASES.map(({ key, scope, phase }) => [
+              key,
+              collectTracePhase(selected, scope, phase),
+            ]),
+          ),
         },
       ];
     }),
@@ -2063,6 +2157,44 @@ function markdownReport(report) {
     const summary = report.summary[scenario];
     lines.push(
       `| ${scenario} | ${formatNumber(summary.wallBeforeImportMs.p50)} ms | ${formatNumber(summary.wallAfterImportMs.p50)} ms | ${formatNumber(summary.historyImportTotalMs.p50)} ms |`,
+    );
+  }
+  lines.push('', '## Main 阶段时间', '');
+  lines.push(
+    '| 场景 | parse p50/p95 | canonicalization p50/p95 | reconciliation diff p50/p95 | history encode p50/p95 | history validate wire p50/p95 | storage commit p50/p95 | storage write p50/p95 |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const phases = report.summary[scenario].phaseDurations;
+    const formatPhase = (key) =>
+      `${formatNumber(phases[key].p50)}/${formatNumber(phases[key].p95)} ms`;
+    lines.push(
+      `| ${scenario} | ${formatPhase('importParse')} | ${formatPhase('historyCanonicalization')} | ${formatPhase('reconciliationDiff')} | ${formatPhase('historyEncode')} | ${formatPhase('historyValidateWire')} | ${formatPhase('storageCommit')} | ${formatPhase('storageWrite')} |`,
+    );
+  }
+  lines.push('', '## Projection 阶段时间', '');
+  lines.push(
+    '| 场景 | catalog p50/p95 | detail rows p50/p95 | detail DTO p50/p95 |',
+    '|---|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const phases = report.summary[scenario].phaseDurations;
+    const formatPhase = (key) =>
+      `${formatNumber(phases[key].p50)}/${formatNumber(phases[key].p95)} ms`;
+    lines.push(
+      `| ${scenario} | ${formatPhase('projectionCatalog')} | ${formatPhase('projectionDetailRows')} | ${formatPhase('projectionDetailDto')} |`,
+    );
+  }
+  lines.push('', '## Renderer commit effect', '');
+  lines.push(
+    '| 场景 | Overview cold p50/p95 | Detail cold p50/p95 | Overview hot p50/p95 |',
+    '|---|---:|---:|---:|',
+  );
+  for (const scenario of SCENARIOS) {
+    const summary = report.summary[scenario];
+    const formatPhase = (value) => `${formatNumber(value.p50)}/${formatNumber(value.p95)} ms`;
+    lines.push(
+      `| ${scenario} | ${formatPhase(summary.overviewColdRendererCommitMs)} | ${formatPhase(summary.detailColdRendererCommitMs)} | ${formatPhase(summary.overviewHotRendererCommitMs)} |`,
     );
   }
   lines.push('', '## IPC payload', '');

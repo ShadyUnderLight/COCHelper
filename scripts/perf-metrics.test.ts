@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectProcessMetric,
+  collectWorkloadPeakMetric,
   collectTracePhase,
   summarizeNumbers,
   summarizeProcessSamples,
@@ -31,6 +32,24 @@ describe('perf metrics', () => {
       count: 6,
       p95: 6,
       max: 6,
+    });
+  });
+
+  it('peak 指标按 repetition 汇总，而不是把采样点当成独立 repetition', () => {
+    const runs = [
+      {
+        finalProcess: { raw: { rssBytes: [10, 100] } },
+      },
+      {
+        finalProcess: { raw: { rssBytes: [20, 30] } },
+      },
+    ];
+
+    expect(collectWorkloadPeakMetric(runs, 'rssBytes')).toMatchObject({
+      count: 2,
+      p50: 30,
+      p95: 100,
+      max: 100,
     });
   });
 

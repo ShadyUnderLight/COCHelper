@@ -33,6 +33,7 @@ import { startPerfFixtureApiServer } from './perf-fixture-server.mjs';
 import {
   collectProcessMetric,
   collectTracePhase,
+  collectWorkloadPeakMetric,
   summarizeNumbers,
   summarizeProcessSamples,
 } from './perf-metrics.mjs';
@@ -2081,9 +2082,9 @@ function buildSummary(runs) {
             'overviewHot',
             'requestCount',
           ]),
-          peakRssBytes: collectProcessMetric(selected, 'rssBytes'),
+          peakRssBytes: collectWorkloadPeakMetric(selected, 'rssBytes'),
           cpuPercent: collectProcessMetric(selected, 'cpuPercent'),
-          peakFootprintBytes: collectProcessMetric(selected, 'rootFootprintBytes'),
+          peakFootprintBytes: collectWorkloadPeakMetric(selected, 'rootFootprintBytes'),
           phaseDurations: Object.fromEntries(
             PERFORMANCE_TRACE_PHASES.map(({ key, scope, phase }) => [
               key,

@@ -76,6 +76,25 @@ export function collectProcessMetric(runs, metric) {
   return summarizeNumbers(values);
 }
 
+/**
+ * Summarize one workload peak per repetition instead of treating every
+ * 250ms sample as an independent repetition. This keeps p50/p95 meaningful
+ * for peak RSS/footprint gates while preserving the raw samples in reports.
+ */
+export function collectWorkloadPeakMetric(runs, metric) {
+  const peaks = [];
+  for (const run of runs) {
+    const values = [];
+    for (const process of workloadProcessSummariesForRun(run)) {
+      values.push(...(process.raw?.[metric] ?? []));
+    }
+    if (values.length > 0) {
+      peaks.push(Math.max(...values));
+    }
+  }
+  return summarizeNumbers(peaks);
+}
+
 export function collectTracePhase(runs, scope, phase) {
   const values = [];
   for (const run of runs) {

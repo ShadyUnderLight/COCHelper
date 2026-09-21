@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   comparePerfReports,
   RELEASE_GATE_PROTOCOL,
   requiredGateMetricPaths,
+  validateGatePolicy,
   validatePerfReport,
 } from './perf-gate.mjs';
+
+const PERF_GATE_CLI = fileURLToPath(new URL('./perf-gate.mjs', import.meta.url));
 
 function makeReport(node: string, scenario = 'history-24') {
   const summary: Record<string, unknown> = {};
@@ -191,5 +199,98 @@ describe('cross-environment release performance gate', () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain('scenario history-24 repetition identity 必须恰好是 [1,2,3]。');
+  });
+
+  it('rejects non-finite, negative, string, and partially invalid tolerances', () => {
+    const cases = [
+      (rule: Record<string, unknown>) => {
+        rule.maxAbsoluteIncrease = JSON.parse('1e309') as number;
+      },
+      (rule: Record<string, unknown>) => {
+        rule.maxRelativeIncrease = Number.POSITIVE_INFINITY;
+      },
+      (rule: Record<string, unknown>) => {
+        rule.maxAbsoluteIncrease = -1;
+      },
+      (rule: Record<string, unknown>) => {
+        Object.assign(rule, { maxAbsoluteIncrease: '0.1' });
+      },
+      (rule: Record<string, unknown>) => {
+        rule.maxAbsoluteIncrease = 1;
+        rule.maxRelativeIncrease = Number.POSITIVE_INFINITY;
+      },
+    ];
+
+    for (const mutate of cases) {
+      const policy = makePolicy();
+      mutate(policy.metrics['peakRssBytes.max']);
+      expect(validateGatePolicy(policy, 'history-24').ok).toBe(false);
+    }
+  });
+
+  it('rejects unknown roles and empty or malformed runtime identities', () => {
+    const report = makeReport('v24.18.1');
+    expect(validatePerfReport(report, { role: 'typo-role', scenario: 'history-24' }).ok).toBe(false);
+
+    report.environment.platform = '';
+    report.runs[0].runtime.node = '';
+    report.runs[1].runtime.platform = '';
+    const result = validatePerfReport(report, { role: 'node24-ci', scenario: 'history-24' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('covers contract CLI exit code, output, unknown role, and invalid JSON', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cochelper-perf-gate-cli-'));
+    try {
+      const reportFile = join(root, 'report.json');
+      const outputFile = join(root, 'gate.json');
+      const invalidFile = join(root, 'invalid.json');
+      writeFileSync(reportFile, `${JSON.stringify(makeReport('v24.18.1'))}\n`);
+      writeFileSync(invalidFile, '{not-json}\n');
+
+      const passed = spawnSync(
+        process.execPath,
+        [
+          PERF_GATE_CLI,
+          `--report=${reportFile}`,
+          '--role=node24-ci',
+          '--scenario=history-24',
+          `--output=${outputFile}`,
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(passed.status).toBe(0);
+      expect(JSON.parse(readFileSync(outputFile, 'utf8'))).toMatchObject({
+        status: 'passed',
+        contractPassed: true,
+        acceptanceEligible: false,
+      });
+
+      const unknownRole = spawnSync(
+        process.execPath,
+        [
+          PERF_GATE_CLI,
+          `--report=${reportFile}`,
+          '--role=typo-role',
+          '--scenario=history-24',
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(unknownRole.status).not.toBe(0);
+
+      const invalidJson = spawnSync(
+        process.execPath,
+        [
+          PERF_GATE_CLI,
+          `--report=${invalidFile}`,
+          '--role=node24-ci',
+          '--scenario=history-24',
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(invalidJson.status).not.toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

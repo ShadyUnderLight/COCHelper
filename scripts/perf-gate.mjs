@@ -168,15 +168,18 @@ export function validatePerfReport(report, { role, scenario } = {}) {
   }
 
   const environment = report.environment;
-  if (typeof environment?.platform !== 'string' || typeof environment?.arch !== 'string') {
+  if (!nonEmptyString(environment?.platform) || !nonEmptyString(environment?.arch)) {
     errors.push('report 缺少 platform/arch 环境身份。');
   }
   const nodeVersion = typeof environment?.node === 'string' ? environment.node : '';
-  if (nodeVersion.length === 0) {
+  if (!nonEmptyString(nodeVersion) || nodeMajor(nodeVersion) === null) {
     errors.push('report 缺少 runner Node 版本。');
   }
-  const expectedNodeMajor = ROLE_NODE_MAJORS[role];
-  if (expectedNodeMajor !== undefined && nodeMajor(nodeVersion) !== expectedNodeMajor) {
+  const hasKnownRole = Object.hasOwn(ROLE_NODE_MAJORS, role);
+  const expectedNodeMajor = hasKnownRole ? ROLE_NODE_MAJORS[role] : undefined;
+  if (!hasKnownRole) {
+    errors.push(`不支持的 gate role：${String(role)}`);
+  } else if (nodeMajor(nodeVersion) !== expectedNodeMajor) {
     errors.push(`${role} 期望 Node ${expectedNodeMajor}，实际 ${nodeVersion || 'unknown'}。`);
   }
 
@@ -195,7 +198,12 @@ export function validatePerfReport(report, { role, scenario } = {}) {
     errors.push(`scenario ${expectedScenario} repetition identity 必须恰好是 [1,2,3]。`);
   }
   for (const [index, run] of runs.entries()) {
-    if (run.runtime === null || typeof run.runtime?.node !== 'string') {
+    if (
+      !nonEmptyString(run.runtime?.node) ||
+      nodeMajor(run.runtime.node) === null ||
+      !nonEmptyString(run.runtime?.platform) ||
+      !nonEmptyString(run.runtime?.arch)
+    ) {
       errors.push(`scenario ${expectedScenario} repetition=${index + 1} 缺少 Electron runtime Node。`);
     }
     for (const metric of ['rssBytes', 'rootFootprintBytes']) {
@@ -316,10 +324,10 @@ export function validateGatePolicy(policy, scenario) {
   if (policy.protocol !== RELEASE_GATE_PROTOCOL) {
     errors.push(`policy protocol 不匹配：${String(policy.protocol)}`);
   }
-  if (!ROLE_NODE_MAJORS[policy.referenceRole]) {
+  if (!Object.hasOwn(ROLE_NODE_MAJORS, policy.referenceRole)) {
     errors.push(`policy referenceRole 不支持：${String(policy.referenceRole)}`);
   }
-  if (!ROLE_NODE_MAJORS[policy.candidateRole]) {
+  if (!Object.hasOwn(ROLE_NODE_MAJORS, policy.candidateRole)) {
     errors.push(`policy candidateRole 不支持：${String(policy.candidateRole)}`);
   }
   if (policy.referenceRole === policy.candidateRole) {
@@ -342,11 +350,23 @@ export function validateGatePolicy(policy, scenario) {
     }
     const absolute = rule.maxAbsoluteIncrease;
     const relative = rule.maxRelativeIncrease;
-    if (
-      (absolute === undefined || !Number.isFinite(absolute) || absolute < 0) &&
-      (relative === undefined || !Number.isFinite(relative) || relative < 0)
-    ) {
-      errors.push(`policy metric tolerance 无效：${metricPath}`);
+    const provided = [
+      ['maxAbsoluteIncrease', absolute],
+      ['maxRelativeIncrease', relative],
+    ];
+    let validCount = 0;
+    for (const [field, value] of provided) {
+      if (value === undefined) {
+        continue;
+      }
+      if (!Number.isFinite(value) || value < 0) {
+        errors.push(`policy metric tolerance 无效：${metricPath}.${field}`);
+      } else {
+        validCount += 1;
+      }
+    }
+    if (validCount === 0) {
+      errors.push(`policy metric tolerance 至少提供一个合法字段：${metricPath}`);
     }
   }
   return { ok: errors.length === 0, errors };
@@ -363,8 +383,15 @@ function reportIdentity(report) {
 }
 
 function nodeMajor(version) {
+  if (!nonEmptyString(version)) {
+    return null;
+  }
   const match = /^v?(\d+)/.exec(version);
   return match === null ? null : Number(match[1]);
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function stableJson(value) {

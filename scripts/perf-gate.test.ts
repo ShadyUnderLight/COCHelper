@@ -21,7 +21,7 @@ import {
 
 const PERF_GATE_CLI = fileURLToPath(new URL('./perf-gate.mjs', import.meta.url));
 
-function makeReport(node: string, scenario = 'history-24') {
+function makeReport(node: string, scenario = 'history-24', runtimeNode = 'v24.18.1') {
   const summary: Record<string, unknown> = {};
   for (const metric of requiredGateMetricPaths(scenario)) {
     setPath(summary, metric, 100);
@@ -40,7 +40,7 @@ function makeReport(node: string, scenario = 'history-24') {
     runs: [1, 2, 3].map((repetition) => ({
       scenario,
       repetition,
-      runtime: { node, electron: '44.0.0', platform: 'darwin', arch: 'arm64' },
+      runtime: { node: runtimeNode, electron: '44.0.0', platform: 'darwin', arch: 'arm64' },
       finalProcess: { raw: { rssBytes: [100], rootFootprintBytes: [100] } },
     })),
     summary: { [scenario]: summary },
@@ -110,6 +110,14 @@ describe('cross-environment release performance gate', () => {
     expect(validatePerfReport(report, { role: 'node26-local', scenario: 'history-24' }).ok).toBe(
       false,
     );
+  });
+
+  it('accepts a Node 26 runner with Electron 24 embedded runtime', () => {
+    const report = makeReport('v26.0.0', 'history-24', 'v24.18.1');
+    expect(validatePerfReport(report, { role: 'node26-local', scenario: 'history-24' })).toEqual({
+      ok: true,
+      errors: [],
+    });
   });
 
   it('passes only when every required metric is within the supplied policy', () => {

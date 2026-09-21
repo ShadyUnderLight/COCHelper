@@ -222,11 +222,6 @@ export function validatePerfReport(report, { role, scenario } = {}) {
         );
       }
     }
-    if (hasKnownRole && nodeMajor(run.runtime?.node) !== expectedNodeMajor) {
-      errors.push(
-        `scenario ${expectedScenario} repetition=${index + 1} runtime Node 与 ${role} 不一致。`,
-      );
-    }
     if (
       run.runtime?.platform !== environment?.platform ||
       run.runtime?.arch !== environment?.arch

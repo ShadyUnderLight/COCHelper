@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectProcessMetric,
+  collectWorkloadPeakMetric,
   collectTracePhase,
   summarizeNumbers,
   summarizeProcessSamples,
+  workloadMetricSampleCountForRun,
 } from './perf-metrics.mjs';
 
 describe('perf metrics', () => {
@@ -32,6 +34,33 @@ describe('perf metrics', () => {
       p95: 6,
       max: 6,
     });
+  });
+
+  it('peak 指标按 repetition 汇总，而不是把采样点当成独立 repetition', () => {
+    const runs = [
+      {
+        finalProcess: { raw: { rssBytes: [10, 100] } },
+      },
+      {
+        finalProcess: { raw: { rssBytes: [20, 30] } },
+      },
+    ];
+
+    expect(collectWorkloadPeakMetric(runs, 'rssBytes')).toMatchObject({
+      count: 2,
+      p50: 30,
+      p95: 100,
+      max: 100,
+    });
+  });
+
+  it('reports missing workload samples per repetition instead of dropping the repetition', () => {
+    expect(
+      workloadMetricSampleCountForRun({ finalProcess: { raw: { rssBytes: [1] } } }, 'rssBytes'),
+    ).toBe(1);
+    expect(
+      workloadMetricSampleCountForRun({ finalProcess: { raw: { rssBytes: [] } } }, 'rssBytes'),
+    ).toBe(0);
   });
 
   it('数值汇总在空输入时返回可识别的 unknown 结构', () => {

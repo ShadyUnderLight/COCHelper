@@ -151,6 +151,8 @@ jobs:
         run: pnpm package
       - name: Frozen packaged Release perf baseline
         run: pnpm perf:release --profile=baseline --scenario=${{ matrix.scenario }} --repetitions=3 --warmup=1 --scroll-ms=10000 --output=e2e-artifacts/perf-${{ matrix.scenario }}
+      - name: Validate Release perf gate contract
+        run: pnpm perf:gate --report=e2e-artifacts/perf-${{ matrix.scenario }}/report.json --role=node24-ci --scenario=${{ matrix.scenario }} --output=e2e-artifacts/perf-${{ matrix.scenario }}/gate.json
       - name: Upload packaged perf artifacts
         if: always()
         uses: actions/upload-artifact@v4

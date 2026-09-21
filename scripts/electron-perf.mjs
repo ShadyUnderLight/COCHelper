@@ -541,7 +541,7 @@ async function launchApp(context) {
       `--user-data-dir=${context.userDataDirectory}`,
       '--remote-debugging-address=127.0.0.1',
       `--remote-debugging-port=${port}`,
-      '--perf-fixture',
+      ...(context.apiServer === null ? [] : ['--perf-fixture']),
       ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
     ],
     {

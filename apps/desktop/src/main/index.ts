@@ -113,15 +113,16 @@ function initializeApplicationServices(): void {
     throw new Error('COCHELPER_PERF_API_TOKEN is required in perf fixture mode');
   }
   const performanceTraceFile = process.env.COCHELPER_PERF_TRACE_FILE?.trim();
-  const performanceTrace = perfFixtureMode
-    ? createPerformanceTraceSink((line) => {
-        if (performanceTraceFile !== undefined && performanceTraceFile.length > 0) {
-          appendFileSync(performanceTraceFile, line, 'utf8');
-        } else {
-          process.stdout.write(line);
-        }
-      })
-    : undefined;
+  const performanceTrace =
+    perfFixtureMode || (performanceTraceFile !== undefined && performanceTraceFile.length > 0)
+      ? createPerformanceTraceSink((line) => {
+          if (performanceTraceFile !== undefined && performanceTraceFile.length > 0) {
+            appendFileSync(performanceTraceFile, line, 'utf8');
+          } else {
+            process.stdout.write(line);
+          }
+        })
+      : undefined;
   applicationServices = createApplicationServices({
     tokenProvider: () => {
       try {

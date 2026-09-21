@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { FROZEN_RELEASE_BASELINE } from './perf-config.mjs';
@@ -63,6 +64,14 @@ const ROLE_NODE_MAJORS = Object.freeze({
   'node24-ci': 24,
   'node26-local': 26,
 });
+
+export const RELEASE_ACCEPTANCE_PROTOCOL = 'electron-release-perf-acceptance-v1';
+export const RELEASE_ACCEPTANCE_SCENARIOS = Object.freeze(Object.keys(REQUIRED_GATE_METRICS));
+export const RELEASE_ACCEPTANCE_METRICS = Object.freeze([
+  Object.freeze({ id: 'history-import-p50', path: 'historyImportTotalMs.p50' }),
+  Object.freeze({ id: 'history-peak-rss', path: 'peakRssBytes.max' }),
+  Object.freeze({ id: 'history-peak-footprint', path: 'peakFootprintBytes.max' }),
+]);
 
 export function requiredGateMetricPaths(scenario) {
   const metrics = REQUIRED_GATE_METRICS[scenario];
@@ -212,6 +221,17 @@ export function validatePerfReport(report, { role, scenario } = {}) {
           `scenario ${expectedScenario} repetition=${index + 1} 缺少 ${metric} workload sample。`,
         );
       }
+    }
+    if (hasKnownRole && nodeMajor(run.runtime?.node) !== expectedNodeMajor) {
+      errors.push(
+        `scenario ${expectedScenario} repetition=${index + 1} runtime Node 与 ${role} 不一致。`,
+      );
+    }
+    if (
+      run.runtime?.platform !== environment?.platform ||
+      run.runtime?.arch !== environment?.arch
+    ) {
+      errors.push(`scenario ${expectedScenario} repetition=${index + 1} runtime platform/arch 不一致。`);
     }
   }
 
@@ -372,6 +392,210 @@ export function validateGatePolicy(policy, scenario) {
   return { ok: errors.length === 0, errors };
 }
 
+export function validateAcceptanceContract(contract) {
+  const errors = [];
+  if (contract === null || typeof contract !== 'object') {
+    return { ok: false, errors: ['acceptance contract 必须是对象。'] };
+  }
+  if (contract.schemaVersion !== 1) {
+    errors.push(`acceptance contract schemaVersion 不支持：${String(contract.schemaVersion)}`);
+  }
+  if (contract.protocol !== RELEASE_ACCEPTANCE_PROTOCOL) {
+    errors.push(`acceptance contract protocol 不匹配：${String(contract.protocol)}`);
+  }
+  if (contract.referenceRole !== 'node24-ci') {
+    errors.push('acceptance contract referenceRole 必须是 node24-ci。');
+  }
+  if (contract.candidateRole !== 'node26-local') {
+    errors.push('acceptance contract candidateRole 必须是 node26-local。');
+  }
+  if (JSON.stringify(contract.requiredScenarios) !== JSON.stringify(RELEASE_ACCEPTANCE_SCENARIOS)) {
+    errors.push('acceptance contract requiredScenarios 必须精确覆盖四个独立 scenario。');
+  }
+  if (contract.metrics === null || typeof contract.metrics !== 'object') {
+    errors.push('acceptance contract 缺少 metrics。');
+    return { ok: false, errors };
+  }
+  const expectedMetricIds = RELEASE_ACCEPTANCE_METRICS.map((metric) => metric.id).sort();
+  const actualMetricIds = Object.keys(contract.metrics).sort();
+  if (JSON.stringify(actualMetricIds) !== JSON.stringify(expectedMetricIds)) {
+    errors.push(`acceptance contract metrics 必须精确包含：${expectedMetricIds.join(', ')}`);
+  }
+  for (const metric of RELEASE_ACCEPTANCE_METRICS) {
+    const rule = contract.metrics[metric.id];
+    if (rule === null || typeof rule !== 'object') {
+      errors.push(`acceptance contract 缺少 metric rule：${metric.id}`);
+      continue;
+    }
+    if (!Number.isFinite(rule.relativeTolerance) || rule.relativeTolerance < 0) {
+      errors.push(`${metric.id}.relativeTolerance 必须是非负有限数值。`);
+    }
+    if (!Number.isFinite(rule.absoluteLimit) || rule.absoluteLimit < 0) {
+      errors.push(`${metric.id}.absoluteLimit 必须是非负有限数值。`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function acceptanceMetricValue(report, metricPath) {
+  return metricValue(report?.summary?.['history-24'], metricPath);
+}
+
+function reportMetadataFailures(reference, candidate, label) {
+  const failures = [];
+  if (reference?.commitSha !== candidate?.commitSha) {
+    failures.push(`${label} reference/candidate commit 不一致。`);
+  }
+  if (reference?.binaryProvenance?.commitSha !== candidate?.binaryProvenance?.commitSha) {
+    failures.push(`${label} reference/candidate binary commit 不一致。`);
+  }
+  if (stableJson(reference?.manifest) !== stableJson(candidate?.manifest)) {
+    failures.push(`${label} reference/candidate fixture manifest 不一致。`);
+  }
+  if (reference?.environment?.platform !== candidate?.environment?.platform) {
+    failures.push(`${label} reference/candidate platform 不一致。`);
+  }
+  if (reference?.environment?.arch !== candidate?.environment?.arch) {
+    failures.push(`${label} reference/candidate arch 不一致。`);
+  }
+  return failures;
+}
+
+function reportSetIdentityFailures(reports, role, scenarios) {
+  const failures = [];
+  const anchor = reports[scenarios[0]];
+  if (anchor === undefined) return failures;
+  for (const scenario of scenarios.slice(1)) {
+    const report = reports[scenario];
+    if (report === undefined) continue;
+    failures.push(...reportMetadataFailures(anchor, report, `${role} ${scenario}`));
+  }
+  return failures;
+}
+
+export function compareAcceptanceReports({ reference, candidate, contract }) {
+  const contractCheck = validateAcceptanceContract(contract);
+  const failures = contractCheck.errors.map((message) => `contract: ${message}`);
+  const scenario = 'history-24';
+  const referenceCheck = validatePerfReport(reference, {
+    role: contract?.referenceRole,
+    scenario,
+  });
+  const candidateCheck = validatePerfReport(candidate, {
+    role: contract?.candidateRole,
+    scenario,
+  });
+  failures.push(...referenceCheck.errors.map((message) => `reference: ${message}`));
+  failures.push(...candidateCheck.errors.map((message) => `candidate: ${message}`));
+  failures.push(...reportMetadataFailures(reference, candidate, 'history-24'));
+
+  const comparisons = [];
+  if (contractCheck.ok && referenceCheck.ok && candidateCheck.ok && failures.length === 0) {
+    for (const metric of RELEASE_ACCEPTANCE_METRICS) {
+      const rule = contract.metrics[metric.id];
+      const referenceValue = acceptanceMetricValue(reference, metric.path);
+      const candidateValue = acceptanceMetricValue(candidate, metric.path);
+      if (
+        referenceValue === null ||
+        candidateValue === null ||
+        referenceValue < 0 ||
+        candidateValue < 0
+      ) {
+        failures.push(`${metric.id}: reference/candidate numeric value 缺失或非法。`);
+        continue;
+      }
+      const relativeLimit = referenceValue * (1 + rule.relativeTolerance);
+      const status =
+        candidateValue <= relativeLimit && candidateValue <= rule.absoluteLimit
+          ? 'passed'
+          : 'failed';
+      comparisons.push({
+        metric: metric.id,
+        path: metric.path,
+        reference: referenceValue,
+        candidate: candidateValue,
+        relativeTolerance: rule.relativeTolerance,
+        relativeLimit,
+        absoluteLimit: rule.absoluteLimit,
+        status,
+      });
+      if (status !== 'passed') {
+        failures.push(
+          `${metric.id} 超出 acceptance contract：candidate=${formatNumber(candidateValue)} > relativeLimit=${formatNumber(relativeLimit)} 或 absoluteLimit=${formatNumber(rule.absoluteLimit)}`,
+        );
+      }
+    }
+  }
+
+  return {
+    protocol: RELEASE_ACCEPTANCE_PROTOCOL,
+    scenario,
+    status: failures.length === 0 ? 'passed' : 'failed',
+    acceptanceEligible: failures.length === 0,
+    reference: reportIdentity(reference),
+    candidate: reportIdentity(candidate),
+    comparisons,
+    failures,
+  };
+}
+
+export function compareAcceptanceReportTrees({ referenceReports, candidateReports, contract }) {
+  const contractCheck = validateAcceptanceContract(contract);
+  const failures = contractCheck.errors.map((message) => `contract: ${message}`);
+  const scenarios = Array.isArray(contract?.requiredScenarios)
+    ? contract.requiredScenarios
+    : RELEASE_ACCEPTANCE_SCENARIOS;
+  const expectedKeys = [...scenarios].sort();
+  const referenceKeys = Object.keys(referenceReports ?? {}).sort();
+  const candidateKeys = Object.keys(candidateReports ?? {}).sort();
+  if (JSON.stringify(referenceKeys) !== JSON.stringify(expectedKeys)) {
+    failures.push('reference report 目录必须精确覆盖四个 scenario。');
+  }
+  if (JSON.stringify(candidateKeys) !== JSON.stringify(expectedKeys)) {
+    failures.push('candidate report 目录必须精确覆盖四个 scenario。');
+  }
+
+  for (const scenario of scenarios) {
+    const reference = referenceReports?.[scenario];
+    const candidate = candidateReports?.[scenario];
+    if (reference === undefined || candidate === undefined) {
+      failures.push(`${scenario}: reference/candidate report 缺失。`);
+      continue;
+    }
+    const referenceCheck = validatePerfReport(reference, {
+      role: contract?.referenceRole,
+      scenario,
+    });
+    const candidateCheck = validatePerfReport(candidate, {
+      role: contract?.candidateRole,
+      scenario,
+    });
+    failures.push(...referenceCheck.errors.map((message) => `${scenario} reference: ${message}`));
+    failures.push(...candidateCheck.errors.map((message) => `${scenario} candidate: ${message}`));
+    failures.push(...reportMetadataFailures(reference, candidate, scenario));
+  }
+  failures.push(...reportSetIdentityFailures(referenceReports ?? {}, 'reference', scenarios));
+  failures.push(...reportSetIdentityFailures(candidateReports ?? {}, 'candidate', scenarios));
+
+  let numeric = null;
+  if (failures.length === 0) {
+    numeric = compareAcceptanceReports({
+      reference: referenceReports['history-24'],
+      candidate: candidateReports['history-24'],
+      contract,
+    });
+    failures.push(...numeric.failures);
+  }
+  return {
+    protocol: RELEASE_ACCEPTANCE_PROTOCOL,
+    scenarios,
+    status: failures.length === 0 ? 'passed' : 'failed',
+    acceptanceEligible: failures.length === 0,
+    comparisons: numeric?.comparisons ?? [],
+    failures,
+  };
+}
+
 function reportIdentity(report) {
   return {
     commitSha: report?.commitSha ?? null,
@@ -415,6 +639,12 @@ function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
+function readReportTree(root, scenarios) {
+  return Object.fromEntries(
+    scenarios.map((scenario) => [scenario, readJson(path.join(root, scenario, 'report.json'))]),
+  );
+}
+
 function optionValue(name) {
   const prefix = `${name}=`;
   const argument = process.argv.find((value) => value.startsWith(prefix));
@@ -443,6 +673,30 @@ async function runCli() {
     if (result.status !== 'passed') {
       process.exitCode = 1;
     }
+    return;
+  }
+  const contractFile = optionValue('--contract');
+  const referenceDir = optionValue('--reference-dir');
+  const candidateDir = optionValue('--candidate-dir');
+  if (contractFile !== undefined || referenceDir !== undefined || candidateDir !== undefined) {
+    const contract = readJson(requireOption('--contract'));
+    const result = compareAcceptanceReportTrees({
+      referenceReports: readReportTree(
+        path.resolve(requireOption('--reference-dir')),
+        contract.requiredScenarios ?? RELEASE_ACCEPTANCE_SCENARIOS,
+      ),
+      candidateReports: readReportTree(
+        path.resolve(requireOption('--candidate-dir')),
+        contract.requiredScenarios ?? RELEASE_ACCEPTANCE_SCENARIOS,
+      ),
+      contract,
+    });
+    const outputFile = optionValue('--output');
+    if (outputFile !== undefined) {
+      writeFileSync(outputFile, `${JSON.stringify(result, null, 2)}\n`);
+    }
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (result.status !== 'passed') process.exitCode = 1;
     return;
   }
   const referenceFile = requireOption('--reference');

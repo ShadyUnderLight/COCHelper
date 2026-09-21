@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  compareAcceptanceReportTrees,
+  compareAcceptanceReports,
   comparePerfReports,
+  RELEASE_ACCEPTANCE_METRICS,
+  RELEASE_ACCEPTANCE_PROTOCOL,
+  RELEASE_ACCEPTANCE_SCENARIOS,
   RELEASE_GATE_PROTOCOL,
   requiredGateMetricPaths,
+  validateAcceptanceContract,
   validateGatePolicy,
   validatePerfReport,
 } from './perf-gate.mjs';
@@ -34,7 +40,7 @@ function makeReport(node: string, scenario = 'history-24') {
     runs: [1, 2, 3].map((repetition) => ({
       scenario,
       repetition,
-      runtime: { node: 'v22.15.0', electron: '44.0.0', platform: 'darwin', arch: 'arm64' },
+      runtime: { node, electron: '44.0.0', platform: 'darwin', arch: 'arm64' },
       finalProcess: { raw: { rssBytes: [100], rootFootprintBytes: [100] } },
     })),
     summary: { [scenario]: summary },
@@ -54,6 +60,28 @@ function makePolicy(scenario = 'history-24') {
       ]),
     ),
   };
+}
+
+function makeAcceptanceContract() {
+  return {
+    schemaVersion: 1,
+    protocol: RELEASE_ACCEPTANCE_PROTOCOL,
+    referenceRole: 'node24-ci',
+    candidateRole: 'node26-local',
+    requiredScenarios: [...RELEASE_ACCEPTANCE_SCENARIOS],
+    metrics: Object.fromEntries(
+      RELEASE_ACCEPTANCE_METRICS.map((metric) => [
+        metric.id,
+        { relativeTolerance: 0.1, absoluteLimit: 110 },
+      ]),
+    ),
+  };
+}
+
+function makeReportTree(node: string) {
+  return Object.fromEntries(
+    RELEASE_ACCEPTANCE_SCENARIOS.map((scenario) => [scenario, makeReport(node, scenario)]),
+  );
 }
 
 function setPath(target: Record<string, unknown>, path: string, value: number): void {
@@ -97,6 +125,59 @@ describe('cross-environment release performance gate', () => {
     expect(result.status).toBe('passed');
     expect(result.acceptanceEligible).toBe(true);
     expect(result.comparisons).toHaveLength(requiredGateMetricPaths('history-24').length);
+  });
+
+  it('applies the frozen acceptance formula to the three History-24 numeric metrics', () => {
+    const reference = makeReport('v24.18.1');
+    const candidate = makeReport('v26.0.0');
+    for (const metric of RELEASE_ACCEPTANCE_METRICS) {
+      setPath(candidate.summary['history-24'] as Record<string, unknown>, metric.path, 105);
+    }
+    const result = compareAcceptanceReports({
+      reference,
+      candidate,
+      contract: makeAcceptanceContract(),
+    });
+
+    expect(validateAcceptanceContract(makeAcceptanceContract())).toEqual({ ok: true, errors: [] });
+    expect(result.status).toBe('passed');
+    expect(result.comparisons).toHaveLength(3);
+
+    setPath(
+      candidate.summary['history-24'] as Record<string, unknown>,
+      'historyImportTotalMs.p50',
+      111,
+    );
+    expect(
+      compareAcceptanceReports({
+        reference,
+        candidate,
+        contract: makeAcceptanceContract(),
+      }).status,
+    ).toBe('failed');
+  });
+
+  it('requires all four directory reports to match their directory scenario and identity', () => {
+    const referenceReports = makeReportTree('v24.18.1');
+    const candidateReports = makeReportTree('v26.0.0');
+    candidateReports.overview = makeReport('v26.0.0', 'history-24');
+    let result = compareAcceptanceReportTrees({
+      referenceReports,
+      candidateReports,
+      contract: makeAcceptanceContract(),
+    });
+    expect(result.status).toBe('failed');
+    expect(result.failures.join('\n')).toMatch(/overview.*scenario 不匹配/);
+
+    candidateReports.overview = makeReport('v26.0.0', 'overview');
+    candidateReports['official-lists'].commitSha = 'different-commit';
+    result = compareAcceptanceReportTrees({
+      referenceReports,
+      candidateReports,
+      contract: makeAcceptanceContract(),
+    });
+    expect(result.status).toBe('failed');
+    expect(result.failures.join('\n')).toMatch(/official-lists.*commit/);
   });
 
   it('fails closed when a required tolerance is missing', () => {
@@ -289,6 +370,38 @@ describe('cross-environment release performance gate', () => {
         { encoding: 'utf8' },
       );
       expect(invalidJson.status).not.toBe(0);
+
+      const referenceDir = join(root, 'reference');
+      const candidateDir = join(root, 'candidate');
+      for (const scenario of RELEASE_ACCEPTANCE_SCENARIOS) {
+        mkdirSync(join(referenceDir, scenario), { recursive: true });
+        mkdirSync(join(candidateDir, scenario), { recursive: true });
+        writeFileSync(
+          join(referenceDir, scenario, 'report.json'),
+          `${JSON.stringify(makeReport('v24.18.1', scenario))}\n`,
+        );
+        writeFileSync(
+          join(candidateDir, scenario, 'report.json'),
+          `${JSON.stringify(makeReport('v26.0.0', scenario))}\n`,
+        );
+      }
+      const contractFile = join(root, 'acceptance-contract.json');
+      writeFileSync(contractFile, `${JSON.stringify(makeAcceptanceContract())}\n`);
+      const acceptance = spawnSync(
+        process.execPath,
+        [
+          PERF_GATE_CLI,
+          `--contract=${contractFile}`,
+          `--reference-dir=${referenceDir}`,
+          `--candidate-dir=${candidateDir}`,
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(acceptance.status).toBe(0);
+      expect(JSON.parse(acceptance.stdout)).toMatchObject({
+        status: 'passed',
+        acceptanceEligible: true,
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

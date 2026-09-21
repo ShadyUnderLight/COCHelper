@@ -496,7 +496,7 @@ function createContext(scenario, repetition) {
     homeDirectory: path.join(tempRoot, 'home'),
     dataRoot: path.join(tempRoot, 'electron-data'),
     userDataDirectory: path.join(tempRoot, 'electron-user-data'),
-    performanceTraceFile: path.join(tempRoot, 'main-performance-trace.ndjson'),
+    performanceTraceFile: path.join(tempRoot, 'electron-data', 'main-performance-trace.ndjson'),
     apiServer: null,
     phase: 'setup',
   };

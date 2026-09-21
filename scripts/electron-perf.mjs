@@ -383,6 +383,27 @@ function collectPerformanceTraceEvents(output, text) {
   }
 }
 
+function readPerformanceTraceEvents(context) {
+  if (!existsSync(context.performanceTraceFile)) {
+    return [];
+  }
+  return readFileSync(context.performanceTraceFile, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith(PERFORMANCE_TRACE_PREFIX))
+    .flatMap((line) => {
+      try {
+        const event = JSON.parse(line.slice(PERFORMANCE_TRACE_PREFIX.length));
+        return typeof event?.scope === 'string' &&
+          typeof event?.phase === 'string' &&
+          typeof event?.durationMs === 'number'
+          ? [event]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
 function appendTail(previous, next, maxChars) {
   const combined = `${previous}${next}`;
   return combined.length <= maxChars ? combined : combined.slice(-maxChars);
@@ -475,6 +496,7 @@ function createContext(scenario, repetition) {
     homeDirectory: path.join(tempRoot, 'home'),
     dataRoot: path.join(tempRoot, 'electron-data'),
     userDataDirectory: path.join(tempRoot, 'electron-user-data'),
+    performanceTraceFile: path.join(tempRoot, 'main-performance-trace.ndjson'),
     apiServer: null,
     phase: 'setup',
   };
@@ -488,6 +510,7 @@ function createEnvironment(context) {
   return {
     ...process.env,
     COCHELPER_E2E_DATA_ROOT: context.dataRoot,
+    COCHELPER_PERF_TRACE_FILE: context.performanceTraceFile,
     ELECTRON_ENABLE_LOGGING: '1',
     ...(context.apiServer === null
       ? {}
@@ -1854,7 +1877,7 @@ async function runScenario(scenario, repetition) {
       preparation: prepared.preparation,
       finalProcess,
       selectedVillageId: snapshot.selectedVillageId,
-      phaseEvents: session.output.phaseEvents,
+      phaseEvents: readPerformanceTraceEvents(prepared.context),
       views,
       runtime,
     };

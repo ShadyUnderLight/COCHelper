@@ -27,6 +27,7 @@ function makeReport(node: string, scenario = 'history-24') {
       scenario,
       repetition,
       runtime: { node: 'v22.15.0', electron: '44.0.0', platform: 'darwin', arch: 'arm64' },
+      finalProcess: { raw: { rssBytes: [100], rootFootprintBytes: [100] } },
     })),
     summary: { [scenario]: summary },
   };
@@ -144,5 +145,51 @@ describe('cross-environment release performance gate', () => {
     expect(result.status).toBe('failed');
     expect(result.failures).toContain('reference/candidate commit 不一致。');
     expect(result.comparisons).toHaveLength(0);
+  });
+
+  it('requires the top-level commit to bind both provenance records', () => {
+    const report = makeReport('v24.18.1');
+    report.commitSha = 'other-commit';
+    const result = validatePerfReport(report, { role: 'node24-ci', scenario: 'history-24' });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain('source provenance commit 与 report 顶层 commit 不一致。');
+    expect(result.errors).toContain('binary provenance commit 与 report 顶层 commit 不一致。');
+  });
+
+  it('requires every repetition to provide RSS and footprint samples', () => {
+    const report = makeReport('v24.18.1');
+    report.runs[1].finalProcess.raw.rootFootprintBytes = [];
+    const result = validatePerfReport(report, { role: 'node24-ci', scenario: 'history-24' });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      'scenario history-24 repetition=2 缺少 rootFootprintBytes workload sample。',
+    );
+  });
+
+  it('requires a present and valid manifest even when both reports omit it', () => {
+    const reference = makeReport('v24.18.1');
+    const candidate = makeReport('v26.0.0');
+    delete reference.manifest;
+    delete candidate.manifest;
+    const result = comparePerfReports({
+      reference,
+      candidate,
+      policy: makePolicy(),
+      scenario: 'history-24',
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.failures.some((message) => message.includes('manifest 缺失'))).toBe(true);
+  });
+
+  it('requires unique repetition identities [1,2,3]', () => {
+    const report = makeReport('v24.18.1');
+    report.runs[1].repetition = 1;
+    const result = validatePerfReport(report, { role: 'node24-ci', scenario: 'history-24' });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain('scenario history-24 repetition identity 必须恰好是 [1,2,3]。');
   });
 });

@@ -11,6 +11,8 @@
 
 现有 `perf:release` 仍然是 observed baseline，不把 runner 成功误读为性能通过。第四切片新增 `perf:gate`，用于在取得真实 Node 24 CI report 与 Node 26 本机 report 后执行跨环境 gate。
 
+CI 的每个 Release perf matrix job 现在会在 `perf:release` 后执行 single-report gate contract；这会阻断坏 provenance、缺失 repetition sample、缺失 manifest 或不完整 metric 的 artifact。跨环境 numeric comparison 仍通过 reference/candidate/policy 模式执行。
+
 ## 冻结的 gate contract
 
 `perf:gate` 要求 reference 与 candidate 同时满足：
@@ -47,6 +49,18 @@ pnpm perf:gate \
 ```
 
 policy 必须由相同 exact head 的真实 report 复核后提交或作为 Release evidence 保存；缺失 policy 不能自动放宽为通过。
+
+CI contract-only 命令形态：
+
+```sh
+pnpm perf:gate \
+  --report=e2e-artifacts/perf-history-24/report.json \
+  --role=node24-ci \
+  --scenario=history-24 \
+  --output=e2e-artifacts/perf-history-24/gate.json
+```
+
+contract-only 通过不等于 numeric performance passed；其 `acceptanceEligible` 保持 false。
 
 ## 非目标
 

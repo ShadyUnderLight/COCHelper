@@ -66,6 +66,13 @@ export function workloadProcessSummariesForRun(run) {
   return summaries.filter((value) => value !== null && value !== undefined);
 }
 
+export function workloadMetricSampleCountForRun(run, metric) {
+  return workloadProcessSummariesForRun(run).reduce(
+    (count, process) => count + (process.raw?.[metric]?.length ?? 0),
+    0,
+  );
+}
+
 export function collectProcessMetric(runs, metric) {
   const values = [];
   for (const run of runs) {

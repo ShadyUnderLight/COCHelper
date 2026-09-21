@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { FROZEN_RELEASE_BASELINE } from './perf-config.mjs';
+import { workloadMetricSampleCountForRun } from './perf-metrics.mjs';
 
 export const RELEASE_GATE_PROTOCOL = 'electron-release-perf-gate-v1';
 export const RELEASE_PERF_PROTOCOL = 'electron-release-perf-v1';
@@ -127,6 +128,9 @@ export function validatePerfReport(report, { role, scenario } = {}) {
 
   const source = report.sourceProvenance;
   const binary = report.binaryProvenance;
+  if (typeof report.commitSha !== 'string' || report.commitSha.length === 0) {
+    errors.push('report 缺少顶层 commitSha。');
+  }
   if (
     typeof source?.commitSha !== 'string' ||
     source.commitSha.length === 0 ||
@@ -145,6 +149,22 @@ export function validatePerfReport(report, { role, scenario } = {}) {
   }
   if (source?.commitSha !== binary?.commitSha) {
     errors.push('source commit 与 binary commit 不一致。');
+  }
+  if (source?.commitSha !== report.commitSha) {
+    errors.push('source provenance commit 与 report 顶层 commit 不一致。');
+  }
+  if (binary?.commitSha !== report.commitSha) {
+    errors.push('binary provenance commit 与 report 顶层 commit 不一致。');
+  }
+
+  const manifest = report.manifest;
+  if (
+    manifest === null ||
+    typeof manifest !== 'object' ||
+    manifest.schemaVersion !== 1 ||
+    manifest.protocol !== RELEASE_PERF_PROTOCOL
+  ) {
+    errors.push('report manifest 缺失或 schema/protocol 不匹配。');
   }
 
   const environment = report.environment;
@@ -166,9 +186,24 @@ export function validatePerfReport(report, { role, scenario } = {}) {
   if (runs.length !== FROZEN_RELEASE_BASELINE.repetitions) {
     errors.push(`scenario ${expectedScenario} run 数量不是 3：${runs.length}`);
   }
+  const repetitionIds = runs.map((run) => run.repetition).sort((left, right) => left - right);
+  const expectedRepetitionIds = [1, 2, 3];
+  if (
+    repetitionIds.length !== expectedRepetitionIds.length ||
+    repetitionIds.some((value, index) => value !== expectedRepetitionIds[index])
+  ) {
+    errors.push(`scenario ${expectedScenario} repetition identity 必须恰好是 [1,2,3]。`);
+  }
   for (const [index, run] of runs.entries()) {
     if (run.runtime === null || typeof run.runtime?.node !== 'string') {
       errors.push(`scenario ${expectedScenario} repetition=${index + 1} 缺少 Electron runtime Node。`);
+    }
+    for (const metric of ['rssBytes', 'rootFootprintBytes']) {
+      if (workloadMetricSampleCountForRun(run, metric) === 0) {
+        errors.push(
+          `scenario ${expectedScenario} repetition=${index + 1} 缺少 ${metric} workload sample。`,
+        );
+      }
     }
   }
 
@@ -253,6 +288,20 @@ export function comparePerfReports({ reference, candidate, policy, scenario }) {
     candidate: reportIdentity(candidate),
     comparisons,
     failures,
+  };
+}
+
+export function validatePerfReportContract(report, { role, scenario }) {
+  const check = validatePerfReport(report, { role, scenario });
+  return {
+    protocol: RELEASE_GATE_PROTOCOL,
+    scenario,
+    role,
+    status: check.ok ? 'passed' : 'failed',
+    contractPassed: check.ok,
+    acceptanceEligible: false,
+    report: reportIdentity(report),
+    failures: check.errors,
   };
 }
 
@@ -354,6 +403,21 @@ function requireOption(name) {
 }
 
 async function runCli() {
+  const reportFile = optionValue('--report');
+  if (reportFile !== undefined) {
+    const scenario = requireOption('--scenario');
+    const role = requireOption('--role');
+    const outputFile = optionValue('--output');
+    const result = validatePerfReportContract(readJson(reportFile), { role, scenario });
+    if (outputFile !== undefined) {
+      writeFileSync(outputFile, `${JSON.stringify(result, null, 2)}\n`);
+    }
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (result.status !== 'passed') {
+      process.exitCode = 1;
+    }
+    return;
+  }
   const referenceFile = requireOption('--reference');
   const candidateFile = requireOption('--candidate');
   const policyFile = requireOption('--policy');

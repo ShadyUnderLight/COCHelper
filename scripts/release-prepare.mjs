@@ -130,6 +130,8 @@ function main() {
   }
   prepareDmgNativeDependency(root, environment, values.platform, commands);
   const makeArgs = ['make', `--platform=${values.platform}`, `--arch=${values.arch}`];
+  const forgeOutput = path.join(root, 'apps/desktop/out/make');
+  rmSync(forgeOutput, { recursive: true, force: true });
   runStep(root, environment, `pnpm ${makeArgs.join(' ')}`, makeArgs);
   commands.push(`pnpm ${makeArgs.join(' ')}`);
 
@@ -139,7 +141,6 @@ function main() {
     throw new Error('构建期间源码 commit 发生变化，拒绝生成候选制品。');
   }
 
-  const forgeOutput = path.join(root, 'apps/desktop/out/make');
   const copiedFiles = copyFiles(forgeOutput, path.join(outputDirectory, 'artifacts'));
   if (copiedFiles.length === 0) {
     throw new Error(`Forge make 没有生成制品：${forgeOutput}`);
@@ -247,6 +248,9 @@ function copyFiles(sourceRoot, destinationRoot) {
       if (!entry.isFile()) {
         continue;
       }
+      if (!isPackagedArtifact(childRelative)) {
+        continue;
+      }
       const destinationPath = path.join(destinationRoot, childRelative);
       mkdirSync(path.dirname(destinationPath), { recursive: true });
       copyFileSync(sourcePath, destinationPath);
@@ -255,6 +259,13 @@ function copyFiles(sourceRoot, destinationRoot) {
   };
   visit(sourceRoot);
   return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function isPackagedArtifact(relativePath) {
+  const lower = relativePath.toLowerCase();
+  return ['.dmg', '.zip', '.exe', '.deb', '.rpm', '.appimage'].some((suffix) =>
+    lower.endsWith(suffix),
+  );
 }
 
 function statIfExists(filePath) {

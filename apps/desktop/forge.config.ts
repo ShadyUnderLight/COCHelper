@@ -4,7 +4,7 @@ import { MakerDMG } from '@electron-forge/maker-dmg';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
-import { writeFileSync } from 'node:fs';
+import { existsSync, renameSync, writeFileSync } from 'node:fs';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import path from 'node:path';
 import { PublisherGithub } from '@electron-forge/publisher-github';
@@ -68,6 +68,13 @@ const config: ForgeConfig = {
         );
       }
     },
+    postMake: async (_config, makeResults) =>
+      makeResults.map((result) => ({
+        ...result,
+        artifacts: result.artifacts.map((artifact) =>
+          renameReleaseArtifact(artifact, result.packageJSON?.version ?? '0.0.0'),
+        ),
+      })),
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin']), new MakerDMG({}, ['darwin'])],
@@ -109,5 +116,18 @@ const config: ForgeConfig = {
     }),
   ],
 };
+
+function renameReleaseArtifact(artifactPath: string, sourceVersion: string): string {
+  const targetVersion = releaseMetadata.app.version;
+  if (sourceVersion === targetVersion || !artifactPath.includes(`-${sourceVersion}`)) {
+    return artifactPath;
+  }
+  const targetPath = artifactPath.replace(`-${sourceVersion}`, `-${targetVersion}`);
+  if (!existsSync(artifactPath)) {
+    throw new Error(`Forge make artifact 不存在：${artifactPath}`);
+  }
+  renameSync(artifactPath, targetPath);
+  return targetPath;
+}
 
 export default config;

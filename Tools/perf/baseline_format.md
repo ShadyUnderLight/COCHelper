@@ -3,7 +3,7 @@
 ## 环境记录（每次采样必填）
 - 基线 commit SHA（本 Issue = `origin/main@d3b57e8164f81e292a023b052e455085565c3dbb`，Issue #209 锁定；
   #197 初版基线 `5a553481c67466cf92627caf27d1f18371a1fef8` 仅作脚手架历史记录）
-- catalog manifest fingerprint：`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json` 的 `catalog.json` sha256
+- catalog manifest fingerprint：`apps/desktop/resources/GameCatalog/18.400.13/manifest.json` 的 `catalog.json` sha256
 - macOS 版本 / 硬件架构 / Swift toolchain / 窗口尺寸 / 数据规模（fixture 名 + 条目数）
 
 ## 指标字段（每场景 × 冷/热）

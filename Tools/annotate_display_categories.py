@@ -8,7 +8,7 @@ E0-03/Issue #303：只回写 catalog.json；manifest 精简为四字段版本元
 不再重算 hash/size/counts。
 
 用法:
-  python3 Tools/annotate_display_categories.py --dir Sources/COCHelperCore/GameCatalog/18.400.13
+  python3 Tools/annotate_display_categories.py --dir apps/desktop/resources/GameCatalog/18.400.13
 
 行为:
   - catalog.json：items 逐项应用 apply_display_categories（home buildings 命中

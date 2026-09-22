@@ -90,7 +90,7 @@ export function assertReleaseSourceClean(metadata) {
 }
 
 export function readCatalogManifest(repoRoot, requestedVersion = null) {
-  const catalogRoot = path.join(repoRoot, 'Sources/COCHelperCore/GameCatalog');
+  const catalogRoot = path.join(repoRoot, 'apps/desktop/resources/GameCatalog');
   if (!existsSync(catalogRoot)) {
     throw new Error(`找不到 GameCatalog 根目录：${catalogRoot}`);
   }

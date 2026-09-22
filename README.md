@@ -98,7 +98,7 @@ open .build/COCHelper.app
 ## Tools：APK 静态升级目录（迁移期工具，issue #13）
 
 `Tools/game_catalog/` 从 APK 生成版本化的静态升级目录（`catalog.json` + `manifest.json` + 空 `icons/`），
-当前落库于 Swift 参考实现的 `Sources/COCHelperCore/GameCatalog/<版本>/` 目录，作为 Electron 重写期间的数据基线；终态资源接入由 Electron 迁移工作负责。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
+当前落库于 Electron 生产资源根 `apps/desktop/resources/GameCatalog/<版本>/`；迁移期 Swift oracle 通过仓库内资源链接读取同一份目录，Swift 切换完成后随 oracle 一并移除。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
 
 生成（输出目录必须为空，非空报错不自动清理）。**两步生成链**：主目录生成后必须再跑
 精制台目录生成器——它幂等登记 `craft_table_catalog.json` 到 manifest（缺失登记时
@@ -108,17 +108,17 @@ validator 与 App 运行时都会 fail-closed，精制台不可用）：
 python3 Tools/generate_game_catalog.py \
   --apk /path/to/base.apk \
   --game-version 18.400.13 \
-  --output Sources/COCHelperCore/GameCatalog/18.400.13
+  --output apps/desktop/resources/GameCatalog/18.400.13
 python3 Tools/generate_craft_table_catalog.py \
   --apk /path/to/base.apk \
   --game-version 18.400.13 \
-  --output Sources/COCHelperCore/GameCatalog/18.400.13/craft_table_catalog.json
+  --output apps/desktop/resources/GameCatalog/18.400.13/craft_table_catalog.json
 ```
 
 校验与全量测试：
 
 ```bash
-python3 Tools/validate_game_catalog.py --catalog Sources/COCHelperCore/GameCatalog/18.400.13
+python3 Tools/validate_game_catalog.py --catalog apps/desktop/resources/GameCatalog/18.400.13
 python3 -m pytest Tools/tests -q
 ```
 
@@ -137,7 +137,7 @@ spike 结论：export 名与引用链可解析（`ui.sc` exports=3024），但�
 
 ```bash
 python3 Tools/render_generator.py --apk /path/to/base.apk \
-  --catalog Sources/COCHelperCore/GameCatalog/18.400.13   # 渲染 + 回写 catalog.json
+  --catalog apps/desktop/resources/GameCatalog/18.400.13   # 渲染 + 回写 catalog.json
 python3 Tools/render_generator.py --apk <apk> --catalog <dir> --samples-only  # 只渲染不回写
 python3 Tools/render_generator.py --apk <apk> --catalog <dir>   # 全量渲染 catalog 全部引用（Issue #25）
 ```

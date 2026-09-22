@@ -57,7 +57,7 @@ _real_apk = pytest.mark.skipif(
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_BUNDLED = _REPO_ROOT / "Sources/COCHelperCore/GameCatalog/18.400.13"
+_BUNDLED = _REPO_ROOT / "apps/desktop/resources/GameCatalog/18.400.13"
 
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 

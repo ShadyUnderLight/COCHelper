@@ -68,7 +68,7 @@ def _phases_path(version: str) -> Path:
     """
     return (
         Path(__file__).resolve().parents[2]
-        / "Sources" / "COCHelperCore" / "GameCatalog" / version
+        / "apps" / "desktop" / "resources" / "GameCatalog" / version
         / "seasonal_phases.json"
     )
 

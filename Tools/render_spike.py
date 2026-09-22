@@ -34,7 +34,7 @@ from game_catalog.fbs import FlatBuffer
 from game_catalog.sc2 import ScFile, load_sc
 
 # ---------------------------------------------------------------------------
-# 固定样本（来源：Sources/COCHelperCore/GameCatalog/18.400.13/catalog.json
+# 固定样本（来源：apps/desktop/resources/GameCatalog/18.400.13/catalog.json
 # 与真实 APK assets/sc/ 对拍）
 # ---------------------------------------------------------------------------
 

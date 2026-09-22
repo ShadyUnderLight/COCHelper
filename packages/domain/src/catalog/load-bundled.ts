@@ -31,7 +31,7 @@ export type CatalogBundle = {
 export function resolveCatalogBundleRoot(startDir = process.cwd()): string | null {
   let current = resolve(startDir);
   for (let depth = 0; depth < 8; depth += 1) {
-    const candidate = join(current, 'Sources/COCHelperCore/GameCatalog');
+    const candidate = join(current, 'apps/desktop/resources/GameCatalog');
     if (existsSync(candidate)) {
       return candidate;
     }
@@ -47,7 +47,7 @@ export function resolveCatalogBundleRoot(startDir = process.cwd()): string | nul
 export function resolveAccountNameCatalogPath(startDir = process.cwd()): string | null {
   let current = resolve(startDir);
   for (let depth = 0; depth < 8; depth += 1) {
-    const candidate = join(current, 'Sources/COCHelperCore/Resources/account_name_catalog.json');
+    const candidate = join(current, 'apps/desktop/resources/account_name_catalog.json');
     if (existsSync(candidate)) {
       return candidate;
     }
@@ -84,8 +84,8 @@ export async function loadCatalogBundle(input: {
       : EMPTY_SEASONAL_PHASE_TABLE;
   const accountPath =
     input.accountNameCatalogPath ??
-    (existsSync(join(input.root, '../Resources/account_name_catalog.json'))
-      ? join(input.root, '../Resources/account_name_catalog.json')
+    (existsSync(join(input.root, '../account_name_catalog.json'))
+      ? join(input.root, '../account_name_catalog.json')
       : resolveAccountNameCatalogPath(process.cwd()));
   const accountNameCatalog =
     accountPath !== null && existsSync(accountPath)

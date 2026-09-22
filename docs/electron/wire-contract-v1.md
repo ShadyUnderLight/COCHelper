@@ -289,7 +289,7 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 
 实现（旧）：GameCatalog.swift:31-130（`CatalogManifest` / `CatalogGeneratedFile` / `CatalogCounts` /
 `validate`）。活体 fixture：仓库源路径
-`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`；运行时 bundle 路径为
+`apps/desktop/resources/GameCatalog/18.400.13/manifest.json`；运行时 bundle 路径为
 `GameCatalog/18.400.13/manifest.json`（Package 以 `.copy("GameCatalog")` 保留目录结构，
 `.process` 会扁平化子目录故不可用）。由 `Tools/game_catalog` Python 生成器产出，
 GameCatalogTests ManifestValidation 系列锁定。

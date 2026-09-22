@@ -27,7 +27,7 @@ BS 非数字或越界 → CatalogError + exit 1，不写任何文件（全部校
 
 用法:
   python3 Tools/annotate_blacksmith_levels.py \\
-      --apk /path/to/base.apk --dir Sources/COCHelperCore/GameCatalog/18.400.13
+      --apk /path/to/base.apk --dir apps/desktop/resources/GameCatalog/18.400.13
 """
 
 import argparse

@@ -22,7 +22,7 @@ from game_catalog.model import (
 from game_catalog.validate import validate_catalog
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-BUNDLED_CATALOG = _REPO_ROOT / "Sources/COCHelperCore/GameCatalog/18.400.13/catalog.json"
+BUNDLED_CATALOG = _REPO_ROOT / "apps/desktop/resources/GameCatalog/18.400.13/catalog.json"
 
 
 def _item(data_id=1000008, name="x", section="buildings", base="home", dc=None):

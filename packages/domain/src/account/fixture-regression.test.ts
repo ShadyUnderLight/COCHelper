@@ -8,7 +8,7 @@ import type { AccountItem, AccountSnapshot } from './types';
 import { isBuilderBaseSection } from './types';
 import { parseAccountSnapshot } from './parser';
 
-const FIXTURE_DIR = resolve(process.cwd(), 'Tests/COCHelperCoreTests/Fixtures');
+const FIXTURE_DIR = resolve(process.cwd(), 'fixtures/account');
 const PERF_FIXTURE_TIMESTAMP_SEC = 1_785_736_933;
 const PERF_NOW_MS = PERF_FIXTURE_TIMESTAMP_SEC * 1000;
 const SAMPLE_NOW_MS = 1_700_000_600_000;

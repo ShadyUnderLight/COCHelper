@@ -7,17 +7,17 @@ import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SOURCE = REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_home.json"
+SOURCE = REPO_ROOT / "fixtures/account/perf_account_snapshot_home.json"
 # 保留旧单文件（hyphen tag）以兼容现有测试；新增 paired before/after 用合法 tag 供 history Diff 行展开
 # Paired 需确保同 lineage 下产生“大量 Wall 变化”的非 duplicate history row。
 # 旧的 offset-cycle（0 vs 6）仅产生 3 段残余迁移（histogram 抵消后），不符合 perf 目标。
 # 现改为 before 全 Lv1、after 全 Lv12，raw histogram 偏移 = 1005，可稳定产生大变化 row。
 TARGETS_SINGLE = [
-    REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json",
+    REPO_ROOT / "fixtures/account/perf_account_snapshot_large_walls.json",
 ]
 TARGETS_PAIRED = [
-    (REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls_before.json", 1),
-    (REPO_ROOT / "Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls_after.json", 12),
+    (REPO_ROOT / "fixtures/account/perf_account_snapshot_large_walls_before.json", 1),
+    (REPO_ROOT / "fixtures/account/perf_account_snapshot_large_walls_after.json", 12),
 ]
 WALL_DATA_ID = 1_000_008
 WALL_SEGMENT_COUNT = 1_005

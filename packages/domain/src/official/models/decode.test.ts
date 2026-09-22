@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = process.cwd();
 
 function fixture(name: string): string {
-  return readFileSync(resolve(ROOT, 'Tests/COCHelperCoreTests/Fixtures', name), 'utf8');
+  return readFileSync(resolve(ROOT, 'fixtures/account', name), 'utf8');
 }
 
 describe('official decode fixtures', () => {

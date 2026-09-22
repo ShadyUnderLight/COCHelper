@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "protocol": "electron-release-perf-v1",
-  "fixtureRoot": "Tests/COCHelperCoreTests/Fixtures",
+  "fixtureRoot": "fixtures/account",
   "accountSnapshots": {
     "home": {
       "file": "perf_account_snapshot_home.json",

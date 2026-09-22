@@ -5,7 +5,7 @@
 每个场景执行**冷启动**与**热缓存**两次，分别记录指标（见 baseline_format.md）。
 
 ## fixture 路径
-- 账号快照：`Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_home.json`、
+- 账号快照：`fixtures/account/perf_account_snapshot_home.json`、
   `perf_account_snapshot_builder.json`、`perf_account_snapshot_mixed.json`、`perf_account_snapshot_variant.json`
 - 战争日志 / 突袭周末多页缓存：`perf_war_log_page_01..03.json`、`perf_capital_raid_page_01..03.json`
 - 数据规模与环境：`perf_fixtures_manifest.json`

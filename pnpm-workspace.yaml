@@ -7,10 +7,10 @@ engineStrict: false
 # Electron Forge 7 的 @electron/rebuild 仍通过 git 解析 @electron/node-gyp。
 # Forge 8 修复前必须关闭，否则无法安装宿主。
 blockExoticSubdeps: false
-# appdmg 的 fs-xattr/macos-alias 带 binding.gyp 但没有可被 pnpm 自动执行的 install hook；
-# allowBuilds 只保证 clean install 不被 pnpm 阻断，release:prepare 会显式 node-gyp rebuild macos-alias。
+# appdmg 的 fs-xattr/macos-alias 是 DMG maker 的构建依赖，不允许在 pnpm install
+# 阶段执行 native build；release:prepare 会使用 allowlist 环境显式 node-gyp rebuild。
 allowBuilds:
   electron: true
   esbuild: true
-  fs-xattr: true
-  macos-alias: true
+  fs-xattr: false
+  macos-alias: false

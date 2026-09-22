@@ -1,0 +1,74 @@
+name: Electron release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release version
+        required: true
+        type: string
+      build_number:
+        description: Monotonic numeric build number
+        required: true
+        type: string
+      formal_candidate:
+        description: Require final #278/#279 evidence references
+        required: true
+        default: false
+        type: boolean
+      e2e_evidence:
+        description: #278 packaged E2E evidence URL or archived path
+        required: false
+        type: string
+      perf_evidence:
+        description: #279 performance evidence URL or archived path
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: Build Electron release candidate
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Build candidate artifacts
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+          RELEASE_FORMAL_CANDIDATE: ${{ inputs.formal_candidate }}
+          RELEASE_E2E_EVIDENCE: ${{ inputs.e2e_evidence }}
+          RELEASE_PERF_EVIDENCE: ${{ inputs.perf_evidence }}
+        run: |
+          if [[ "$RELEASE_FORMAL_CANDIDATE" == "true" ]]; then
+            pnpm release:prepare \
+              --version="$RELEASE_VERSION" \
+              --build-number="$RELEASE_BUILD_NUMBER" \
+              --platform=darwin \
+              --arch=arm64 \
+              --formal-candidate \
+              --e2e-evidence="$RELEASE_E2E_EVIDENCE" \
+              --perf-evidence="$RELEASE_PERF_EVIDENCE"
+          else
+            pnpm release:prepare \
+              --version="$RELEASE_VERSION" \
+              --build-number="$RELEASE_BUILD_NUMBER" \
+              --platform=darwin \
+              --arch=arm64
+          fi
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cochelper-electron-release-${{ inputs.version }}-${{ inputs.build_number }}
+          path: release-artifacts/
+          if-no-files-found: error

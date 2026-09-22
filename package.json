@@ -11,6 +11,8 @@
   "scripts": {
     "start": "pnpm --filter @coc-helper/desktop start",
     "package": "pnpm --filter @coc-helper/desktop package",
+    "make": "pnpm --filter @coc-helper/desktop make",
+    "release:prepare": "node scripts/release-prepare.mjs",
     "test": "vitest run",
     "test:parity": "vitest run --config vitest.parity.config.ts",
     "test:fault-replay": "vitest run packages/testkit/src/fault.replay.test.ts packages/domain/src/persistence/atomic-write.test.ts packages/domain/src/persistence/transactions.test.ts",
@@ -34,6 +36,7 @@
     "globals": "^16.3.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.6.2",
+    "semver": "^7.8.5",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.42.0",
     "vitest": "^3.2.4"

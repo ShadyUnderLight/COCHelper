@@ -7,7 +7,6 @@ import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { existsSync, renameSync, writeFileSync } from 'node:fs';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import path from 'node:path';
-import { PublisherGithub } from '@electron-forge/publisher-github';
 
 import { DEV_CONTENT_SECURITY_POLICY } from './src/main/security-policy';
 import { mainConfig } from './webpack.main.config';
@@ -78,13 +77,6 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ['darwin']), new MakerDMG({}, ['darwin'])],
-  publishers: [
-    new PublisherGithub({
-      repository: { owner: 'ShadyUnderLight', name: 'COCHelper' },
-      draft: true,
-      prerelease: true,
-    }),
-  ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new WebpackPlugin({

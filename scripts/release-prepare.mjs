@@ -22,6 +22,27 @@ import { buildCycloneDxBom, readProductionDependencyTree, SBOM_PROTOCOL } from '
 
 export const ARTIFACT_MANIFEST_PROTOCOL = 'cochelper-artifact-manifest-v1';
 
+const NATIVE_BUILD_ENV_KEYS = Object.freeze([
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'PYTHON',
+  'CC',
+  'CXX',
+  'CFLAGS',
+  'CXXFLAGS',
+  'LDFLAGS',
+  'ARCHFLAGS',
+  'SDKROOT',
+  'DEVELOPER_DIR',
+  'MACOSX_DEPLOYMENT_TARGET',
+]);
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function artifactRole(relativePath) {
@@ -66,6 +87,18 @@ export function createArtifactManifest({ metadata, files, generatedAt, commands,
       path: 'sbom.cdx.json',
     },
   };
+}
+
+export function createNativeBuildEnvironment(sourceEnvironment = process.env) {
+  const environment = {};
+  for (const key of NATIVE_BUILD_ENV_KEYS) {
+    const value = sourceEnvironment[key];
+    if (typeof value === 'string') {
+      environment[key] = value;
+    }
+  }
+  environment.npm_config_loglevel = 'error';
+  return environment;
 }
 
 function main() {
@@ -202,6 +235,7 @@ function prepareDmgNativeDependency(cwd, environment, platform, commands) {
   if (!existsSync(nodeGyp)) {
     throw new Error('macOS DMG 构建需要 node-gyp；依赖安装不完整。');
   }
+  const nativeBuildEnvironment = createNativeBuildEnvironment(environment);
   for (const dependency of [
     { name: 'macos-alias', output: 'build/Release/volume.node' },
     { name: 'fs-xattr', output: 'build/Release/xattr.node' },
@@ -212,7 +246,7 @@ function prepareDmgNativeDependency(cwd, environment, platform, commands) {
     }
     runExecutable(
       dependencyRoot,
-      environment,
+      nativeBuildEnvironment,
       `node-gyp rebuild ${dependency.name}（DMG maker 原生依赖）`,
       nodeGyp,
       ['rebuild'],

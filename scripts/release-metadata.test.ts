@@ -9,6 +9,7 @@ describe('release metadata', () => {
     expect(validateSemver('1.2.3')).toBe('1.2.3');
     expect(validateSemver('1.2.3-rc.1+build.7')).toBe('1.2.3-rc.1+build.7');
     expect(() => validateSemver('1.2')).toThrow('SemVer');
+    expect(() => validateSemver('1.2.3-01')).toThrow('SemVer');
   });
 
   it('注入 app、build、catalog 和 source provenance', () => {

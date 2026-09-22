@@ -1,13 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import semver from 'semver';
 
 import { readGitProvenance } from './perf-provenance.mjs';
 
 export const RELEASE_MANIFEST_PROTOCOL = 'cochelper-release-manifest-v1';
 export const RELEASE_CHANNELS = Object.freeze(['dev', 'pre-cutover', 'candidate']);
 
-const SEMVER_PATTERN =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const CATALOG_MANIFEST_SCHEMA_VERSION = 3;
 
 export function readReleaseMetadata(repoRoot, environment = process.env, provenanceReader = readGitProvenance) {
@@ -63,7 +62,8 @@ export function readReleaseMetadata(repoRoot, environment = process.env, provena
 }
 
 export function validateSemver(value) {
-  if (typeof value !== 'string' || !SEMVER_PATTERN.test(value)) {
+  const parsed = typeof value === 'string' ? semver.parse(value) : null;
+  if (parsed === null || parsed.raw !== value || !/^\d/.test(value)) {
     throw new Error(`release version 必须是 SemVer：${String(value)}`);
   }
   return value;

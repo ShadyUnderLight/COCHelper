@@ -310,5 +310,5 @@ def test_validate_accepts_wellformed_audit_status():
     import game_catalog.validate as validate_module
     errors = validate_module.validate_catalog(
         Path(__file__).resolve().parents[2]
-        / "Sources/COCHelperCore/GameCatalog/18.400.13")
+        / "apps/desktop/resources/GameCatalog/18.400.13")
     assert not any("auditStatus" in e for e in errors), errors

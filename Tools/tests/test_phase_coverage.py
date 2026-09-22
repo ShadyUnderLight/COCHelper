@@ -26,7 +26,7 @@ from game_catalog.lifecycle import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-CATALOG_DIR = _REPO_ROOT / "Sources/COCHelperCore/GameCatalog/18.400.13"
+CATALOG_DIR = _REPO_ROOT / "apps/desktop/resources/GameCatalog/18.400.13"
 PHASES_PATH = CATALOG_DIR / "seasonal_phases.json"
 
 # required = 有可靠官方日期、必须命中 phase 表（精工防御 3 条 + Party Wizard，

@@ -9,7 +9,7 @@
 > 关联：issue #13（生成管线）、#27（spike + 契约）、#30（解锁 + 固定样本）、#25（图标渲染管线 + UI 接入）。
 > 相关文件：`Tools/game_catalog/sc2.py`、`Tools/render_spike.py`、
 > `Sources/COCHelperCore/GameCatalog.swift`、`Tools/game_catalog/validate.py`、
-> `Tools/game_catalog/__init__.py`、`Sources/COCHelperCore/GameCatalog/18.400.13/manifest.json`。
+> `Tools/game_catalog/__init__.py`、`apps/desktop/resources/GameCatalog/18.400.13/manifest.json`。
 
 ---
 

@@ -29,8 +29,8 @@ const config: ForgeConfig = {
     buildVersion: releaseMetadata.app.buildNumber,
     appBundleId: 'com.local.coc-helper.electron',
     extraResource: [
-      path.join(repoRoot, 'Sources/COCHelperCore/GameCatalog'),
-      path.join(repoRoot, 'Sources/COCHelperCore/Resources/account_name_catalog.json'),
+      path.join(repoRoot, 'apps/desktop/resources/GameCatalog'),
+      path.join(repoRoot, 'apps/desktop/resources/account_name_catalog.json'),
     ],
   },
   hooks: {

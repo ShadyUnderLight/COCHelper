@@ -3,7 +3,7 @@
 
 用法:
   python3 Tools/render_generator.py --apk base.apk.1 \
-      --catalog Sources/COCHelperCore/GameCatalog/18.400.13
+      --catalog apps/desktop/resources/GameCatalog/18.400.13
   python3 Tools/render_generator.py --apk base.apk.1 --catalog <dir> \
       --samples-only --report /tmp/render-gen-report.json
 

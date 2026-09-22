@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "protocol": "electron-release-perf-acceptance-v1",
+  "referenceRole": "node24-ci",
+  "candidateRole": "node26-local",
+  "requiredScenarios": [
+    "overview",
+    "village-detail",
+    "history-24",
+    "official-lists"
+  ],
+  "metrics": {
+    "history-import-p50": {
+      "relativeTolerance": 0.25,
+      "absoluteLimit": 200000
+    },
+    "history-peak-rss": {
+      "relativeTolerance": 0.15,
+      "absoluteLimit": 1250000000
+    },
+    "history-peak-footprint": {
+      "relativeTolerance": 0.2,
+      "absoluteLimit": 750000000
+    }
+  }
+}

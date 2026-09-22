@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   rmSync,
@@ -127,6 +128,7 @@ function main() {
       commands.push(`pnpm ${command}`);
     }
   }
+  prepareDmgNativeDependency(root, environment, values.platform, commands);
   const makeArgs = ['make', `--platform=${values.platform}`, `--arch=${values.arch}`];
   runStep(root, environment, `pnpm ${makeArgs.join(' ')}`, makeArgs);
   commands.push(`pnpm ${makeArgs.join(' ')}`);
@@ -188,8 +190,34 @@ function resolveOutputDirectory(value, version, buildNumber) {
 }
 
 function runStep(cwd, environment, label, args) {
+  runExecutable(cwd, environment, label, 'pnpm', args);
+}
+
+function prepareDmgNativeDependency(cwd, environment, platform, commands) {
+  if (platform !== 'darwin') {
+    return;
+  }
+  const dependencyRoot = path.join(cwd, 'node_modules/macos-alias');
+  const nodeGyp = path.join(cwd, 'node_modules/.bin/node-gyp');
+  if (!existsSync(dependencyRoot) || !existsSync(nodeGyp)) {
+    throw new Error('macOS DMG 构建需要 macos-alias 和 node-gyp；依赖安装不完整。');
+  }
+  runExecutable(
+    dependencyRoot,
+    environment,
+    'node-gyp rebuild macos-alias（DMG maker 原生依赖）',
+    nodeGyp,
+    ['rebuild'],
+  );
+  if (!existsSync(path.join(dependencyRoot, 'build/Release/volume.node'))) {
+    throw new Error('macos-alias native volume.node 构建后仍缺失。');
+  }
+  commands.push('node_modules/.bin/node-gyp rebuild (macos-alias)');
+}
+
+function runExecutable(cwd, environment, label, executable, args) {
   process.stdout.write(`\n== ${label} ==\n`);
-  const result = spawnSync('pnpm', args, { cwd, env: environment, stdio: 'inherit' });
+  const result = spawnSync(executable, args, { cwd, env: environment, stdio: 'inherit' });
   if (result.status !== 0) {
     throw new Error(`${label} 失败，exit=${String(result.status)}`);
   }

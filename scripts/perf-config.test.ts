@@ -50,4 +50,16 @@ describe('performance profile contract', () => {
       }),
     ).toEqual({ profile: 'diagnostic', acceptanceEligible: false });
   });
+
+  it('keeps a single-scenario diagnostic profile non-gating', () => {
+    expect(
+      validatePerfProfile({
+        profile: 'diagnostic',
+        scenario: 'history-24',
+        repetitions: 3,
+        warmup: 1,
+        scrollMs: 10_000,
+      }),
+    ).toEqual({ profile: 'diagnostic', acceptanceEligible: false });
+  });
 });

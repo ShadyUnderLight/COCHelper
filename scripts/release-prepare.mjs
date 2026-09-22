@@ -197,22 +197,30 @@ function prepareDmgNativeDependency(cwd, environment, platform, commands) {
   if (platform !== 'darwin') {
     return;
   }
-  const dependencyRoot = path.join(cwd, 'node_modules/macos-alias');
   const nodeGyp = path.join(cwd, 'node_modules/.bin/node-gyp');
-  if (!existsSync(dependencyRoot) || !existsSync(nodeGyp)) {
-    throw new Error('macOS DMG 构建需要 macos-alias 和 node-gyp；依赖安装不完整。');
+  if (!existsSync(nodeGyp)) {
+    throw new Error('macOS DMG 构建需要 node-gyp；依赖安装不完整。');
   }
-  runExecutable(
-    dependencyRoot,
-    environment,
-    'node-gyp rebuild macos-alias（DMG maker 原生依赖）',
-    nodeGyp,
-    ['rebuild'],
-  );
-  if (!existsSync(path.join(dependencyRoot, 'build/Release/volume.node'))) {
-    throw new Error('macos-alias native volume.node 构建后仍缺失。');
+  for (const dependency of [
+    { name: 'macos-alias', output: 'build/Release/volume.node' },
+    { name: 'fs-xattr', output: 'build/Release/xattr.node' },
+  ]) {
+    const dependencyRoot = path.join(cwd, 'node_modules', dependency.name);
+    if (!existsSync(dependencyRoot)) {
+      throw new Error(`macOS DMG 构建需要 ${dependency.name}；依赖安装不完整。`);
+    }
+    runExecutable(
+      dependencyRoot,
+      environment,
+      `node-gyp rebuild ${dependency.name}（DMG maker 原生依赖）`,
+      nodeGyp,
+      ['rebuild'],
+    );
+    if (!existsSync(path.join(dependencyRoot, dependency.output))) {
+      throw new Error(`${dependency.name} native binding 构建后仍缺失：${dependency.output}`);
+    }
+    commands.push(`node_modules/.bin/node-gyp rebuild (${dependency.name})`);
   }
-  commands.push('node_modules/.bin/node-gyp rebuild (macos-alias)');
 }
 
 function runExecutable(cwd, environment, label, executable, args) {

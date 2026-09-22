@@ -68,9 +68,27 @@ const ROLE_NODE_MAJORS = Object.freeze({
 export const RELEASE_ACCEPTANCE_PROTOCOL = 'electron-release-perf-acceptance-v1';
 export const RELEASE_ACCEPTANCE_SCENARIOS = Object.freeze(Object.keys(REQUIRED_GATE_METRICS));
 export const RELEASE_ACCEPTANCE_METRICS = Object.freeze([
-  Object.freeze({ id: 'history-import-p50', path: 'historyImportTotalMs.p50' }),
-  Object.freeze({ id: 'history-peak-rss', path: 'peakRssBytes.max' }),
-  Object.freeze({ id: 'history-peak-footprint', path: 'peakFootprintBytes.max' }),
+  Object.freeze({
+    id: 'history-import-p50',
+    scenario: 'history-24',
+    path: 'historyImportTotalMs.p50',
+    sampleCountPath: 'historyImportTotalMs.count',
+    minimumSampleCount: FROZEN_RELEASE_BASELINE.repetitions,
+  }),
+  Object.freeze({
+    id: 'history-peak-rss',
+    scenario: 'history-24',
+    path: 'peakRssBytes.max',
+    sampleCountPath: 'peakRssBytes.count',
+    minimumSampleCount: 2,
+  }),
+  Object.freeze({
+    id: 'history-peak-footprint',
+    scenario: 'history-24',
+    path: 'peakFootprintBytes.max',
+    sampleCountPath: 'peakFootprintBytes.count',
+    minimumSampleCount: 2,
+  }),
 ]);
 
 export function requiredGateMetricPaths(scenario) {
@@ -432,8 +450,30 @@ export function validateAcceptanceContract(contract) {
   return { ok: errors.length === 0, errors };
 }
 
-function acceptanceMetricValue(report, metricPath) {
-  return metricValue(report?.summary?.['history-24'], metricPath);
+function acceptanceMetricValue(report, metric) {
+  return metricValue(report?.summary?.[metric.scenario], metric.path);
+}
+
+function acceptanceMetricSampleCount(report, metric) {
+  return metricValue(report?.summary?.[metric.scenario], metric.sampleCountPath);
+}
+
+function acceptanceMetricSampleFailures(report, role) {
+  const failures = [];
+  for (const metric of RELEASE_ACCEPTANCE_METRICS) {
+    const count = acceptanceMetricSampleCount(report, metric);
+    if (!Number.isInteger(count) || count < metric.minimumSampleCount) {
+      failures.push(
+        `${role} ${metric.id} sample count 无效：实际=${String(count)}，最低=${metric.minimumSampleCount}`,
+      );
+    }
+  }
+  return failures;
+}
+
+function acceptanceScenario() {
+  const scenarios = [...new Set(RELEASE_ACCEPTANCE_METRICS.map((metric) => metric.scenario))];
+  return scenarios.length === 1 ? scenarios[0] : null;
 }
 
 function reportMetadataFailures(reference, candidate, label) {
@@ -471,7 +511,10 @@ function reportSetIdentityFailures(reports, role, scenarios) {
 export function compareAcceptanceReports({ reference, candidate, contract }) {
   const contractCheck = validateAcceptanceContract(contract);
   const failures = contractCheck.errors.map((message) => `contract: ${message}`);
-  const scenario = 'history-24';
+  const scenario = acceptanceScenario();
+  if (scenario === null) {
+    failures.push('acceptance metric schema 必须只包含一个 numeric scenario。');
+  }
   const referenceCheck = validatePerfReport(reference, {
     role: contract?.referenceRole,
     scenario,
@@ -482,21 +525,23 @@ export function compareAcceptanceReports({ reference, candidate, contract }) {
   });
   failures.push(...referenceCheck.errors.map((message) => `reference: ${message}`));
   failures.push(...candidateCheck.errors.map((message) => `candidate: ${message}`));
-  failures.push(...reportMetadataFailures(reference, candidate, 'history-24'));
+  failures.push(...reportMetadataFailures(reference, candidate, scenario ?? 'acceptance'));
+  failures.push(...acceptanceMetricSampleFailures(reference, 'reference'));
+  failures.push(...acceptanceMetricSampleFailures(candidate, 'candidate'));
 
   const comparisons = [];
   if (contractCheck.ok && referenceCheck.ok && candidateCheck.ok && failures.length === 0) {
     for (const metric of RELEASE_ACCEPTANCE_METRICS) {
       const rule = contract.metrics[metric.id];
-      const referenceValue = acceptanceMetricValue(reference, metric.path);
-      const candidateValue = acceptanceMetricValue(candidate, metric.path);
+      const referenceValue = acceptanceMetricValue(reference, metric);
+      const candidateValue = acceptanceMetricValue(candidate, metric);
       if (
         referenceValue === null ||
         candidateValue === null ||
-        referenceValue < 0 ||
-        candidateValue < 0
+        referenceValue <= 0 ||
+        candidateValue <= 0
       ) {
-        failures.push(`${metric.id}: reference/candidate numeric value 缺失或非法。`);
+        failures.push(`${metric.id}: reference/candidate numeric value 必须是正的有限数值。`);
         continue;
       }
       const relativeLimit = referenceValue * (1 + rule.relativeTolerance);
@@ -574,9 +619,10 @@ export function compareAcceptanceReportTrees({ referenceReports, candidateReport
 
   let numeric = null;
   if (failures.length === 0) {
+    const numericScenario = acceptanceScenario();
     numeric = compareAcceptanceReports({
-      reference: referenceReports['history-24'],
-      candidate: candidateReports['history-24'],
+      reference: referenceReports[numericScenario],
+      candidate: candidateReports[numericScenario],
       contract,
     });
     failures.push(...numeric.failures);

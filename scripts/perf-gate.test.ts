@@ -26,6 +26,11 @@ function makeReport(node: string, scenario = 'history-24', runtimeNode = 'v24.18
   for (const metric of requiredGateMetricPaths(scenario)) {
     setPath(summary, metric, 100);
   }
+  for (const metric of RELEASE_ACCEPTANCE_METRICS.filter(
+    (acceptanceMetric) => acceptanceMetric.scenario === scenario,
+  )) {
+    setPath(summary, metric.sampleCountPath, metric.minimumSampleCount);
+  }
   return {
     protocol: 'electron-release-perf-v1',
     status: 'observed',
@@ -100,6 +105,17 @@ function setPath(target: Record<string, unknown>, path: string, value: number): 
   current[parts.at(-1)!] = value;
 }
 
+function deletePath(target: Record<string, unknown>, path: string): void {
+  const parts = path.split('.');
+  let current = target;
+  for (const part of parts.slice(0, -1)) {
+    const next = current[part];
+    if (next === null || typeof next !== 'object' || Array.isArray(next)) return;
+    current = next as Record<string, unknown>;
+  }
+  delete current[parts.at(-1)!];
+}
+
 describe('cross-environment release performance gate', () => {
   it('requires the frozen baseline protocol and runtime role', () => {
     const report = makeReport('v24.18.1');
@@ -163,6 +179,49 @@ describe('cross-environment release performance gate', () => {
         contract: makeAcceptanceContract(),
       }).status,
     ).toBe('failed');
+  });
+
+  it('fails closed when an acceptance summary count is missing, zero, or below minimum', () => {
+    for (const invalidCount of [undefined, 0, 1]) {
+      const reference = makeReport('v24.18.1');
+      const candidate = makeReport('v26.0.0');
+      const metric = RELEASE_ACCEPTANCE_METRICS[0];
+      if (invalidCount === undefined) {
+        deletePath(
+          reference.summary[metric.scenario] as Record<string, unknown>,
+          metric.sampleCountPath,
+        );
+      } else {
+        setPath(
+          reference.summary[metric.scenario] as Record<string, unknown>,
+          metric.sampleCountPath,
+          invalidCount,
+        );
+      }
+      const result = compareAcceptanceReports({
+        reference,
+        candidate,
+        contract: makeAcceptanceContract(),
+      });
+      expect(result.status).toBe('failed');
+      expect(result.failures.join('\n')).toMatch(/sample count/);
+    }
+  });
+
+  it('fails closed when any acceptance metric is zero', () => {
+    const reference = makeReport('v24.18.1');
+    const candidate = makeReport('v26.0.0');
+    for (const metric of RELEASE_ACCEPTANCE_METRICS) {
+      setPath(reference.summary[metric.scenario] as Record<string, unknown>, metric.path, 0);
+      setPath(candidate.summary[metric.scenario] as Record<string, unknown>, metric.path, 0);
+    }
+    const result = compareAcceptanceReports({
+      reference,
+      candidate,
+      contract: makeAcceptanceContract(),
+    });
+    expect(result.status).toBe('failed');
+    expect(result.failures.join('\n')).toMatch(/必须是正的有限数值/);
   });
 
   it('requires all four directory reports to match their directory scenario and identity', () => {

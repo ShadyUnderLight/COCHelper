@@ -29,6 +29,8 @@
 2. 相对 tolerance；
 3. 绝对上限。
 
+当前三项 metric 的最小 summary sample count 为：History-24 总导入 p50 至少 3，峰值 RSS 和峰值 footprint 至少 2。count 缺失、非整数、低于最小值，或 numeric value 为 0/负数，均必须 fail closed。
+
 candidate 只有在同时满足以下条件时才通过：
 
 ```text

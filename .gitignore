@@ -19,3 +19,6 @@ docs/electron/e1-02-baseline-latest.json
 
 # Packaged E2E failure artifacts
 e2e-artifacts/
+
+# Electron release candidate artifacts
+release-artifacts/

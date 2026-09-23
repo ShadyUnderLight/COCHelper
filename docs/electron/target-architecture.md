@@ -64,7 +64,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 2. **E0-03（#266，已关闭）**：Electron 工程、安全进程边界、CI bootstrap。
 3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7，并冻结
    shared-primitives-v1.md 的跨层基础 seam。
-4. **E1-02（#268)**：Swift oracle + golden parity 框架，直接消费 `Tests/Golden/` fixtures；领域回链与基线台账见 `docs/electron/e1-02-test-registration.md`。
+4. **E1-02（#268)**：Swift oracle + golden parity 框架；TypeScript testkit 消费 `fixtures/golden/`，迁移期 Swift oracle 保留 `Tests/Golden/` 快照；领域回链与基线台账见 `docs/electron/e1-02-test-registration.md`。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 6. **E0-03 契约清理（#302，本次修订）**：撤销非必要 SHA-256/指纹/manifest 完整性防御契约，
    只冻结删除/保留边界与数据策略，不直接改业务代码。执行顺序：
@@ -79,7 +79,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`manual-queue-capacity-contract.json`（projection）；`snapshot-history-diff-contract.json`（diff，静态 `expected.canonicalHex`）；`error-scenarios-contract.json`（error：HTTP→CoAPIError、failureKind 十值、sourceLabel、refreshStatus 七态、refreshState 三保留 + outcome `canonicalHex`）+ `Tests/Golden/manifest.json` 与 `Fixtures/` 一一对应（protocolVersion=2） |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`manual-queue-capacity-contract.json`（projection）；`snapshot-history-diff-contract.json`（diff，静态 `expected.canonicalHex`）；`error-scenarios-contract.json`（error：HTTP→CoAPIError、failureKind 十值、sourceLabel、refreshStatus 七态、refreshState 三保留 + outcome `canonicalHex`）+ `fixtures/golden/manifest.json` 与 `fixtures/golden/` 一一对应（protocolVersion=2）；Swift oracle 迁移期快照仍在 `Tests/Golden/` |
 | 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 

@@ -25,11 +25,11 @@ describe('SnapshotHistoryCanonicalizer golden', () => {
   it('observation 身份稳定且 encodedJSONHex 匹配冻结值（Issue #304 无 fingerprint）', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const expected = JSON.parse(
-      readFileSync(resolve(root, 'Tests/Golden/Fixtures/parser_golden_expected.json'), 'utf8'),
+      readFileSync(resolve(root, 'fixtures/golden/parser_golden_expected.json'), 'utf8'),
     ) as {
       historyEntry: {
         encodedJSONHex: string;

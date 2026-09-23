@@ -109,11 +109,11 @@ describe('AccountSnapshotImporter', () => {
   it('golden fixture 指纹与 wire 形状 parity', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const expected = JSON.parse(
-      readFileSync(resolve(root, 'Tests/Golden/Fixtures/parser_golden_expected.json'), 'utf8'),
+      readFileSync(resolve(root, 'fixtures/golden/parser_golden_expected.json'), 'utf8'),
     ) as {
       accountSnapshot: {
         encodedJSONHex: string;

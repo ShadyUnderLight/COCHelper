@@ -2,7 +2,7 @@
 
 本文件是 Issue #268 剩余验收的人工可读台账。机器可校验来源：
 
-- `Tests/Golden/manifest.json`（caseId / operation / owner）
+- `fixtures/golden/manifest.json`（caseId / operation / owner；Swift oracle 迁移期快照仍在 `Tests/Golden/manifest.json`）
 - `packages/testkit/src/registration.baseline.test.ts`
 - `pnpm check:oracle-isolation`
 - `pnpm test:fault-replay`（含 storage fault 与 replay token）

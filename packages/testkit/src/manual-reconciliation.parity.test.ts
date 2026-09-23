@@ -27,10 +27,7 @@ const baselineA = {
   lineageID: 'lineage-p1',
 };
 
-const fixturePath = resolve(
-  root,
-  'Tests/Golden/Fixtures/manual-reconciliation-preview-contract.json',
-);
+const fixturePath = resolve(root, 'fixtures/golden/manual-reconciliation-preview-contract.json');
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
   cases: readonly { id: string }[];
 };

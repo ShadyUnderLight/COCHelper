@@ -6,7 +6,7 @@
 > 标注 🗑️ E0-03 的条目为 Issue #302 已撤销的 hash 防御契约：新实现不得要求它们，
 > 旧出处仅作删除审计保留（删除执行归属 #303/#304/#305）。
 >
-> 引用格式：§WA-x.y。golden fixtures 见 `Tests/Golden/Fixtures/`（附录 A）。
+> 引用格式：§WA-x.y。TypeScript golden fixtures 见 `fixtures/golden/`（附录 A）；迁移期 Swift oracle 快照保留在 `Tests/Golden/Fixtures/`。
 
 ## WA-1 JSON 值模型
 
@@ -254,7 +254,7 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 | SeasonalPhaseTable.schemaVersion | ==1 | 非 1/缺文件 → 空表不报错（增强数据） | GameCatalog.swift:321-324, 412-415 |
 | OfficialStateStore ×4 | 无版本 | fail-open 组（§BE-1.4） | OfficialStateStore.swift:17-63 |
 | TrackedClanStore | 无版本 | fail-open 组；演进红线：新字段必须默认值/decodeIfPresent，否则容错机制把 schema 错误变成整库静默丢失（注释原文即红线） | TrackedClanStore.swift:36-53 |
-| Golden manifest（Tests/Golden/manifest.json） | protocolVersion=2；🗑️ `fixtureSha256` 字段删除 | 登记与 `Fixtures/` 一一对应 + case id/operation/owner 校验承担串线防护（见 testkit-protocol-v1.md）；旧 protocolVersion=1 manifest 不再被新 testkit 接受 | 决策 Issue #302，执行 #305 |
+| Golden manifest（fixtures/golden/manifest.json） | protocolVersion=2；🗑️ `fixtureSha256` 字段删除 | 登记与 `fixtures/golden/` 一一对应 + case id/operation/owner 校验承担串线防护（见 testkit-protocol-v1.md）；旧 protocolVersion=1 manifest 不再被新 testkit 接受；Swift oracle 迁移期快照仍保留在 `Tests/Golden/` | 决策 Issue #302，执行 #305 |
 | Golden oracle 请求/响应协议 | protocolVersion=2；🗑️ `inputFingerprint` / `outputFingerprint` 字段删除 | 旧 v1 响应直接视为不支持，不加 v1 fallback；关联靠 caseId，结果靠 canonicalHex/业务字段/差异 path 比较 | 决策 Issue #302，执行 #305 |
 
 ### WA-7.1 E0-03 数据与兼容策略（硬切换）
@@ -408,7 +408,7 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
   `BASE_MISSING_REASONS`=capital_has_no_base）与资源域 a) 分属不同对象层级，
   合集 `MISSING_REASONS` 仅用于生成器侧总校验，TS 消费侧按对象层级分别取词表。
 
-## 附录 A：golden fixtures 索引（Tests/Golden/Fixtures/，本 PR 实际现状）
+## 附录 A：golden fixtures 索引（fixtures/golden/，本 PR 实际现状）
 
 | fixture | 冻结内容 | 消费测试 |
 |---|---|---|
@@ -426,4 +426,4 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | storage-fault-contract.json | #275 storage write fault / replay 归属 | packages/testkit/src/storage-fault.contract.test.ts；manifest `error/storage-fault-contract` |
 | official_war_log_page.json 等 | 复用 `fixtures/account/` 既有匿名分页/官方快照 fixtures，映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | Electron domain/testkit fixture tests |
 
-全量 fixture 登记见 `Tests/Golden/manifest.json`（含 error 场景）。
+全量 TypeScript fixture 登记见 `fixtures/golden/manifest.json`（含 error 场景）；Swift oracle 迁移期登记快照仍在 `Tests/Golden/manifest.json`。

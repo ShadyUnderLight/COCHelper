@@ -1,0 +1,42 @@
+{
+  "description": "Deterministic parser boundary corpus for shared primitive tests. Each source is raw JSON text encoded as a string.",
+  "valid": [
+    {
+      "id": "deep-nested",
+      "source": "{\"a\":[{\"b\":[{\"c\":[1,2,3]}]}]}",
+      "canonicalHex": "7b2261223a5b7b2262223a5b7b2263223a5b312c322c335d7d5d7d5d7d"
+    },
+    {
+      "id": "long-integer",
+      "source": "{\"n\":999999999999999999999999999999999999999}",
+      "canonicalHex": "7b226e223a3939393939393939393939393939393939393939393939393939393939393939393939393939307d"
+    },
+    {
+      "id": "proto-key",
+      "source": "{\"__proto__\":{\"constructor\":1}}",
+      "canonicalHex": "7b225f5f70726f746f5f5f223a7b22636f6e7374727563746f72223a317d7d"
+    }
+  ],
+  "rejects": [
+    {
+      "id": "trailing-comma",
+      "source": "{\"a\":1,}"
+    },
+    {
+      "id": "leading-zero",
+      "source": "01"
+    },
+    {
+      "id": "lone-high-surrogate",
+      "source": "\"\\uD800\""
+    },
+    {
+      "id": "lone-low-surrogate",
+      "source": "\"\\uDC00\""
+    },
+    {
+      "id": "non-finite-number",
+      "source": "1e400"
+    }
+  ]
+}

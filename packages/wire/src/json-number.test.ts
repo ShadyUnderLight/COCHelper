@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { formatAppleDouble, normalizeJsonNumberToken } from './json-number';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/nsnumber-stringvalue.json');
+const fixturePath = join(process.cwd(), 'fixtures/golden/nsnumber-stringvalue.json');
 
 describe('NSNumber.stringValue golden（WA-1.2）', () => {
   it('逐 token 对齐 JSONSerialization → NSNumber.stringValue', () => {

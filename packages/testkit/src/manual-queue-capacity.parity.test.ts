@@ -96,7 +96,7 @@ function activeRecord(input: { readonly rawSection: string; readonly queueKind: 
 }
 
 describe('manual queue capacity contract parity seed', () => {
-  const fixturePath = resolve(root, 'Tests/Golden/Fixtures/manual-queue-capacity-contract.json');
+  const fixturePath = resolve(root, 'fixtures/golden/manual-queue-capacity-contract.json');
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
     startGateCases: readonly StartGateCase[];
     occupancyCases: readonly OccupancyCase[];
@@ -160,7 +160,7 @@ describe('manual queue capacity contract parity seed', () => {
 });
 
 describe('manual queue capacity Swift oracle parity', () => {
-  const fixturePath = resolve(root, 'Tests/Golden/Fixtures/manual-queue-capacity-contract.json');
+  const fixturePath = resolve(root, 'fixtures/golden/manual-queue-capacity-contract.json');
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
     startGateCases: readonly StartGateCase[];
     occupancyCases: readonly OccupancyCase[];

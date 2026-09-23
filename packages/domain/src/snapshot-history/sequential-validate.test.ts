@@ -27,7 +27,7 @@ describe('snapshot history sequential validate', () => {
   it('按 entry 顺序校验且不复制 entries 数组', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });

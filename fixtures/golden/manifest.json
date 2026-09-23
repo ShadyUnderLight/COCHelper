@@ -1,0 +1,126 @@
+{
+  "protocolVersion": 2,
+  "fixtureVersion": "wire-contract-v1",
+  "cases": [
+    {
+      "id": "wire/json-raw-samples",
+      "category": "wire",
+      "operation": "canonical-json",
+      "fixture": "fixtures/golden/json-raw-samples.json",
+      "swiftOwner": "Tests/Golden/JsonRawSourceGoldenTests.swift#testRawSourcesMatchCanonicalJSONValue",
+      "typescriptOwner": "packages/testkit/src/golden.parity.test.ts"
+    },
+    {
+      "id": "wire/canonical-json-samples",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/canonical-json-samples.json",
+      "swiftOwner": "Tests/Golden/CanonicalJSONGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/canonical-json.test.ts"
+    },
+    {
+      "id": "wire/canonical-json-expected",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/canonical-json-expected.json",
+      "swiftOwner": "Tests/Golden/CanonicalJSONGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/canonical-json.test.ts"
+    },
+    {
+      "id": "wire/nsnumber-stringvalue",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/nsnumber-stringvalue.json",
+      "swiftOwner": "Tests/Golden/NSNumberStringValueGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/json-number.test.ts"
+    },
+    {
+      "id": "wire/swift-string-compare",
+      "category": "ordering",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/swift-string-compare.json",
+      "swiftOwner": "Tests/Golden/SwiftStringCompareGoldenTests.swift",
+      "typescriptOwner": "packages/wire/src/json-value.test.ts"
+    },
+    {
+      "id": "wire/primitive-fuzz-corpus",
+      "category": "wire",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/primitive-fuzz-corpus.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/wire/src/parser-fuzz.test.ts"
+    },
+    {
+      "id": "parser/account-snapshot-golden",
+      "category": "parser",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/account_snapshot_golden.json",
+      "swiftOwner": "Tests/Golden/ParserGoldenTests.swift",
+      "typescriptOwner": "packages/testkit/src/account-parser.parity.test.ts"
+    },
+    {
+      "id": "parser/golden-expected",
+      "category": "parser",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/parser_golden_expected.json",
+      "swiftOwner": "Tests/Golden/ParserGoldenTests.swift",
+      "typescriptOwner": "packages/domain/src/snapshot-history/canonicalizer.golden.test.ts"
+    },
+    {
+      "id": "projection/manual-queue-capacity",
+      "category": "projection",
+      "operation": "manual-queue-capacity",
+      "fixture": "fixtures/golden/manual-queue-capacity-contract.json",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#manual-queue-capacity",
+      "typescriptOwner": "packages/testkit/src/manual-queue-capacity.parity.test.ts"
+    },
+    {
+      "id": "diff/snapshot-history-contract",
+      "category": "ordering",
+      "operation": "snapshot-history-diff",
+      "fixture": "fixtures/golden/snapshot-history-diff-contract.json",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#snapshot-history-diff",
+      "typescriptOwner": "packages/testkit/src/snapshot-history.parity.test.ts"
+    },
+    {
+      "id": "error/error-scenarios-contract",
+      "category": "error",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/error-scenarios-contract.json",
+      "swiftOwner": "Tests/COCHelperCoreTests/CoAPIFetchClanWarTests.swift;Tests/COCHelperCoreTests/OfficialAPISourceLabelingTests.swift;Tests/COCHelperCoreTests/ClanWarDisplayProjectionTests.swift#refreshStatus",
+      "typescriptOwner": "packages/testkit/src/error-scenarios.contract.test.ts"
+    },
+    {
+      "id": "projection/manual-reconciliation-preview",
+      "category": "projection",
+      "operation": "manual-reconciliation-preview",
+      "fixture": "fixtures/golden/manual-reconciliation-preview-contract.json",
+      "swiftOwner": "Tools/golden-oracle/GoldenOracleEntry.swift#manual-reconciliation-preview",
+      "typescriptOwner": "packages/testkit/src/manual-reconciliation.parity.test.ts"
+    },
+    {
+      "id": "projection/catalog-contract",
+      "category": "projection",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/catalog-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/catalog.contract.test.ts"
+    },
+    {
+      "id": "projection/village-projection-contract",
+      "category": "projection",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/village-projection-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/village-projection.contract.test.ts"
+    },
+    {
+      "id": "error/storage-fault-contract",
+      "category": "error",
+      "operation": "fixture-registry",
+      "fixture": "fixtures/golden/storage-fault-contract.json",
+      "swiftOwner": "—",
+      "typescriptOwner": "packages/testkit/src/storage-fault.contract.test.ts"
+    }
+  ]
+}

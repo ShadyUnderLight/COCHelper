@@ -1,0 +1,28 @@
+{
+  "description": "Storage fault / journal 测试归属登记（#275 / #268）。fixture-registry：写入故障由 domain persistence 测试与 replay token 原语共同覆盖。",
+  "contractVersion": 1,
+  "issue": 275,
+  "cases": [
+    {
+      "id": "storage/atomic-write-before-rename-fault",
+      "expectedOwner": "packages/domain/src/persistence/atomic-write.test.ts",
+      "summary": "rename 前 fault 保留旧字节"
+    },
+    {
+      "id": "storage/manual-tracker-journal-fault",
+      "expectedOwner": "packages/domain/src/persistence/transactions.test.ts",
+      "summary": "manual tracker journal 写入故障与回滚"
+    },
+    {
+      "id": "storage/snapshot-import-partial-commit-fault",
+      "expectedOwner": "packages/domain/src/persistence/transactions.test.ts",
+      "summary": "snapshot import 半提交回滚"
+    },
+    {
+      "id": "storage/replay-token",
+      "expectedOwner": "packages/testkit/src/fault.replay.test.ts",
+      "summary": "ReplayToken 序列化与 seeded property 重放"
+    }
+  ],
+  "dispositions": []
+}

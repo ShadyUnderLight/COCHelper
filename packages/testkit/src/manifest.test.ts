@@ -11,7 +11,7 @@ import {
 } from './manifest';
 
 const root = process.cwd();
-const FIXTURES_DIR = 'Tests/Golden/Fixtures';
+const FIXTURES_DIR = 'fixtures/golden';
 
 describe('golden manifest', () => {
   it('Fixtures 目录与 manifest 一一对应，fixture 可读且路径不越界', () => {
@@ -21,7 +21,7 @@ describe('golden manifest', () => {
     expect(new Set(manifest.cases.map((entry) => entry.id)).size).toBe(manifest.cases.length);
 
     const fixtureFiles = readdirSync(resolve(root, FIXTURES_DIR))
-      .filter((name) => name.endsWith('.json'))
+      .filter((name) => name.endsWith('.json') && name !== 'manifest.json')
       .map((name) => `${FIXTURES_DIR}/${name}`)
       .sort();
     const manifestFiles = manifest.cases.map((entry) => entry.fixture).sort();
@@ -43,7 +43,7 @@ describe('golden manifest', () => {
             id: 'test/case',
             category: 'wire',
             operation: 'canonical-json',
-            fixture: 'Tests/Golden/Fixtures/json-raw-samples.json',
+            fixture: 'fixtures/golden/json-raw-samples.json',
             swiftOwner: 'test',
             typescriptOwner: 'test',
           },

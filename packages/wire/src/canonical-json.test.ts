@@ -13,10 +13,10 @@ import {
 } from './index';
 import type { CanonicalJsonValue } from './json-value';
 
-const fixtureDir = join(process.cwd(), 'Tests/Golden/Fixtures');
+const fixtureDir = join(process.cwd(), 'fixtures/golden');
 
 describe('canonical JSON golden（WA-2）', () => {
-  it('逐字节对齐 Tests/Golden/Fixtures/canonical-json-expected.json', () => {
+  it('逐字节对齐 fixtures/golden/canonical-json-expected.json', () => {
     const samplesRoot = parseJson(readFileSync(join(fixtureDir, 'canonical-json-samples.json')));
     const expected = JSON.parse(
       readFileSync(join(fixtureDir, 'canonical-json-expected.json'), 'utf8'),

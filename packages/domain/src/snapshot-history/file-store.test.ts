@@ -33,7 +33,7 @@ describe('snapshot history envelope wire', () => {
   it('round-trip 保留 envelope 语义', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -94,7 +94,7 @@ describe('file snapshot history store', () => {
 
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -151,7 +151,7 @@ describe('file snapshot history store', () => {
 
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -222,7 +222,7 @@ describe('file snapshot history store', () => {
 
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -267,7 +267,7 @@ describe('file snapshot history store', () => {
 
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });

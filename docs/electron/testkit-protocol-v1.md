@@ -3,7 +3,8 @@
 本协议只服务迁移期测试。`golden-oracle` 不是 Electron product、不是运行时
 fallback，也不读取 Keychain、真实用户数据或网络。
 
-> E0-03（Issue #302）撤销 oracle `inputFingerprint` / `outputFingerprint` 与 manifest
+> E6-01-B2：TypeScript testkit 使用 `fixtures/golden/`；Swift oracle 迁移期快照仍保留在
+> `Tests/Golden/`，待后续删除 Swift oracle 时移除。E0-03（Issue #302）撤销 oracle `inputFingerprint` / `outputFingerprint` 与 manifest
 > `fixtureSha256` hash 防御；protocolVersion 提升为 2，旧 v1 响应直接视为不支持，
 > 不加 v1 fallback。删除执行 #305（含 `Tests/Golden/manifest.json` 与 fixtures 重生成）。
 > Git/fixture 路径已经提供版本来源，不再额外写 digest 清单。
@@ -54,7 +55,7 @@ JSON 响应；诊断只写 stderr。
   `projection`、`error`、`ordering`、`time`。
 - 失败报告不得打印 source、token、Cookie、URL 或完整响应体。
 
-## Manifest 登记（Tests/Golden/manifest.json，protocolVersion=2）
+## Manifest 登记（fixtures/golden/manifest.json，protocolVersion=2）
 
 每个 fixture 条目包含 `id`、`category`、`operation`、`fixture`、
 `swiftOwner`、`typescriptOwner`（🗑️ E0-03：删除 `fixtureSha256` 字段与 fixture 内容

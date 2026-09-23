@@ -181,6 +181,17 @@ export function AppShell({
     }
   };
 
+  const refreshCurrentPage = (): void => {
+    void session.refresh();
+    if (tab === 'overview') {
+      void overview.refresh();
+    } else if (tab === 'detail') {
+      void detail.refresh();
+    } else if (tab === 'info') {
+      void diagnostics?.refresh();
+    }
+  };
+
   return (
     <div
       className="app-shell"
@@ -188,115 +199,181 @@ export function AppShell({
       data-availability={snapshot.availability}
       data-can-write={snapshot.canWrite ? 'true' : 'false'}
     >
-      <header className="app-header">
-        <h1>COC 助手</h1>
-        <p id="status" className="sr-only">
-          Electron 宿主已就绪
-        </p>
-      </header>
+      <p id="status" className="sr-only">
+        Electron 宿主已就绪
+      </p>
+      <div className="app-frame">
+        <aside className="glass-sidebar" aria-label="营地导航">
+          <div className="brand-lockup">
+            <span className="brand-crest" aria-hidden="true">
+              <svg viewBox="0 0 40 40" fill="none">
+                <path d="M20 3.5 34 9v10.2c0 8.6-5.7 14.6-14 18.1C11.7 33.8 6 27.8 6 19.2V9l14-5.5Z" />
+                <path d="M11 24h18M14 24v-8l6-4 6 4v8M18 24v-4h4v4M10 29h20" />
+              </svg>
+            </span>
+            <span className="brand-copy">
+              <span>CLAN CAMP</span>
+              <strong>COC 助手</strong>
+            </span>
+          </div>
 
-      <StatusBanner snapshot={snapshot} />
+          <TabNav
+            tab={tab}
+            onChange={goToTab}
+            detailDisabled={detailDisabled}
+            showDataTabs={showImport}
+          />
 
-      {state.lastError !== null ? (
-        <p className="error-text" role="alert">
-          {state.lastError}
-        </p>
-      ) : null}
-
-      <TabNav
-        tab={tab}
-        onChange={goToTab}
-        detailDisabled={detailDisabled}
-        showDataTabs={showImport}
-      />
-
-      {showRecovery ? (
-        <RecoveryPanel
-          status={recoveryStatus}
-          busy={state.busy}
-          onReset={() => void session.recoveryReset()}
-          onRestoreSaved={() => void session.recoveryRestoreSaved()}
-          onRecoverJournal={() => void session.recoveryRecoverJournal()}
-          onRefresh={() => void session.refreshRecovery()}
-        />
-      ) : null}
-
-      {showRecovery && tab !== 'info' ? null : (
-        <div className="layout">
           <VillageSidebar
             villages={snapshot.villages}
             selectedVillageId={snapshot.selectedVillageId}
             disabled={state.busy || snapshot.availability !== 'available'}
             onSelect={(villageId) => void onSidebarSelect(villageId)}
           />
-          <main className="main-pane">
-            {snapshot.availability === 'unavailable' ? (
-              <p className="error-text" role="alert">
-                应用当前不可用。{snapshot.villageError ?? ''}
+
+          <StatusBanner snapshot={snapshot} />
+        </aside>
+
+        <main className="workspace">
+          <header className="toolbar">
+            <div className="page-context">
+              <p className="eyebrow">
+                CLAN CAMP <span>/</span> LOCAL ARCHIVE
+              </p>
+              <h1>{pageTitle(activeRoute)}</h1>
+            </div>
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="glass-action"
+                disabled={state.busy}
+                onClick={refreshCurrentPage}
+              >
+                <span aria-hidden="true">↻</span>
+                刷新数据
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                disabled={!showImport}
+                onClick={() => goToTab('import')}
+              >
+                <span aria-hidden="true">＋</span>
+                导入 JSON
+              </button>
+            </div>
+          </header>
+
+          <div className="page-scroll">
+            {state.lastError !== null ? (
+              <p className="error-text shell-alert" role="alert">
+                {state.lastError}
               </p>
             ) : null}
-            {readOnly && snapshot.availability === 'available' ? (
-              <p className="notice-text">当前为只读模式，无法导入或修改村庄数据。</p>
-            ) : null}
-            {tab === 'info' ? (
-              <InfoPanel
-                route={activeRoute}
-                diagnostics={diagnostics}
-                tokenBridge={tokenBridge}
-                onTokenChanged={() => void diagnostics?.refresh()}
-                onNavigate={(section) => applyRoute({ kind: 'info', section })}
-              />
-            ) : null}
-            {showImport && tab === 'import' ? (
-              <OfficialImportPanel
-                pasteText={state.pasteText}
-                preview={state.preview}
-                canWrite={snapshot.canWrite && snapshot.availability === 'available'}
+
+            {showRecovery ? (
+              <RecoveryPanel
+                status={recoveryStatus}
                 busy={state.busy}
-                onPasteTextChange={session.setPasteText}
-                onPrepare={() => void session.prepareImport()}
-                onCommit={() => void session.commitImport()}
-                onDiscard={() => void session.discardImport()}
-                official={official}
-                officialBridge={officialBridge}
-                snapshot={snapshot}
+                onReset={() => void session.recoveryReset()}
+                onRestoreSaved={() => void session.recoveryRestoreSaved()}
+                onRecoverJournal={() => void session.recoveryRecoverJournal()}
+                onRefresh={() => void session.refreshRecovery()}
               />
             ) : null}
-            {showImport && tab === 'overview' ? (
-              <UpgradeOverview
-                state={overview.state}
-                selectedId={overview.selectedId}
-                onSelect={overview.select}
-                onOpenDetail={openDetail}
-                onRetry={() => void overview.refresh()}
-              />
-            ) : null}
-            {showImport && tab === 'detail' ? (
-              detailRoute === null ? (
-                <p className="muted">先选择村庄查看详情</p>
-              ) : (
-                <OfficialVillageDetail
-                  state={detail.state}
-                  base={detailRoute.base}
-                  onBaseChange={onDetailBaseChange}
-                  onRetry={() => void detail.refresh()}
-                  official={official}
-                  officialBridge={officialBridge}
-                  snapshot={snapshot}
-                  villageId={detailRoute.villageId}
-                  quick={quick}
-                  canQuick={canQuick}
-                  canManual={canManual}
-                  manual={manual}
-                  onNavigateToImport={() => goToTab('import')}
-                />
-              )
-            ) : null}
-          </main>
-        </div>
-      )}
+
+            {showRecovery && tab !== 'info' ? null : (
+              <div className="main-pane">
+                {snapshot.availability === 'unavailable' ? (
+                  <p className="error-text" role="alert">
+                    应用当前不可用。{snapshot.villageError ?? ''}
+                  </p>
+                ) : null}
+                {readOnly && snapshot.availability === 'available' ? (
+                  <p className="notice-text" role="status">
+                    当前为只读模式，无法导入或修改村庄数据。
+                  </p>
+                ) : null}
+                {tab === 'info' ? (
+                  <InfoPanel
+                    route={activeRoute}
+                    diagnostics={diagnostics}
+                    tokenBridge={tokenBridge}
+                    onTokenChanged={() => void diagnostics?.refresh()}
+                    onNavigate={(section) => applyRoute({ kind: 'info', section })}
+                  />
+                ) : null}
+                {showImport && tab === 'import' ? (
+                  <OfficialImportPanel
+                    pasteText={state.pasteText}
+                    preview={state.preview}
+                    canWrite={snapshot.canWrite && snapshot.availability === 'available'}
+                    busy={state.busy}
+                    onPasteTextChange={session.setPasteText}
+                    onPrepare={() => void session.prepareImport()}
+                    onCommit={() => void session.commitImport()}
+                    onDiscard={() => void session.discardImport()}
+                    official={official}
+                    officialBridge={officialBridge}
+                    snapshot={snapshot}
+                  />
+                ) : null}
+                {showImport && tab === 'overview' ? (
+                  <UpgradeOverview
+                    state={overview.state}
+                    selectedId={overview.selectedId}
+                    onSelect={overview.select}
+                    onOpenDetail={openDetail}
+                    onRetry={() => void overview.refresh()}
+                  />
+                ) : null}
+                {showImport && tab === 'detail' ? (
+                  detailRoute === null ? (
+                    <p className="muted">先选择村庄查看详情</p>
+                  ) : (
+                    <OfficialVillageDetail
+                      state={detail.state}
+                      base={detailRoute.base}
+                      onBaseChange={onDetailBaseChange}
+                      onRetry={() => void detail.refresh()}
+                      official={official}
+                      officialBridge={officialBridge}
+                      snapshot={snapshot}
+                      villageId={detailRoute.villageId}
+                      quick={quick}
+                      canQuick={canQuick}
+                      canManual={canManual}
+                      manual={manual}
+                      onNavigateToImport={() => goToTab('import')}
+                    />
+                  )
+                ) : null}
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
+}
+
+function pageTitle(route: AppRoute): string {
+  switch (route.kind) {
+    case 'import':
+      return '账号与数据';
+    case 'overview':
+    case 'official':
+    case 'manual':
+      return '营地总览';
+    case 'villageDetail':
+      return '村庄档案';
+    case 'info':
+      return '设置与诊断';
+    default: {
+      const exhaustive: never = route;
+      throw new Error('未知路由：' + String(exhaustive));
+    }
+  }
 }
 
 function OfficialVillageHost(props: {
@@ -490,36 +567,62 @@ function TabNav(props: {
       {props.showDataTabs ? (
         <>
           <button
-            type="button"
-            aria-pressed={props.tab === 'import'}
-            onClick={() => props.onChange('import')}
-          >
-            导入
-          </button>
-          <button
+            className="nav-item"
             type="button"
             aria-pressed={props.tab === 'overview'}
             onClick={() => props.onChange('overview')}
           >
-            升级总览
+            <span className="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M3 19.5h18M5.5 16V10M10 16V5M14.5 16v-3M4 7l5-3 5 2 5-3" />
+              </svg>
+            </span>
+            <span>升级总览</span>
           </button>
           <button
+            className="nav-item"
+            type="button"
+            aria-pressed={props.tab === 'import'}
+            onClick={() => props.onChange('import')}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5M4.5 16.5v3h15v-3" />
+              </svg>
+            </span>
+            <span>导入</span>
+          </button>
+          <button
+            className="nav-item"
             type="button"
             aria-pressed={props.tab === 'detail'}
             disabled={props.detailDisabled}
             title={props.detailDisabled ? '先选择村庄' : undefined}
             onClick={() => props.onChange('detail')}
           >
-            村庄详情
+            <span className="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M3.5 20V9.5l4-2.5 4 2.5V20M11.5 20V5.5l4-2 5 2.5V20M2.5 20h19" />
+                <path d="M6 12h3M15 9h3M15 13h3" />
+              </svg>
+            </span>
+            <span>村庄详情</span>
           </button>
         </>
       ) : null}
       <button
+        className="nav-item"
         type="button"
         aria-pressed={props.tab === 'info'}
         onClick={() => props.onChange('info')}
       >
-        Info
+        <span className="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M12 10.5v5M12 7.5h.01" />
+          </svg>
+        </span>
+        <span>Info</span>
       </button>
     </nav>
   );

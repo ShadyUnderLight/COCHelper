@@ -284,11 +284,16 @@ function DetailHeader(props: {
 }) {
   return (
     <div className="detail-header">
-      <h2>
-        {props.villageName}
-        {props.villageTag !== null ? `（${props.villageTag}）` : ''}
-      </h2>
-      {props.version !== null ? <p className="muted">目录版本 {props.version}</p> : null}
+      <p className="section-eyebrow">
+        VILLAGE PROFILE <span>/</span> LEVEL TRACKER
+      </p>
+      <div className="detail-title-row">
+        <h2>
+          {props.villageName}
+          {props.villageTag !== null ? `（${props.villageTag}）` : ''}
+        </h2>
+        {props.version !== null ? <p className="muted">目录版本 {props.version}</p> : null}
+      </div>
       <div className="base-switch" role="group" aria-label="基地切换">
         {(['home', 'builder'] as const).map((b) => (
           <button

@@ -106,7 +106,7 @@ describe('AccountSnapshotImporter', () => {
     ).toBe(false);
   });
 
-  it('golden fixture 指纹与 wire 形状 parity', () => {
+  it('golden fixture wire 形状一致', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
       resolve(root, 'fixtures/golden/account_snapshot_golden.json'),

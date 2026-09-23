@@ -9,7 +9,7 @@ import { FakeClock } from './fake-clock';
 
 const GOLDEN_IMPORTED_AT_MS = refSecondsToUnixSeconds(807_529_133) * 1000;
 
-describe('account parser golden parity harness', () => {
+describe('account parser golden contract', () => {
   it('account_snapshot_golden 与 parser_golden_expected 一致', () => {
     const root = process.cwd();
     const goldenText = readFileSync(

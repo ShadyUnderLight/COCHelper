@@ -8,7 +8,6 @@ export default defineConfig({
       'packages/**/*.test.ts',
       'scripts/**/*.test.ts',
     ],
-    exclude: ['**/*.parity.test.ts'],
     environment: 'node',
   },
 });

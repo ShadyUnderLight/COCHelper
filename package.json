@@ -14,7 +14,6 @@
     "make": "pnpm --filter @coc-helper/desktop make",
     "release:prepare": "node scripts/release-prepare.mjs",
     "test": "vitest run",
-    "test:parity": "vitest run --config vitest.parity.config.ts",
     "test:fault-replay": "vitest run packages/testkit/src/fault.replay.test.ts packages/domain/src/persistence/atomic-write.test.ts packages/domain/src/persistence/transactions.test.ts",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
@@ -23,13 +22,10 @@
     "check:renderer-isolation": "node scripts/check-renderer-node-isolation.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:account-fixtures": "node scripts/check-account-fixture-sync.mjs",
-    "check:golden-fixtures": "node scripts/check-golden-fixture-sync.mjs",
     "smoke": "node scripts/electron-smoke.mjs",
     "test:e2e:packaged": "node scripts/electron-e2e.mjs",
     "perf:release": "node scripts/electron-perf.mjs",
-    "perf:gate": "node scripts/perf-gate.mjs",
-    "check:oracle-isolation": "node scripts/check-oracle-isolation.mjs",
-    "baseline:e1-02": "node scripts/e1-02-baseline.mjs"
+    "perf:gate": "node scripts/perf-gate.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",

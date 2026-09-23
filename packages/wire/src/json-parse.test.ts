@@ -23,7 +23,7 @@ type Fixture = {
   rejects: Reject[];
 };
 
-describe('raw JSON source golden（WA-1 parser parity）', () => {
+describe('raw JSON source golden（WA-1 parser contract）', () => {
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Fixture;
 
   it('NFC 等价键与 surrogate pair 对齐 CanonicalJSONValue.fromJSONData', () => {

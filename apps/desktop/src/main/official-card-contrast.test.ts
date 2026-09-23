@@ -7,7 +7,7 @@ const css = readFileSync(join(__dirname, '../renderer/styles.css'), 'utf8');
 
 function declaration(selector: string, property: string): string {
   const escaped = selector.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
-  const block = css.match(new RegExp(escaped + '\\s*\\{([^}]+)\\}'));
+  const block = css.match(new RegExp('(?:^|\\n)\\s*' + escaped + '\\s*\\{([^}]+)\\}'));
   if (block === null) {
     throw new Error('找不到选择器 ' + selector);
   }

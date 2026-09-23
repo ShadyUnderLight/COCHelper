@@ -13,10 +13,13 @@
 | 05 窄窗口横向阶梯滚动 | ☐ | ☐ |
 
 > 每份文档的「原始指标摘要」含 60s tick / 导入变化 / manual action / 分页加载独立行——
-> 这些触发源必须单独采样，不得与滚动混成一个数字（#209 要求，见 perf_scenarios.md「记录要求」）。
+> 这些触发源必须单独采样，不得与滚动混成一个数字（#209 要求）。本目录是 Swift
+> 时代历史证据；原引用的旧 `perf_scenarios.md` 与 `baseline_format.md` 已在 E6-01-C1
+> 退役，不再是可执行入口。
 
 ## 说明
-- 模板字段结构见 `Tools/perf/baseline_format.md`；场景操作见 `Tools/perf/perf_scenarios.md`；冷/热操作步骤已按采样拆分到各文档。
+- 当前 Electron 性能入口见 [Tools/perf/README.md](../../README.md)，使用
+  `pnpm perf:release` 与 `pnpm perf:gate`；本目录的旧模板和场景说明只作为历史上下文。
 - 采样完成后：每份文档回链 #196/#209；后续 #210/#211/#212 合并后用同一 fixture/窗口/场景复测，结果追加到本目录并保持前后对比。
 - 采样产物不得包含真实账号数据、token、cookie 或完整敏感 ID。
 

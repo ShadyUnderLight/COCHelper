@@ -57,10 +57,11 @@ pnpm check:renderer-isolation
 pnpm check:secrets
 ```
 
-### Swift 迁移期参考测试（非产品路线）
+### Swift 迁移期参考实现（非产品路线）
 
-Swift package 仅在 E6-01-C2 删除前保留普通 XCTest；它不再提供产品启动、Release
-打包、API smoke 或性能入口：
+Swift package 仅在 E6-01-C2 删除前保留普通 XCTest、`COCHelper` target，以及 Debug
+构建中的隐藏性能样本菜单；这些只用于迁移期行为/性能参考，不属于当前 Electron 产品或
+Release 验收路径。Swift 不再提供 Release 打包、API smoke 或活动 acceptance/perf gate：
 
 ```bash
 swift test --parallel --num-workers 1

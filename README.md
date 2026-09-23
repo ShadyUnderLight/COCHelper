@@ -174,8 +174,10 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   legacy 把全部英雄冗余写入两段）。
 - **capital 数据合同**：部落都城条目使用 `capital_buildings`/`capital_traps`/`capital_characters`/
   `capital_spells` section 和 `capitalBuildings`/`capitalTraps`/`capitalTroops`/`capitalSpells`
-  category，`base` 为 null + `capital_has_no_base`。**当前参考实现的 `TrackerCategory` 尚无这些
-  rawValue**（`from(section:)` 对 `capital_*` 返回 nil）——这是 Electron 迁移时的消费端扩展点。
+  category，`base` 为 null + `capital_has_no_base`。当前 TypeScript `TrackerCategory` 支持建筑、陷阱、兵种、
+  法术、攻城机器、英雄、装备、战宠和守卫，但不包含 `capital_*` 类别；因此这些目录条目仍可被校验和保留，
+  但 `trackerCategoryFromSection` 会返回未建模类别，投影层以 `category: null` 和 `unavailable` 表示，暂不纳入
+  当前村庄升级追踪。
 - **校验器**：`validate_game_catalog.py` 只做版本/结构/语义业务校验
   （E0-03/Issue #303 起不再重算 hash/size、不检查 manifest 登记）；
   `manifest.json` 精简为版本/构建元数据四字段

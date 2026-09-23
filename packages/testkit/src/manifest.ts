@@ -42,7 +42,7 @@ export type GoldenManifest = {
 };
 
 export function loadGoldenManifest(root = process.cwd()): GoldenManifest {
-  const manifestPath = resolve(root, 'Tests/Golden/manifest.json');
+  const manifestPath = resolve(root, 'fixtures/golden/manifest.json');
   return parseGoldenManifest(JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown);
 }
 

@@ -50,7 +50,7 @@ describe('snapshot history service', () => {
   it('loadOrMigrate 从村庄快照种子化 envelope', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -88,7 +88,7 @@ describe('snapshot history service', () => {
   it('已有 history entries 但 marker 缺失时 preserving upgrade，不从 villages 重建', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -143,7 +143,7 @@ describe('snapshot history service', () => {
   it('已有 history entries 且 marker 版本不兼容时拒绝覆盖', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -196,7 +196,7 @@ describe('snapshot history service', () => {
   it('两村交错导入 A→B→A 不互相污染 active lineage', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });

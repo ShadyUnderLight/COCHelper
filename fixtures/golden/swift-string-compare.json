@@ -1,0 +1,209 @@
+{
+  "description" : "Swift String < ground truth (Issue #267 / WA-2). Equality is canonical-equivalence; sort is stable.",
+  "inputKeys" : [
+    "Z",
+    "Å",
+    "ä",
+    "é",
+    "a",
+    "A",
+    "é",
+    "ä",
+    "Å",
+    "👨",
+    "👩",
+    "👨‍👩‍👧‍👦",
+    "ñ"
+  ],
+  "pairs" : [
+    {
+      "equal" : false,
+      "left" : "é",
+      "leftLessThanRight" : false,
+      "right" : "ä"
+    },
+    {
+      "equal" : false,
+      "left" : "ä",
+      "leftLessThanRight" : true,
+      "right" : "é"
+    },
+    {
+      "equal" : true,
+      "left" : "é",
+      "leftLessThanRight" : false,
+      "right" : "é"
+    },
+    {
+      "equal" : true,
+      "left" : "é",
+      "leftLessThanRight" : false,
+      "right" : "é"
+    },
+    {
+      "equal" : false,
+      "left" : "é",
+      "leftLessThanRight" : false,
+      "right" : "ä"
+    },
+    {
+      "equal" : false,
+      "left" : "ä",
+      "leftLessThanRight" : true,
+      "right" : "é"
+    },
+    {
+      "equal" : true,
+      "left" : "ä",
+      "leftLessThanRight" : false,
+      "right" : "ä"
+    },
+    {
+      "equal" : true,
+      "left" : "Å",
+      "leftLessThanRight" : false,
+      "right" : "Å"
+    },
+    {
+      "equal" : false,
+      "left" : "Å",
+      "leftLessThanRight" : false,
+      "right" : "Z"
+    },
+    {
+      "equal" : false,
+      "left" : "Z",
+      "leftLessThanRight" : true,
+      "right" : "Å"
+    },
+    {
+      "equal" : false,
+      "left" : "ö",
+      "leftLessThanRight" : false,
+      "right" : "z"
+    },
+    {
+      "equal" : false,
+      "left" : "z",
+      "leftLessThanRight" : true,
+      "right" : "ö"
+    },
+    {
+      "equal" : false,
+      "left" : "a",
+      "leftLessThanRight" : false,
+      "right" : "A"
+    },
+    {
+      "equal" : false,
+      "left" : "A",
+      "leftLessThanRight" : true,
+      "right" : "a"
+    },
+    {
+      "equal" : true,
+      "left" : "ñ",
+      "leftLessThanRight" : false,
+      "right" : "ñ"
+    },
+    {
+      "equal" : false,
+      "left" : "👨",
+      "leftLessThanRight" : true,
+      "right" : "👩"
+    },
+    {
+      "equal" : false,
+      "left" : "👨‍👩‍👧‍👦",
+      "leftLessThanRight" : false,
+      "right" : "👨"
+    },
+    {
+      "equal" : false,
+      "left" : "👨",
+      "leftLessThanRight" : true,
+      "right" : "👨‍👩‍👧‍👦"
+    },
+    {
+      "equal" : false,
+      "left" : "Å",
+      "leftLessThanRight" : false,
+      "right" : "A"
+    },
+    {
+      "equal" : false,
+      "left" : "A",
+      "leftLessThanRight" : true,
+      "right" : "Å"
+    },
+    {
+      "equal" : false,
+      "left" : "é",
+      "leftLessThanRight" : false,
+      "right" : "e"
+    },
+    {
+      "equal" : false,
+      "left" : "e",
+      "leftLessThanRight" : true,
+      "right" : "é"
+    },
+    {
+      "equal" : true,
+      "left" : "café",
+      "leftLessThanRight" : false,
+      "right" : "café"
+    },
+    {
+      "equal" : false,
+      "left" : "ß",
+      "leftLessThanRight" : false,
+      "right" : "ss"
+    },
+    {
+      "equal" : false,
+      "left" : "ﬁ",
+      "leftLessThanRight" : false,
+      "right" : "fi"
+    },
+    {
+      "equal" : false,
+      "left" : "a",
+      "leftLessThanRight" : true,
+      "right" : "ä"
+    },
+    {
+      "equal" : false,
+      "left" : "ä",
+      "leftLessThanRight" : false,
+      "right" : "a"
+    },
+    {
+      "equal" : false,
+      "left" : "Z",
+      "leftLessThanRight" : true,
+      "right" : "a"
+    },
+    {
+      "equal" : false,
+      "left" : "a",
+      "leftLessThanRight" : false,
+      "right" : "Z"
+    }
+  ],
+  "sortedKeys" : [
+    "A",
+    "Z",
+    "a",
+    "Å",
+    "Å",
+    "ä",
+    "ä",
+    "é",
+    "é",
+    "ñ",
+    "👨",
+    "👨‍👩‍👧‍👦",
+    "👩"
+  ]
+}

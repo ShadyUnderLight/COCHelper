@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { bytesToHex, canonicalBytes, canonicalize, parseJson } from './index';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/primitive-fuzz-corpus.json');
+const fixturePath = join(process.cwd(), 'fixtures/golden/primitive-fuzz-corpus.json');
 
 type ValidCase = {
   id: string;

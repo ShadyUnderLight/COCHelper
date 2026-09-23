@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function collectFixtureFiles(directory) {
+export function collectFixtureFiles(directory, options = {}) {
+  const ignore = options.ignore ?? (() => false);
   const files = [];
 
   function visit(current, relativeDirectory) {
@@ -14,7 +15,9 @@ export function collectFixtureFiles(directory) {
       if (entry.isDirectory()) {
         visit(absolutePath, relativePath);
       } else if (entry.isFile()) {
-        files.push(relativePath);
+        if (!ignore(relativePath)) {
+          files.push(relativePath);
+        }
       } else {
         throw new Error(`fixture 目录包含不支持的文件类型：${absolutePath}`);
       }
@@ -25,9 +28,9 @@ export function collectFixtureFiles(directory) {
   return files.sort();
 }
 
-export function checkFixtureSync(electronDirectory, swiftDirectory) {
-  const electronFiles = collectFixtureFiles(electronDirectory);
-  const swiftFiles = collectFixtureFiles(swiftDirectory);
+export function checkFixtureSync(electronDirectory, swiftDirectory, options = {}) {
+  const electronFiles = collectFixtureFiles(electronDirectory, options);
+  const swiftFiles = collectFixtureFiles(swiftDirectory, options);
   const electronSet = new Set(electronFiles);
   const swiftSet = new Set(swiftFiles);
   const missingInElectron = swiftFiles.filter((file) => !electronSet.has(file));
@@ -43,8 +46,8 @@ export function checkFixtureSync(electronDirectory, swiftDirectory) {
   return { missingInElectron, missingInSwift, mismatched };
 }
 
-export function assertFixtureSync(electronDirectory, swiftDirectory) {
-  const result = checkFixtureSync(electronDirectory, swiftDirectory);
+export function assertFixtureSync(electronDirectory, swiftDirectory, options = {}) {
+  const result = checkFixtureSync(electronDirectory, swiftDirectory, options);
   if (
     result.missingInElectron.length > 0 ||
     result.missingInSwift.length > 0 ||

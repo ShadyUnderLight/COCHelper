@@ -10,7 +10,7 @@ import {
   swiftStringLessThan,
 } from './json-value';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/swift-string-compare.json');
+const fixturePath = join(process.cwd(), 'fixtures/golden/swift-string-compare.json');
 
 type Pair = {
   left: string;

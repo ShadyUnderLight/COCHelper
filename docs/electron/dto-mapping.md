@@ -61,7 +61,7 @@
 | Swift 类型 | 新 wire DTO | 备注 |
 |---|---|---|
 | VillageStore 裸数组 `[VillageProfile]` | `VillageStoreFileV1`（数组 + 未来版本顶层声明识别） | §BE-1.1 四态矩阵 |
-| `EffectiveVillageProjection` / `UpgradeOverviewProjection` / detail flat rows | domain 层投影类型 | 投影级 golden 由 E2-* 追加到 Tests/Golden |
+| `EffectiveVillageProjection` / `UpgradeOverviewProjection` / detail flat rows | domain 层投影类型 | 投影级 golden 由 E2-* 追加到 `fixtures/golden/` |
 | 投影 stableID | `StableId` 字符串拼接规则冻结 | 例：epoch 秒内嵌 §WA-4 |
 
 ## M-7 事务 journal

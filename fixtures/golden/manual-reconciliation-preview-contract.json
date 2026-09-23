@@ -1,0 +1,16 @@
+{
+  "description": "Manual reconciliation preview oracle parity case registry（#272 / #268）。请求体由 owner 测试构造；本 fixture 冻结必须覆盖的 caseId，防止漏登记。",
+  "contractVersion": 1,
+  "cases": [
+    {
+      "id": "new-observation-empty-state",
+      "category": "projection",
+      "summary": "空状态下新 observation → preview 产出"
+    },
+    {
+      "id": "exact-match-observed-state",
+      "category": "projection",
+      "summary": "observation 与已有 imported 精确匹配"
+    }
+  ]
+}

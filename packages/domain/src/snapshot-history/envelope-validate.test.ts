@@ -27,7 +27,7 @@ describe('snapshot history envelope validate', () => {
   it('合法 golden entry 通过 envelope 校验', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -71,7 +71,7 @@ describe('snapshot history envelope validate', () => {
   it('篡改 observation 与 rawJSON 不一致时被拒绝', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -105,7 +105,7 @@ describe('snapshot history envelope validate', () => {
   it('篡改 lineage normalizedPlayerTag 被拒绝', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -144,7 +144,7 @@ describe('snapshot history envelope validate', () => {
   it('load 路径允许 legacy unmigrated persisted history，save 路径仍拒绝', () => {
     const root = resolve(process.cwd());
     const goldenText = readFileSync(
-      resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+      resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });
@@ -310,7 +310,7 @@ describe('snapshot history envelope validate', () => {
 function buildGoldenEntry() {
   const root = resolve(process.cwd());
   const goldenText = readFileSync(
-    resolve(root, 'Tests/Golden/Fixtures/account_snapshot_golden.json'),
+    resolve(root, 'fixtures/golden/account_snapshot_golden.json'),
     'utf8',
   );
   const parsed = parseAccountSnapshot(goldenText, { clock: new GoldenClock() });

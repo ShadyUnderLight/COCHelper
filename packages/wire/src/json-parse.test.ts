@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { bytesToHex, canonicalBytes, canonicalize, parseJson } from './index';
 
-const fixturePath = join(process.cwd(), 'Tests/Golden/Fixtures/json-raw-samples.json');
+const fixturePath = join(process.cwd(), 'fixtures/golden/json-raw-samples.json');
 
 type Sample = {
   id: string;

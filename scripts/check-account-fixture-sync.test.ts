@@ -60,4 +60,27 @@ describe('account fixture sync gate', () => {
       /Electron\/Swift account fixture 不一致/,
     );
   });
+
+  it('支持显式排除迁移期 manifest', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'coc-account-fixture-sync-'));
+    roots.push(root);
+    const electron = path.join(root, 'electron');
+    const swift = path.join(root, 'swift');
+    mkdirSync(electron, { recursive: true });
+    mkdirSync(swift, { recursive: true });
+    writeFileSync(path.join(electron, 'fixture.json'), '{}');
+    writeFileSync(path.join(swift, 'fixture.json'), '{}');
+    writeFileSync(path.join(electron, 'manifest.json'), '{"root":"electron"}');
+    writeFileSync(path.join(swift, 'manifest.json'), '{"root":"swift"}');
+
+    expect(
+      assertFixtureSync(electron, swift, {
+        ignore: (relativePath: string) => relativePath === 'manifest.json',
+      }),
+    ).toEqual({
+      missingInElectron: [],
+      missingInSwift: [],
+      mismatched: [],
+    });
+  });
 });

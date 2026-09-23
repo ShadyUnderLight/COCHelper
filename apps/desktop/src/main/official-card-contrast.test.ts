@@ -6,17 +6,18 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(join(__dirname, '../renderer/styles.css'), 'utf8');
 
 function declaration(selector: string, property: string): string {
-  const block = Array.from(css.matchAll(new RegExp('([^{}]+)\\{([^{}]+)\\}', 'g'))).find((match) =>
-    match[1]?.split(',').some((candidate) => candidate.trim() === selector),
-  );
-  if (block?.[2] === undefined) {
-    throw new Error('找不到选择器 ' + selector);
+  const blocks = Array.from(css.matchAll(new RegExp('([^{}]+)\\{([^{}]+)\\}', 'g')));
+  for (const block of blocks) {
+    const selectors = block[1]?.split(',').map((candidate) => candidate.trim());
+    if (!selectors?.includes(selector) || block[2] === undefined) {
+      continue;
+    }
+    const match = block[2].match(new RegExp(property + '\\s*:\\s*([^;]+)'));
+    if (match?.[1] !== undefined) {
+      return match[1].trim();
+    }
   }
-  const match = block[2].match(new RegExp(property + '\\s*:\\s*([^;]+)'));
-  if (match?.[1] === undefined) {
-    throw new Error('找不到 ' + selector + ' 的 ' + property);
-  }
-  return match[1].trim();
+  throw new Error('找不到 ' + selector + ' 的 ' + property);
 }
 
 function colorStops(selector: string, property: string): readonly string[] {

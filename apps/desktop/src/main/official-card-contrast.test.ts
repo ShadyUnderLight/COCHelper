@@ -6,16 +6,24 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(join(__dirname, '../renderer/styles.css'), 'utf8');
 
 function declaration(selector: string, property: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const block = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
+  const escaped = selector.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+  const block = css.match(new RegExp(escaped + '\\s*\\{([^}]+)\\}'));
   if (block === null) {
-    throw new Error(`找不到选择器 ${selector}`);
+    throw new Error('找不到选择器 ' + selector);
   }
-  const match = block[1]?.match(new RegExp(`${property}\\s*:\\s*(#[0-9a-fA-F]{6})`));
+  const match = block[1]?.match(new RegExp(property + '\\s*:\\s*([^;]+)'));
   if (match?.[1] === undefined) {
-    throw new Error(`找不到 ${selector} 的 ${property}`);
+    throw new Error('找不到 ' + selector + ' 的 ' + property);
   }
-  return match[1];
+  return match[1].trim();
+}
+
+function colorStops(selector: string, property: string): readonly string[] {
+  const stops = declaration(selector, property).match(/#[0-9a-fA-F]{6}/g);
+  if (stops === null || stops.length === 0) {
+    throw new Error('找不到 ' + selector + ' 的 ' + property + ' 色值');
+  }
+  return stops;
 }
 
 function linearChannel(value: number): number {
@@ -39,8 +47,9 @@ function contrastRatio(foreground: string, background: string): number {
 }
 
 describe('Official 卡片对比度（#277）', () => {
-  it('Official 卡上的状态色至少 4.5:1', () => {
-    const background = declaration('.official-card', 'background');
+  it('Official 卡上的状态色在渐变每个色阶至少 4.5:1', () => {
+    const backgrounds = colorStops('.official-card', 'background');
+    expect(backgrounds.length).toBeGreaterThan(1);
     const pairs: ReadonlyArray<readonly [string, string]> = [
       ['.official-source', 'color'],
       ['.official-card .error-text', 'color'],
@@ -49,9 +58,13 @@ describe('Official 卡片对比度（#277）', () => {
       ['.official-ok', 'color'],
     ];
     for (const [selector, property] of pairs) {
-      expect(contrastRatio(declaration(selector, property), background)).toBeGreaterThanOrEqual(
-        4.5,
-      );
+      const foreground = declaration(selector, property);
+      for (const background of backgrounds) {
+        expect(
+          contrastRatio(foreground, background),
+          selector + ' contrast on ' + background,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 });

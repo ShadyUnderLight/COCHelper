@@ -182,6 +182,10 @@ export function AppShell({
   };
 
   const refreshCurrentPage = (): void => {
+    if (showRecovery) {
+      void session.refreshRecovery();
+      return;
+    }
     void session.refresh();
     if (tab === 'overview') {
       void overview.refresh();
@@ -250,7 +254,7 @@ export function AppShell({
                 onClick={refreshCurrentPage}
               >
                 <span aria-hidden="true">↻</span>
-                刷新数据
+                {showRecovery ? '刷新状态' : '刷新数据'}
               </button>
               <button
                 type="button"

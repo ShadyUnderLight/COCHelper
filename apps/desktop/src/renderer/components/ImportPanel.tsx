@@ -77,7 +77,7 @@ export function ImportPanel({
                 disabled={!canWrite || busy || pasteText.trim().length === 0}
                 onClick={onPrepare}
               >
-                解析并预览
+                解析预览
               </button>
               <span className="editor-hint">确认前不会应用本次导入</span>
             </div>

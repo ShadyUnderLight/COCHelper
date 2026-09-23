@@ -48,7 +48,9 @@ export function UpgradeOverview({
               !
             </span>
             <h2>营地数据暂时不可用</h2>
-            <p className="muted">{lastError ?? '升级总览加载失败'}</p>
+            <p className="muted" role="alert">
+              {lastError ?? '升级总览加载失败'}
+            </p>
             <button type="button" className="primary-action" onClick={onRetry}>
               重试
             </button>

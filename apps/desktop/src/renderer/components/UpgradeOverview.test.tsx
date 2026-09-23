@@ -58,7 +58,7 @@ function stateShape(
 describe('UpgradeOverview', () => {
   it('loading 显示加载文案', () => {
     render(<UpgradeOverview {...propsOf({ status: 'loading', payload: null, lastError: null })} />);
-    expect(screen.getByText('正在加载升级总览…')).toBeTruthy();
+    expect(screen.getByText('正在整理营地数据…')).toBeTruthy();
     expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('loading');
   });
 
@@ -179,7 +179,7 @@ describe('UpgradeOverview', () => {
     expect(onOpenDetail).toHaveBeenCalledWith('rec-open', 'vB');
   });
 
-  it('有图标时行内渲染 28px 图标且 src 正确（#277-C2）', () => {
+  it('有图标时行内渲染 36px 图标且 src 正确（#277-C2）', () => {
     const rec = recordFixture({
       id: 'r-icon',
       item: {
@@ -197,8 +197,8 @@ describe('UpgradeOverview', () => {
     );
     const img = container.querySelector('img.overview-item-icon') as HTMLImageElement | null;
     expect(img?.getAttribute('src')).toBe('cochelper://catalog/18.400.13/icons/ui/icon_x.png');
-    expect(img?.getAttribute('width')).toBe('28');
-    expect(img?.getAttribute('height')).toBe('28');
+    expect(img?.getAttribute('width')).toBe('36');
+    expect(img?.getAttribute('height')).toBe('36');
   });
 
   it('图标全空时显示分类 glyph 而非消失（#277-C2 review）', () => {

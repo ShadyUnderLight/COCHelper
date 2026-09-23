@@ -627,7 +627,7 @@ button.danger {
 
 .muted {
   margin: 0.25rem 0;
-  color: var(--ink-soft);
+  color: #6b6148;
   font-size: 11px;
   line-height: 1.5;
 }
@@ -640,7 +640,7 @@ button.danger {
 
 .notice-text {
   margin: 0.25rem 0;
-  color: #82652a;
+  color: #70531b;
   font-size: 11px;
 }
 
@@ -1566,7 +1566,7 @@ button.danger {
 }
 
 .official-source {
-  color: #8c7237;
+  color: #6f5728;
   font-size: 9px;
   font-weight: 800;
 }
@@ -1577,7 +1577,7 @@ button.danger {
 
 .official-ok {
   margin: 0.25rem 0;
-  color: #527643;
+  color: #456033;
   font-size: 10px;
 }
 
@@ -1595,7 +1595,7 @@ button.danger {
 }
 
 .official-metric dt {
-  color: #897b5e;
+  color: #6b6148;
   font-size: 9px;
 }
 
@@ -1627,7 +1627,7 @@ button.danger {
 }
 
 .official-details > summary {
-  color: #80652c;
+  color: #6f5728;
   cursor: pointer;
   font-size: 10px;
 }
@@ -1639,7 +1639,7 @@ button.danger {
 
 .official-detail-subrow {
   margin-left: 1rem;
-  color: #827658;
+  color: #6b6148;
 }
 
 .detail-panel {

@@ -6,7 +6,7 @@
 > 标注 🗑️ E0-03 的条目为 Issue #302 已撤销的 hash 防御契约：新实现不得要求它们，
 > 旧出处仅作删除审计保留（删除执行归属 #303/#304/#305）。
 >
-> 引用格式：§WA-x.y。TypeScript golden fixtures 见 `fixtures/golden/`（附录 A）；迁移期 Swift oracle 快照保留在 `Tests/Golden/Fixtures/`。
+> 引用格式：§WA-x.y。TypeScript golden fixtures 见 `fixtures/golden/`（附录 A）。
 
 ## WA-1 JSON 值模型
 
@@ -100,7 +100,7 @@ coverage 层对「缺失」有专门分级：section 缺失 → `.missing/.unava
 | F4 | ManualUpgradeCore 内容指纹 `{itemStates, records}`（JSONEncoder + .sortedKeys） | manual baseline 只保留 `revision + lineageID`；revision 由 snapshot ID/duplicate revision 表达，不再编码内容摘要 | #304 |
 | C1 | Catalog `sourceFingerprint`（APK hash，运行时只验格式）+ `generatedFiles`（整体删除，不止其中的 sha256/size）+ `counts` + manifest 信任门（含文件存在性、manifest 登记防御） | 全部删除；manifest 只保留四字段版本/构建元数据（见 §WA-9.1 新形状，与 #303 第 31 行一致）；asset 侧保留 renderedPath null/missingReason 业务语义与正常路径解析 | #303 |
 | C2 | coverage section `inputBinding` SHA-256 绑定、bundled perf fixture 内容 hash allowlist | 删除。保留 coverage 业务完整性状态（presence/completeness 四态）与 adapter 语义；fixture provenance 改由 §WA-3.2 registry 承担（loader 签发 fixtureID + bundle-owned 期望记录，rawJSON 自报不再授权） | #304 |
-| T1 | golden manifest `fixtureSha256`、oracle `inputFingerprint`/`outputFingerprint`、testkit 报告输入/输出 hash 与字符串摘要 hash | 保留 `caseId`、operation、canonical bytes/hex 与差异分类（fixture/wire/parser/projection/error/ordering/time）；字符串差异摘要改用 bounded length/type/path；fixture 串线防护改由 manifest 登记一一对应 + owner 测试归属承担（见 testkit-protocol-v1.md） | #305 |
+| T1 | golden manifest `fixtureSha256`、历史 oracle `inputFingerprint`/`outputFingerprint`、testkit 报告输入/输出 hash 与字符串摘要 hash | 保留 manifest 登记、canonical bytes/hex 与 owner 测试归属；不在运行时或测试链路新增 digest 防御 | #305 |
 | R1 | reconciliation `candidateFingerprint` / `previousSnapshotFingerprint`、lineage `lastFingerprint`、manual baseline fingerprint、display binding `catalogFingerprint` | stale preview 依赖 villageID + previousSnapshotID + lineage + manualStateUpdatedAt + §BE-5.4 `ReconciliationCandidateMaterial` 直接比较；lineage 校验经 `lastEntryID` + village/lineage/tag/time 关系；display binding 保留 catalogVersion/displayName/category | #304 |
 
 ### WA-3.1 ObservationIdentityMaterial（非 hash 内容身份材料，新契约）
@@ -254,8 +254,7 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 | SeasonalPhaseTable.schemaVersion | ==1 | 非 1/缺文件 → 空表不报错（增强数据） | GameCatalog.swift:321-324, 412-415 |
 | OfficialStateStore ×4 | 无版本 | fail-open 组（§BE-1.4） | OfficialStateStore.swift:17-63 |
 | TrackedClanStore | 无版本 | fail-open 组；演进红线：新字段必须默认值/decodeIfPresent，否则容错机制把 schema 错误变成整库静默丢失（注释原文即红线） | TrackedClanStore.swift:36-53 |
-| Golden manifest（fixtures/golden/manifest.json） | protocolVersion=2；🗑️ `fixtureSha256` 字段删除 | 登记与 `fixtures/golden/` 一一对应 + case id/operation/owner 校验承担串线防护（见 testkit-protocol-v1.md）；旧 protocolVersion=1 manifest 不再被新 testkit 接受；Swift oracle 迁移期快照仍保留在 `Tests/Golden/` | 决策 Issue #302，执行 #305 |
-| Golden oracle 请求/响应协议 | protocolVersion=2；🗑️ `inputFingerprint` / `outputFingerprint` 字段删除 | 旧 v1 响应直接视为不支持，不加 v1 fallback；关联靠 caseId，结果靠 canonicalHex/业务字段/差异 path 比较 | 决策 Issue #302，执行 #305 |
+| Golden manifest（fixtures/golden/manifest.json） | protocolVersion=2；🗑️ `fixtureSha256` 字段删除 | 登记与 `fixtures/golden/` 一一对应 + case id/operation/owner 校验承担串线防护；manifest 只服务 TypeScript contract tests | 决策 Issue #302，执行 #305 |
 
 ### WA-7.1 E0-03 数据与兼容策略（硬切换）
 
@@ -269,7 +268,7 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
   重新导入/重建。若产品要保留旧数据并迁移，另开一次性 importer Issue（importer 不得
   进入正常运行路径）。
 - Catalog 旧 manifest（schemaVersion 1/2）需经生成器管线重新生成（#303）；Snapshot
-  History / Manual 旧文件需用户重新导入/重建（#304）；parity fixtures 按新协议重新
+  History / Manual 旧文件需用户重新导入/重建（#304）；golden fixtures 按新协议重新
   生成（#305）。
 - 历史 perf 报告和已完成 Issue 的原始审计文字不在本 Issue 中重写；活动契约文档
   （本目录）必须同步到新 shape——即本节与 §WA-3/§WA-9 的修订。
@@ -412,18 +411,15 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 
 | fixture | 冻结内容 | 消费测试 |
 |---|---|---|
-| canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | GoldenContractTests/CanonicalJSONGoldenTests |
-| json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、`__proto__` 键保留、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | GoldenContractTests/JsonRawSourceGoldenTests |
-| nsnumber-stringvalue.json | §WA-1.2 `JSONSerialization` → `NSNumber.stringValue`：整数 / NSDecimalNumber / Darwin `%.16g` 三条路径 | GoldenContractTests/NSNumberStringValueGoldenTests |
+| canonical-json-samples.json + canonical-json-expected.json | §WA-2 转义/排序/数字 token 的正例+边界例（solidus、控制字符、CJK、emoji、0x7F、U+2028/2029、大数、重复数组元素）+ 期望 canonical bytes hex | `packages/wire/src/canonical-json.test.ts` |
+| json-raw-samples.json | §WA-1 原始 JSON 源文本：同一 object 内 NFC 等价重复键、`__proto__` 键保留、孤立 surrogate 拒绝；source 为 JSON 字符串以免 fixture 加载时提前 collapse | `packages/wire/src/json-parse.test.ts` |
+| nsnumber-stringvalue.json | §WA-1.2 `JSONSerialization` → `NSNumber.stringValue`：整数 / NSDecimalNumber / Darwin `%.16g` 三条路径 | `packages/wire/src/json-number.test.ts` |
 | primitive-fuzz-corpus.json | 共享 parser 边界 corpus：深层 JSON、长整数、`__proto__`、非法逗号/前导零、孤立 surrogate、非有限数字 | packages/wire/src/parser-fuzz.test.ts |
-| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。🗑️ E0-03：删除 F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码（#305 重新生成，只保留业务结果和 encoded wire bytes/hex）。保留：**AccountSnapshot 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序；AccountSnapshot 持久化形状未变）**。🗑️ E0-03：History entry 的 encoded bytes 改为**新 entry shape（envelope=2/entry=2）**，由 #305 重生成；旧 `HistoryEntryV1` bytes 随旧 shape 废弃，不再冻结。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | GoldenContractTests/ParserGoldenTests；manifest `parser/*` |
-| manual-queue-capacity-contract.json | §BE-5.3 队列容量 start gate / occupancy 投影契约；startGateCases + occupancyCases | packages/testkit/src/manual-queue-capacity.parity.test.ts；manifest `projection/manual-queue-capacity` |
-| snapshot-history-diff-contract.json | §BE-3 diff 引擎三类冻结场景：level increased / B→A comparable no change / partial coverage 不产删除；每个 case 含静态 `expected`（`comparisonState` / `changeCount` / `encodedJSONHex` / `canonicalHex`；🗑️ E0-03：删除 `outputFingerprint`，#305 同步重生成） | packages/testkit/src/snapshot-history.parity.test.ts；manifest `diff/snapshot-history-contract` |
+| account_snapshot_golden.json + parser_golden_expected.json | 匿名 legacy 导出文本 → §WA-6c 解析。🗑️ E0-03：删除 F3 contentFingerprint / F1 canonicalFingerprint / F2 integrityFingerprint 三重硬编码（#305 重新生成，只保留业务结果和 encoded wire bytes/hex）。保留：**AccountSnapshot 的 JSONEncoder(.sortedKeys) encoded bytes hex（wire shape：Date 编码策略、optional omission、键序；AccountSnapshot 持久化形状未变）**。🗑️ E0-03：History entry 的 encoded bytes 改为**新 entry shape（envelope=2/entry=2）**，由 #305 重生成；旧 `HistoryEntryV1` bytes 随旧 shape 废弃，不再冻结。⚠️ AccountSnapshot wire 含 `diagnostics[].id`（每次解析随机生成的 UUID），golden 中该槽位掩码为 `<RANDOM_DIAGNOSTIC_UUID>`——TS 必须把它当作不透明随机值，其余字节逐字节复刻 | `packages/testkit/src/account-parser.golden.test.ts` / domain golden tests |
 | error-scenarios-contract.json | §ER-1…§ER-4：HTTP→CoAPIError、failureKind 十值、sourceLabel、refreshStatus 七态、refreshState 三保留；每个 refreshState case 含静态 outcome `canonicalHex` | packages/testkit/src/error-scenarios.contract.test.ts；manifest `error/error-scenarios-contract` |
-| manual-reconciliation-preview-contract.json | §BE-5 reconciliation preview oracle 必覆盖 caseId | packages/testkit/src/manual-reconciliation.parity.test.ts；manifest `projection/manual-reconciliation-preview` |
 | catalog-contract.json | #270 Catalog TS 归属登记（fixture-registry） | packages/testkit/src/catalog.contract.test.ts；manifest `projection/catalog-contract` |
-| village-projection-contract.json | #271 Village projection TS 归属；village Swift oracle deferred | packages/testkit/src/village-projection.contract.test.ts；manifest `projection/village-projection-contract` |
+| village-projection-contract.json | #271 Village projection TS 归属，deferred disposition 仍显式记录 | `packages/testkit/src/village-projection.contract.test.ts`；manifest `projection/village-projection-contract` |
 | storage-fault-contract.json | #275 storage write fault / replay 归属 | packages/testkit/src/storage-fault.contract.test.ts；manifest `error/storage-fault-contract` |
 | official_war_log_page.json 等 | 复用 `fixtures/account/` 既有匿名分页/官方快照 fixtures，映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | Electron domain/testkit fixture tests |
 
-全量 TypeScript fixture 登记见 `fixtures/golden/manifest.json`（含 error 场景）；Swift oracle 迁移期登记快照仍在 `Tests/Golden/manifest.json`。
+全量 TypeScript fixture 登记见 `fixtures/golden/manifest.json`（含 error 场景）。

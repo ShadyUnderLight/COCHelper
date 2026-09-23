@@ -155,7 +155,6 @@ function main() {
       'test',
       'check:renderer-isolation',
       'check:secrets',
-      'check:oracle-isolation',
     ]) {
       runStep(root, environment, `pnpm ${command}`, [command]);
       commands.push(`pnpm ${command}`);

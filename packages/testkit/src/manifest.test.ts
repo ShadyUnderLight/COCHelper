@@ -44,7 +44,6 @@ describe('golden manifest', () => {
             category: 'wire',
             operation: 'canonical-json',
             fixture: 'fixtures/golden/json-raw-samples.json',
-            swiftOwner: 'test',
             typescriptOwner: 'test',
           },
         ],

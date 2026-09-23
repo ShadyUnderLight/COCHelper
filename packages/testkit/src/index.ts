@@ -10,37 +10,13 @@ export {
 } from './fake-co-api-server';
 export type { FakeCoAPIHandler, FakeCoAPIResponse, FakeCoAPIServer } from './fake-co-api-server';
 export {
-  assertParity,
-  compareCanonicalParity,
-  firstDifference,
-  ParityMismatchError,
-} from './compare';
-export type { CanonicalOutcome, ParityDifference, ParityReport } from './compare';
-export {
   fixturePath,
   loadGoldenManifest,
   parseGoldenManifest,
   readGoldenFixture,
-  PARITY_CATEGORIES,
+  CONTRACT_CATEGORIES,
 } from './manifest';
-export type { GoldenCase, GoldenManifest, ParityCategory } from './manifest';
-export {
-  createSwiftOracleRunner,
-  parseSwiftOracleResponse,
-  runSwiftOracle,
-  SWIFT_ORACLE_PROTOCOL_VERSION,
-} from './oracle';
-export type {
-  OracleCommand,
-  OracleProcessExecutor,
-  OracleProcessResult,
-  SwiftOracleFailure,
-  SwiftOracleRequest,
-  SwiftOracleResponse,
-  SwiftOracleRunner,
-  SwiftOracleRunnerOptions,
-  SwiftOracleSuccess,
-} from './oracle';
+export type { ContractCategory, GoldenCase, GoldenManifest } from './manifest';
 export { runSeededProperty } from './property';
 export type { SeededProperty, SeededPropertyOptions } from './property';
 export {

@@ -13,8 +13,6 @@ let package = Package(
         .executable(name: "smoke-api", targets: ["smoke-api"]),
         .executable(name: "acceptance-runner", targets: ["acceptance-runner"]),
         .executable(name: "history-memory-seed", targets: ["history-memory-seed"]),
-        // Issue #268：迁移期 Swift oracle；不参与 Electron app bundle。
-        .executable(name: "golden-oracle", targets: ["golden-oracle"])
     ],
     targets: [
         .target(
@@ -62,12 +60,6 @@ let package = Package(
             dependencies: ["COCHelperCore", "COCHelperApp"],
             path: "Tools/perf/history-memory-seed"
         ),
-        .executableTarget(
-            // 只暴露纯 COCHelperCore 计算，避免 oracle 带入 AppModel、Keychain 或网络。
-            name: "golden-oracle",
-            dependencies: ["COCHelperCore"],
-            path: "Tools/golden-oracle"
-        ),
         .testTarget(
             name: "COCHelperCoreTests",
             dependencies: ["COCHelperCore", "COCHelperApp"],
@@ -81,16 +73,5 @@ let package = Package(
             dependencies: ["COCHelperCore"],
             path: "Tests/COCHelperCorePublicAPITests"
         ),
-        .testTarget(
-            // Issue #265 E0-02：golden 契约冻结。fixtures 冻结 canonical bytes、
-            // parser 指纹与 encoded-byte 期望值，作为 Electron 重写的验收基线。
-            name: "GoldenContractTests",
-            dependencies: ["COCHelperCore"],
-            path: "Tests/Golden",
-            resources: [
-                .process("Fixtures"),
-                .copy("manifest.json")
-            ]
-        )
     ]
 )

@@ -2,7 +2,7 @@
 
 一个面向《部落冲突》（Clash of Clans）的本地数据与升级追踪桌面应用。项目当前以**纯 Electron + TypeScript**为产品主线，目标是把账号快照、升级进度、部落数据与官方 API 数据统一到桌面应用中。
 
-> 状态说明：Electron 重写正在进行。仓库中的 Swift/SwiftUI 代码仅作为迁移期行为参考和 golden oracle，不再是产品开发或发布路线；最终发布包不包含 Swift runtime、Swift helper、native addon 或 Swift fallback。
+> 状态说明：Electron 重写正在进行。仓库中的 Swift/SwiftUI 代码仅作为迁移期行为参考，不再是产品开发或发布路线；最终发布包不包含 Swift runtime、Swift helper、native addon 或 Swift fallback。
 
 ## 当前状态与能力基线
 
@@ -59,7 +59,7 @@ pnpm check:secrets
 
 ### Swift 迁移期参考实现（非产品路线）
 
-Swift 代码仅用于行为对照、golden parity 和迁移期诊断，不新增产品功能，也不作为 Electron 发布包的运行依赖：
+Swift 代码仅用于迁移期行为诊断，不新增产品功能，也不作为 Electron 发布包的运行依赖：
 
 ```bash
 swift test
@@ -98,7 +98,7 @@ open .build/COCHelper.app
 ## Tools：APK 静态升级目录（迁移期工具，issue #13）
 
 `Tools/game_catalog/` 从 APK 生成版本化的静态升级目录（`catalog.json` + `manifest.json` + 空 `icons/`），
-当前落库于 Electron 生产资源根 `apps/desktop/resources/GameCatalog/<版本>/`；迁移期 Swift oracle 通过仓库内资源链接读取同一份目录，Swift 切换完成后随 oracle 一并移除。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
+当前落库于 Electron 生产资源根 `apps/desktop/resources/GameCatalog/<版本>/`；Swift 参考实现不再参与 Electron 测试或生产资源读取。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
 
 生成（输出目录必须为空，非空报错不自动清理）。**两步生成链**：主目录生成后必须再跑
 精制台目录生成器——它幂等登记 `craft_table_catalog.json` 到 manifest（缺失登记时

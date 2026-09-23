@@ -1,5 +1,5 @@
 {
-  "description": "E0-02 error-matrix §ER-1…§ER-4 静态 expected（#265 关闭门）。outcome.canonicalHex 冻结语义字段的 canonical JSON bytes；不经 Swift oracle 驱动。",
+  "description": "E0-02 error-matrix §ER-1…§ER-4 静态 expected（#265 关闭门）。outcome.canonicalHex 冻结语义字段的 canonical JSON bytes。",
   "contractVersion": 1,
   "httpMappingCases": [
     {

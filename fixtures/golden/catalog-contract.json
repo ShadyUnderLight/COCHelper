@@ -1,5 +1,5 @@
 {
-  "description": "Catalog 领域 TS 测试归属登记（#270 / #268）。fixture-registry：不经 Swift oracle；语义覆盖由 expectedOwner 承担。",
+  "description": "Catalog 领域 TS 测试归属登记（#270）。fixture-registry：语义覆盖由 expectedOwner 承担。",
   "contractVersion": 1,
   "issue": 270,
   "cases": [

@@ -1,5 +1,5 @@
 {
-  "description": "Village projection 领域 TS 测试归属登记（#271 / #268）。fixture-registry：当前不经 Swift oracle。",
+  "description": "Village projection 领域 TS 测试归属登记（#271）。fixture-registry：deferred disposition 显式记录。",
   "contractVersion": 1,
   "issue": 271,
   "cases": [

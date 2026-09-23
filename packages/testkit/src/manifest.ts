@@ -1,11 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
-import type { SwiftOracleOperation } from './oracle';
+export type GoldenFixtureOperation = 'canonical-json' | 'fixture-registry';
 
-export type GoldenFixtureOperation = SwiftOracleOperation | 'fixture-registry';
-
-export const PARITY_CATEGORIES = [
+export const CONTRACT_CATEGORIES = [
   'fixture',
   'wire',
   'parser',
@@ -15,23 +13,18 @@ export const PARITY_CATEGORIES = [
   'time',
 ] as const;
 
-export type ParityCategory = (typeof PARITY_CATEGORIES)[number];
+export type ContractCategory = (typeof CONTRACT_CATEGORIES)[number];
 
 const GOLDEN_FIXTURE_OPERATIONS = [
   'canonical-json',
   'fixture-registry',
-  'manual-queue-capacity',
-  'manual-reconciliation-preview',
-  'snapshot-history-canonicalize',
-  'snapshot-history-diff',
 ] as const satisfies readonly GoldenFixtureOperation[];
 
 export type GoldenCase = {
   readonly id: string;
-  readonly category: ParityCategory;
+  readonly category: ContractCategory;
   readonly operation: GoldenFixtureOperation;
   readonly fixture: string;
-  readonly swiftOwner: string;
   readonly typescriptOwner: string;
 };
 
@@ -94,7 +87,7 @@ export function readGoldenFixture(root: string, entry: GoldenCase): unknown {
 function parseGoldenCase(value: unknown, label: string): GoldenCase {
   const object = asRecord(value, label);
   const category = requireString(object.category, `${label}.category`);
-  if (!(PARITY_CATEGORIES as readonly string[]).includes(category)) {
+  if (!(CONTRACT_CATEGORIES as readonly string[]).includes(category)) {
     throw new Error(`${label}.category 不受支持。`);
   }
   const operation = requireString(object.operation, `${label}.operation`);
@@ -103,10 +96,9 @@ function parseGoldenCase(value: unknown, label: string): GoldenCase {
   }
   return {
     id: requireString(object.id, `${label}.id`),
-    category: category as ParityCategory,
+    category: category as ContractCategory,
     operation: operation as GoldenFixtureOperation,
     fixture: requireString(object.fixture, `${label}.fixture`),
-    swiftOwner: requireString(object.swiftOwner, `${label}.swiftOwner`),
     typescriptOwner: requireString(object.typescriptOwner, `${label}.typescriptOwner`),
   };
 }

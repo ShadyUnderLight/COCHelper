@@ -10,7 +10,7 @@
 ## 1. 终态形态定义
 
 「纯 Electron」= 最终发布包与主分支不包含 Swift runtime、Swift helper、native addon 或旧 Swift
-fallback（总控 Issue #264）。迁移期间旧 Swift 实现仅作为行为参考与 golden oracle，
+fallback（总控 Issue #264）。迁移期间旧 Swift 实现仅作为行为参考，
 不得进入终态运行链路。
 
 ## 2. 目标进程结构
@@ -29,7 +29,7 @@ packages/
 ├─ wire        ← lossless JSON、BigInt、日期、canonical JSON、饱和算术（#267；🗑️ SHA-256 由 E0-03 #302 撤销，见 wire-contract-v1.md §WA-3）
 ├─ domain      ← Clock/UUID seam + 投影、diff、对账、容量语义
 ├─ contracts   ← Result、错误/诊断、IPC 取消及本目录文档对应的类型定义
-└─ testkit     ← 可重放 Clock/随机 seam + Swift oracle parity 框架（#267/#268；🗑️ hash 协议由 #302 撤销，见 testkit-protocol-v1.md）
+└─ testkit     ← 可重放 Clock/随机 seam + TypeScript contract fixtures（#267/#281）
 ```
 
 ## 3. 现有 Swift 边界 → 终态归属映射
@@ -40,7 +40,7 @@ packages/
 | `Sources/COCHelperApp` | 编排：AppModel、UserDefaults store、事务 journal、资源加载 | Main process application services |
 | `Sources/COCHelper` | SwiftUI UI | React renderer（E4-01，#277） |
 | `Tools/`（Python 目录管线 + Swift 验收工具） | catalog 生成、验收 gate、perf seed | Node 工具链（E6-01，#281 迁移并删 Swift） |
-| `Tests/` | ~1,880 XCTest（main@f513a35 实测基线） | E1-02（#268）golden parity + TS 测试迁移 |
+| `Tests/` | Swift XCTest 迁移期参考测试 | E6-01 分阶段删除；Electron contract tests 位于 `packages/` |
 
 ## 4. 持久化拓扑（现状冻结）
 
@@ -64,14 +64,14 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 2. **E0-03（#266，已关闭）**：Electron 工程、安全进程边界、CI bootstrap。
 3. **E1-01（#267）**：实现 wire-contract-v1.md §WA-1…§WA-7，并冻结
    shared-primitives-v1.md 的跨层基础 seam。
-4. **E1-02（#268)**：Swift oracle + golden parity 框架；TypeScript testkit 消费 `fixtures/golden/`，迁移期 Swift oracle 保留 `Tests/Golden/` 快照；领域回链与基线台账见 `docs/electron/e1-02-test-registration.md`。
+4. **E1-02（#268)**：迁移期 parity 已完成并在 E6-01-B3 移除；当前 TypeScript contract tests 直接消费 `fixtures/golden/`。
 5. **E2-\*（#269–274）**：按 behavior-matrix.md / error-matrix.md 逐域迁移。
 6. **E0-03 契约清理（#302，本次修订）**：撤销非必要 SHA-256/指纹/manifest 完整性防御契约，
    只冻结删除/保留边界与数据策略，不直接改业务代码。执行顺序：
    #302（本修订：冻结新契约）→ #303（Catalog manifest 收敛四字段 + 防御移除，
    可与 #304 并行）∥ #304（Snapshot History/manual/cache/coverage 指纹移除；
-   baseline/history wire shape 先稳定）→ #305（最后：golden/testkit/oracle hash 协议移除 +
-   parity fixtures 重生成；等领域 wire shape 收敛）。#275 只接收新 store schema；
+   baseline/history wire shape 先稳定）→ #305（最后：golden/testkit 历史 hash 协议移除 +
+   fixtures 重生成；等领域 wire shape 收敛）。#275 只接收新 store schema；
    #276/#278 真实接入与 packaged E2E 等上述 shape 稳定后再执行。
 
 ## 6. 验收锚点（对照 Issue #265 验收标准，本 PR 为阶段性状态）
@@ -79,8 +79,8 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`manual-queue-capacity-contract.json`（projection）；`snapshot-history-diff-contract.json`（diff，静态 `expected.canonicalHex`）；`error-scenarios-contract.json`（error：HTTP→CoAPIError、failureKind 十值、sourceLabel、refreshStatus 七态、refreshState 三保留 + outcome `canonicalHex`）+ `fixtures/golden/manifest.json` 与 `fixtures/golden/` 一一对应（protocolVersion=2）；Swift oracle 迁移期快照仍在 `Tests/Golden/` |
-| 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + GoldenContractTests 用例分组 |
+| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`fixtures/golden/manifest.json` 与 `fixtures/golden/` 一一对应（protocolVersion=2） |
+| 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + TypeScript wire/domain contract tests |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 
 > **关闭门（已满足）**：error 场景 golden fixture 已冻结（`error-scenarios-contract.json`，

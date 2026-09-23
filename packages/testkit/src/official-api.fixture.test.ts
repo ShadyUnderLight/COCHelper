@@ -16,7 +16,7 @@ function fixture(name: string): string {
   return readFileSync(resolve(ROOT, 'fixtures/account', name), 'utf8');
 }
 
-describe('official api parity harness', () => {
+describe('official api fixture contract', () => {
   it('player fixture 关键字段', () => {
     const snapshot = decodeOfficialPlayerSnapshotJson(fixture('official_player_full.json'));
     expect(snapshot.tag).toBe('#ANONYMIZED');

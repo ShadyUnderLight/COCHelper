@@ -79,7 +79,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
 | #265 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 每个现有高风险状态有 confirmed output 或显式 unknown 处理 | ✅ 本 PR 完成 | behavior-matrix.md 各表含「盘上状态 × 行为」列；无法从代码确认的点标注 ⚠️ 待实证 |
-| 关键 fixture 冻结 parser、**projection、diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。**已登记**：`fixtures/golden/manifest.json` 与 `fixtures/golden/` 一一对应（protocolVersion=2） |
+| 关键 fixture/contract 覆盖 parser、**projection**、**diff**、**error** 和 encoded bytes | ✅ **完成（2026-09-07 增量；E6-01-B3 更新边界）** | 🗑️ E0-03 #302 撤销指纹冻结项：已冻结的 parser 指纹（F1/F2/F3）改为删除（#305 重生成，只保留业务结果 + encoded bytes）；保留 canonical encoded bytes + AccountSnapshot 的 JSONEncoder encoded bytes + catalog manifest 契约形状（四字段 `CatalogManifestV3`，新形状 §WA-9，schemaVersion=3；旧 1267 条 generatedFiles manifest 由 #303 重生成）。`fixtures/golden/manifest.json` 继续登记现有 fixture；diff 不再保留独立 golden fixture，改由 `packages/domain/src/snapshot-history/diff-engine.test.ts` 与 `diff-statistics.test.ts` 直接覆盖。 |
 | 数值/时间正例、负例、边界例（🗑️ E0-03：fingerprint 例撤销） | ✅ 本 PR 完成（数值/时间部分；指纹部分由 #302 撤销） | wire-contract-v1.md §WA 各节 + TypeScript wire/domain contract tests |
 | 明确哪些旧 UI 只是历史实现、哪些用户可见语义必须保留 | ✅ 本 PR 完成 | behavior-matrix.md §BE-7 |
 

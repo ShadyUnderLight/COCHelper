@@ -261,8 +261,10 @@ BigInt 注意：Swift `Int64` 有符号 64 位。官方数据中超出 Number sa
 沿用 Issue #265 数据策略决策门（默认不做长期兼容层、双写或双读），E0-03 四组协议
 硬切换规则如下：
 
-- Snapshot History envelope/entry、Manual Tracker、Catalog manifest、Golden Oracle 协议
-  按上表提升版本或替换为新 shape；**不增加长期双读、双写、fallback 或迁移兼容层**。
+- Snapshot History envelope/entry、Manual Tracker、Catalog manifest 按上表提升版本或替换
+  为新 shape；**不增加长期双读、双写、fallback 或迁移兼容层**。
+- Golden Oracle 协议是已完成的迁移期历史项：E6-01-B3 已删除其实现、登记与消费路径，
+  不再作为活动协议或兼容目标。
 - 旧 Application Support/UserDefaults 等价数据文件**原文件保留、不静默重写为空**，
   但按旧 schema 标记不可用（unsupportedSchema/不可用态 + 显式中文提示）；用户需要
   重新导入/重建。若产品要保留旧数据并迁移，另开一次性 importer Issue（importer 不得

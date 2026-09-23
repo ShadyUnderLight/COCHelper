@@ -2,11 +2,12 @@
 
 一个面向《部落冲突》（Clash of Clans）的本地数据与升级追踪桌面应用。项目当前以**纯 Electron + TypeScript**为产品主线，目标是把账号快照、升级进度、部落数据与官方 API 数据统一到桌面应用中。
 
-> 状态说明：Electron 重写正在进行。仓库中的 Swift/SwiftUI 代码仅作为迁移期行为参考，不再是产品开发或发布路线；最终发布包不包含 Swift runtime、Swift helper、native addon 或 Swift fallback。
+> 状态说明：项目已完成纯 Electron 主线切换。产品、测试、打包、性能和发布路径均由
+> Electron/TypeScript/Node 工具链负责；仓库不包含 Swift runtime、Swift helper、native addon 或 Swift fallback。
 
 ## 当前状态与能力基线
 
-Electron 工程位于 `apps/desktop/`，当前已经具备安全宿主、typed IPC 契约、wire/domain 基础原语、renderer 隔离检查和 packaged smoke。业务 UI 正按 [Electron 目标架构](docs/electron/target-architecture.md) 迁移；首个 React 垂直切片已接入 `app.snapshot` / 村庄切换 / 账号导入预览确认 / recovery 状态门面，后续切片（升级总览、村庄详情、官方数据、手动升级等）仍待继续。
+Electron 工程位于 `apps/desktop/`，当前已经具备安全宿主、typed IPC 契约、wire/domain 基础原语、renderer 隔离检查、升级总览、村庄详情、官方数据、手动升级和 packaged smoke。实现边界与后续维护规则见 [Electron 目标架构](docs/electron/target-architecture.md)。
 
 下面的功能是现有产品能力和迁移验收基线：
 
@@ -23,7 +24,7 @@ Electron 工程位于 `apps/desktop/`，当前已经具备安全宿主、typed I
 - 多村庄档案：每个账号独立保存 JSON 快照；按账号标签 `tag` 重复导入时自动更新对应档案。
 - 村庄详情页「粘贴并更新」快捷导入：读取剪贴板 JSON 直接预览并按当前村庄更新，免去“账号数据”页的完整流程（详见下文「快捷导入」一节）。
 - 官方玩家信息（可选）：对已导入且带有效账号标签的村庄，一键或批量从 Clash of Clans 官方 API 拉取玩家资料（大本营、奖杯、部落、单位等级等），作为独立来源展示在村庄详情。
-- 参考实现提供深色 macOS 界面和本地持久化；Electron 终态会按新的 storage/IPC 契约迁移。
+- Electron 提供深色 macOS 界面和本地持久化；storage、IPC 与 packaged 资源均按当前 Electron 契约实现。
 
 ## 运行 Electron
 
@@ -57,14 +58,17 @@ pnpm check:renderer-isolation
 pnpm check:secrets
 ```
 
-### Swift 迁移期参考实现（非产品路线）
+### 当前主线
 
-Swift package 仅在 E6-01-C2 删除前保留普通 XCTest、`COCHelper` target，以及 Debug
-构建中的隐藏性能样本菜单；这些只用于迁移期行为/性能参考，不属于当前 Electron 产品或
-Release 验收路径。Swift 不再提供 Release 打包、API smoke 或活动 acceptance/perf gate：
+仓库只保留 Electron/TypeScript 产品路径；本地检查、打包、packaged smoke/E2E、性能和
+release prepare 均通过 `pnpm` 命令执行：
 
 ```bash
-swift test --parallel --num-workers 1
+pnpm test
+pnpm typecheck
+pnpm package
+pnpm smoke
+pnpm test:e2e:packaged
 ```
 
 实现顺序和边界见 [Electron 目标架构](docs/electron/target-architecture.md)、[wire 契约](docs/electron/wire-contract-v1.md)、[行为矩阵](docs/electron/behavior-matrix.md) 与 [DTO 映射](docs/electron/dto-mapping.md)。
@@ -94,10 +98,10 @@ swift test --parallel --num-workers 1
 2. 随游戏版本更新名称目录，并为不同 APK 版本保留可审计的目录快照。
 3. 如果后续 JSON 提供明确的目标等级或队列字段，再补充原始字段映射，不从数组顺序猜测。
 
-## Tools：APK 静态升级目录（迁移期工具，issue #13）
+## Tools：APK 静态升级目录（离线工具，issue #13）
 
 `Tools/game_catalog/` 从 APK 生成版本化的静态升级目录（`catalog.json` + `manifest.json` + 空 `icons/`），
-当前落库于 Electron 生产资源根 `apps/desktop/resources/GameCatalog/<版本>/`；Swift 参考实现不再参与 Electron 测试或生产资源读取。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
+当前落库于 Electron 生产资源根 `apps/desktop/resources/GameCatalog/<版本>/`。生成与校验均零第三方运行时依赖（Python stdlib），测试用 pytest + hypothesis。
 
 生成（输出目录必须为空，非空报错不自动清理）。**两步生成链**：主目录生成后必须再跑
 精制台目录生成器——它幂等登记 `craft_table_catalog.json` 到 manifest（缺失登记时
@@ -168,7 +172,7 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   `'0'` 是真实值不是缺失）；**不改** `Tools/generate_account_name_catalog.py`；dataID 段与名称目录
   对齐（heroes/pets/equipment/guardians 集成测试对拍，heroes 按 VillageType 分流 heroes/heroes2，
   legacy 把全部英雄冗余写入两段）。
-- **capital 数据合同（Swift 参考实现对照）**：部落都城条目使用 `capital_buildings`/`capital_traps`/`capital_characters`/
+- **capital 数据合同**：部落都城条目使用 `capital_buildings`/`capital_traps`/`capital_characters`/
   `capital_spells` section 和 `capitalBuildings`/`capitalTraps`/`capitalTroops`/`capitalSpells`
   category，`base` 为 null + `capital_has_no_base`。**当前参考实现的 `TrackerCategory` 尚无这些
   rawValue**（`from(section:)` 对 `capital_*` 返回 nil）——这是 Electron 迁移时的消费端扩展点。
@@ -181,17 +185,14 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   官方仅给出日期而未给出时刻时，按 UTC 日边界编码，公告末日按包含语义转成次日 00:00 的
   `until`（模型区间恒为 `from <= now < until`）。每条阶段保留官方 `sourceURL` 供审计。
 - **集成测试**：真实 APK 集成测试通过环境变量 `COC_APK_PATH` 指定；未设置时自动 skip。
-- **已知问题（Swift 参考实现的 SwiftPM 资源）**：SPM `.process("Resources")` 会把资源目录**拍平**到 bundle 根部
-  （`GameCatalog/18.400.13/catalog.json` → bundle 根 `catalog.json`），且多个版本目录存在同名文件
-  时构建报 `multiple resources named 'catalog.json'`。当前仅一个版本目录可正常打包；将来落第二个
-  版本时需先解决（如按版本重命名文件名），消费端 #14 按文件名经 `Bundle.module` 读取。
-  `icons/` 以 `.gitkeep` 占位跟踪。
+- **资源边界**：Electron Forge 直接从 `apps/desktop/resources/` 打包 catalog、icons 和账号名称目录；
+  运行时通过 packaged resource root 解析。
 
 
 ## API 连接（Electron）
 
 官方 API 由 Electron Main 的客户端和 renderer 的 Token Settings / 官方数据卡片提供。
-应用不会提供独立的 Swift smoke 命令；当前产品路径直接验证 token、请求和错误状态。
+当前产品路径直接验证 token、请求和错误状态。
 
 ### 凭证准备
 
@@ -299,5 +300,6 @@ Main 使用 `safeStorage` 保存加密 token；token 不进入 renderer 可序�
 - 数据来源：仅通过 Supercell 官方 API（developer.clashofclans.com）读取公开数据；不执行任何自动化游戏操作（不自动攻击、不自动升级、不模拟点击）。
 - 禁止自动化与公开分发：本应用仅用于个人本地使用，不提供任何自动化游戏行为的接口；不得将本应用或其数据用于公共托管、批量数据抓取、转售或任何形式的公开分发。
 - 所有游戏内容与素材版权归 Supercell Oy 所有；按 [Supercell Fan Content Policy](https://supercell.com/en/fan-content-policy/) 使用。
-- 仓库内随附的渲染 PNG（`GameCatalog/*/icons/`）目前仅作为参考实现 Bundle 内部资源（SwiftPM `.copy("GameCatalog")` 打包），随私有分发使用、不单独分发；Electron 终态的资源打包和对外分发须重新评估（契约 R12.3）。
+- 仓库内随附的渲染 PNG（`GameCatalog/*/icons/`）由 Electron Forge 随 catalog 资源打包，
+  不单独分发；对外分发遵循 release manifest、SBOM 和签名/公证流程。
 - 官方 API 限流与条款：应用遵守官方 API 的使用条款与速率限制（客户端内置 429 退避），不绕过认证、不伪造请求。

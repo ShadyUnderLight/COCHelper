@@ -1,8 +1,8 @@
 """renderedPath 输出契约纯函数（Issue #27 R-A/R-B/R-D 规则；E0-03/Issue #303
 已撤销 R-C manifest 登记门）。
 
-与 Swift CatalogAssetRef.isRenderable（Sources/COCHelperCore/GameCatalog.swift）同一
-语义；契约错误消息文本与 validate.py 现有负例校验消息一致（不含调用方追加的
+与 Electron catalog asset protocol 同一语义；契约错误消息文本与 validate.py
+现有负例校验消息一致（不含调用方追加的
 "(<context>)" 后缀，由 validate.py 负责）。
 
 纯 stdlib、无 IO：file_exists 由调用方计算后传入（bool），保持纯函数可测。
@@ -51,11 +51,11 @@ def rendered_path_format_ok(rendered_path: str) -> bool:
 
 
 def is_renderable(rendered_path: str | None, missing_reason: str | None) -> bool:
-    """与 Swift CatalogAssetRef.isRenderable 同一语义：renderedPath 非空 且 missingReason 为空。
+    """与 Electron catalog asset protocol 同一语义：renderedPath 非空且 missingReason 为空。
 
-    Swift 定义 `renderedPath != nil && missingReason == nil`（GameCatalog.swift:47-49），
+    契约定义 `renderedPath != nil && missingReason == nil`，
     **空串 "" 视为不可渲染**（交叉审核 P1-2：空路径不得被当作可渲染资源，
-    违反契约 R2.2/R5.3；Swift 侧同规则）。
+    违反契约 R2.2/R5.3）。
     """
     return (rendered_path is not None and rendered_path != ""
             and missing_reason is None)

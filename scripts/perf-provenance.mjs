@@ -7,6 +7,7 @@ const INPUT_PATHS = [
   'fixtures',
   'e2e/fixtures',
   ':(exclude)apps/**/node_modules/**',
+  ':(exclude)packages/**/node_modules/**',
   ':(exclude)apps/desktop/out/**',
   ':(exclude)apps/desktop/.webpack/**',
 ];

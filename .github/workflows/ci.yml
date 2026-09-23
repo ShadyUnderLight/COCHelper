@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Swift test and Release app
+    name: Swift migration-reference tests
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -24,8 +24,6 @@ jobs:
           uname -m
       - name: Swift tests
         run: swift test --parallel --num-workers 1
-      - name: Release App bundle
-        run: scripts/build_app.sh
       - name: Whitespace check against main
         run: |
           git fetch --no-tags origin main

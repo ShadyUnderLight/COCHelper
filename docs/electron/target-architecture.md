@@ -39,7 +39,7 @@ packages/
 | `Sources/COCHelperCore` | 解析、canonicalization、投影、对账、容量、分页合并等纯计算，**以及**文件持久化 store（SnapshotHistoryStore / ManualTrackerStore）与 URLSession HTTP client（CoAPIClient） | 纯计算部分 → `wire` + `domain`（UtilityProcess 可运行）；store 与网络层 → Main process application services |
 | `Sources/COCHelperApp` | 编排：AppModel、UserDefaults store、事务 journal、资源加载 | Main process application services |
 | `Sources/COCHelper` | SwiftUI UI | React renderer（E4-01，#277） |
-| `Tools/`（Python 目录管线 + Swift 验收工具） | catalog 生成、验收 gate、perf seed | Node 工具链（E6-01，#281 迁移并删 Swift） |
+| `Tools/`（Python 目录管线 + Electron perf fixture 工具） | catalog 生成、性能 fixture/provenance | Node 工具链（E6-01-C1；Swift acceptance/smoke/seed 入口已删除） |
 | `Tests/` | Swift XCTest 迁移期参考测试 | E6-01 分阶段删除；Electron contract tests 位于 `packages/` |
 
 ## 4. 持久化拓扑（现状冻结）
@@ -51,10 +51,10 @@ packages/
 | 手动升级 tracker | 文件 | `manual-tracker-v1.json` | envelope/store/village 全=2（E0-03 #302：baseline fingerprint 撤销；旧全=1 按 §WA-7.1 标记不可用） |
 | 官方端点缓存 ×4 | UserDefaults blob | `coc-helper.clans.v1` / `clan-wars.v1` / `clan-war-logs.v1` / `clan-capitals.v1` | 无版本（fail-open 组，§BE-1.4） |
 | 跟踪部落 | UserDefaults blob | `coc-helper.tracked-clans.v1` | 无版本（fail-open 组，§BE-1.5） |
-| API token | Keychain | 不入 JSON / UserDefaults | — |
+| API token | Electron `safeStorage` | 不入 renderer 状态、JSON / UserDefaults | — |
 
 数据策略决策门（Issue #265）：默认不做长期兼容层、双写或双读。若必须保留旧 UserDefaults /
-Application Support 文件 / Keychain token，另开一次性 importer；importer 不得进入正常运行路径。
+Application Support 文件 / Electron `safeStorage` token，另开一次性 importer；importer 不得进入正常运行路径。
 E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为见 wire-contract-v1.md §WA-7 /
 §WA-7.1；旧文件原地保留、不静默重写为空，用户重新导入/重建。
 

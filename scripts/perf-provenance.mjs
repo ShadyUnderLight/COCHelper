@@ -2,9 +2,12 @@ import { execFileSync } from 'node:child_process';
 
 const INPUT_PATHS = [
   'apps',
-  'Sources',
+  'packages',
+  'scripts',
+  'fixtures',
   'e2e/fixtures',
   ':(exclude)apps/**/node_modules/**',
+  ':(exclude)packages/**/node_modules/**',
   ':(exclude)apps/desktop/out/**',
   ':(exclude)apps/desktop/.webpack/**',
 ];

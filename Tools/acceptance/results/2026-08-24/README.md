@@ -1,5 +1,10 @@
 # Issue #226 验收证据索引（2026-08-24）
 
+> 这是 Swift 时代的历史证据索引。文中的 `gate.sh`、`acceptance-runner`、
+> `Tools/acceptance/local/` 与 `scripts/build_app.sh` 已在 E6-01-C1 退役，不能按原命令
+> 重跑；当前 Electron 验证入口见 `pnpm test`、`pnpm package`、`pnpm smoke`、
+> `pnpm test:e2e:packaged`、`pnpm perf:release` 和 `pnpm perf:gate`。
+
 基线：`origin/main@256c065`（#234/#235/#236 已合并）  
 工具链 HEAD：`83fd27c`（lastSeenAt/latestCheckedAt 持久化 + paired fail-closed Diff 语义）
 
@@ -33,8 +38,9 @@
 
 fixture：`perf_account_snapshot_large_walls_before.json` + `perf_account_snapshot_large_walls_after.json`（各 1005 段，`#LARGEWALL01` 合法，同 lineage，`lvl` 偏移 6 确保大量变化；`large_walls.json` 保留兼容旧单测）
 
-## 下一步（review 前）
+## 历史下一步（已废弃）
 
-1. 维护者将真实村庄 JSON 放入 `Tools/acceptance/local/`（不提交）。
-2. 运行 `Tools/acceptance/gate.sh` 生成 `real-village-acceptance.json`。
-3. 按 `large_walls_perf_scenario.md` 在 Release App 完成人工性能核对并更新 `performance-large-walls.md`。
+以下步骤仅记录当时的 Swift 验收计划，不应再执行：真实村庄 JSON 放入旧的
+`Tools/acceptance/local/`、运行已删除的 `Tools/acceptance/gate.sh`，以及按已删除的
+`large_walls_perf_scenario.md` 操作 Swift Release App。当前性能与 packaged 验收请使用
+仓库根目录的 Electron 命令和 `Tools/perf/README.md`。

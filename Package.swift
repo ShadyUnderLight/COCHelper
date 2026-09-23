@@ -10,9 +10,6 @@ let package = Package(
     products: [
         .library(name: "COCHelperCore", targets: ["COCHelperCore"]),
         .executable(name: "COCHelper", targets: ["COCHelper"]),
-        .executable(name: "smoke-api", targets: ["smoke-api"]),
-        .executable(name: "acceptance-runner", targets: ["acceptance-runner"]),
-        .executable(name: "history-memory-seed", targets: ["history-memory-seed"]),
     ],
     targets: [
         .target(
@@ -44,21 +41,6 @@ let package = Package(
                 // Release 构建不定义 DEBUG → 菜单不进入生产 app。
                 .define("DEBUG", .when(configuration: .debug))
             ]
-        ),
-        .executableTarget(
-            name: "smoke-api",
-            dependencies: ["COCHelperCore"],
-            path: "Tools/smoke-api"
-        ),
-        .executableTarget(
-            name: "acceptance-runner",
-            dependencies: ["COCHelperCore", "COCHelperApp"],
-            path: "Tools/acceptance-runner"
-        ),
-        .executableTarget(
-            name: "history-memory-seed",
-            dependencies: ["COCHelperCore", "COCHelperApp"],
-            path: "Tools/perf/history-memory-seed"
         ),
         .testTarget(
             name: "COCHelperCoreTests",

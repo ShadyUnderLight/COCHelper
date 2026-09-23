@@ -27,7 +27,7 @@ import {
 import { type SnapshotCoverageProof, type SnapshotHistoryEntry } from './types';
 
 const here = process.cwd();
-const FIXTURES_DIR = resolve(here, 'Tests/COCHelperCoreTests/Fixtures');
+const FIXTURES_DIR = resolve(here, 'fixtures/account');
 const HOME_FIXTURE_ID = 'perf_account_snapshot_home';
 const BUILDER_FIXTURE_ID = 'perf_account_snapshot_builder';
 const VILLAGE_ID = parseUuid('11111111-1111-1111-1111-111111111111')!;

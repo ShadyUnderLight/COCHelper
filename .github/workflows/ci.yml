@@ -81,6 +81,7 @@ jobs:
         run: pnpm test
       - name: Security scans
         run: |
+          pnpm check:account-fixtures
           pnpm check:renderer-isolation
           pnpm check:secrets
           pnpm check:oracle-isolation

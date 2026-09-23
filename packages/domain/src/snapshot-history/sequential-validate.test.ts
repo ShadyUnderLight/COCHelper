@@ -69,7 +69,7 @@ describe('snapshot history sequential validate', () => {
   it('1005 城墙 fixture 连续校验不复制 entries', async () => {
     const root = resolve(process.cwd());
     const largeWallsText = readFileSync(
-      resolve(root, 'Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls.json'),
+      resolve(root, 'fixtures/account/perf_account_snapshot_large_walls.json'),
       'utf8',
     );
     const parsed = parseAccountSnapshot(largeWallsText, { clock: new GoldenClock() });

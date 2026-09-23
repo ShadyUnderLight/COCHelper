@@ -15,8 +15,10 @@ summary="$results_dir/issue-246-release-app-memory.json"
 report="$results_dir/issue-246-release-app-memory.md"
 user_history="$HOME/Library/Application Support/COCHelper/snapshot-history-v1.json"
 user_prefs="$HOME/Library/Preferences/com.local.coc-helper.plist"
-walls_before="$root/Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls_before.json"
-walls_after="$root/Tests/COCHelperCoreTests/Fixtures/perf_account_snapshot_large_walls_after.json"
+node "$root/scripts/check-account-fixture-sync.mjs"
+
+walls_before="$root/fixtures/account/perf_account_snapshot_large_walls_before.json"
+walls_after="$root/fixtures/account/perf_account_snapshot_large_walls_after.json"
 
 if [[ ! -x "$bin" ]]; then
   echo "missing Release app: $bin" >&2

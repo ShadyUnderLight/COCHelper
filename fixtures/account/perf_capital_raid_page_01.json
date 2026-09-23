@@ -1,0 +1,436 @@
+{
+ "items": [
+  {
+   "state": "ended",
+   "startTime": "20260701T080000.000Z",
+   "endTime": "20260703T080000.000Z",
+   "capitalTotalLoot": 100000,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-0",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "state": "ended",
+   "startTime": "20260702T080000.000Z",
+   "endTime": "20260704T080000.000Z",
+   "capitalTotalLoot": 100500,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-1",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "state": "ended",
+   "startTime": "20260703T080000.000Z",
+   "endTime": "20260705T080000.000Z",
+   "capitalTotalLoot": 101000,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-2",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "state": "ended",
+   "startTime": "20260701T080000.000Z",
+   "endTime": "20260703T080000.000Z",
+   "capitalTotalLoot": 101500,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-3",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "state": "ended",
+   "startTime": "20260702T080000.000Z",
+   "endTime": "20260704T080000.000Z",
+   "capitalTotalLoot": 102000,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-4",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "state": "ended",
+   "startTime": "20260703T080000.000Z",
+   "endTime": "20260705T080000.000Z",
+   "capitalTotalLoot": 102500,
+   "raidsCompleted": 6,
+   "totalAttacks": 60,
+   "enemyDistrictsDestroyed": 120,
+   "offensiveReward": 5000,
+   "defensiveReward": 2500,
+   "members": [
+    {
+     "tag": "#PLAYERANONYMIZED",
+     "name": "anonymized-member-5",
+     "capitalResourcesLooted": 25000,
+     "attacks": 6
+    }
+   ],
+   "attackLog": [
+    {
+     "defender": {
+      "tag": "#CLANANONYMIZED",
+      "name": "anonymized-raid-clan",
+      "level": 8,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 4,
+     "districtCount": 5,
+     "districtsDestroyed": 1,
+     "districts": [
+      {
+       "id": 10,
+       "name": "anonymized-district",
+       "districtHallLevel": 4,
+       "stars": 2,
+       "destructionPercent": 100,
+       "attackCount": 2,
+       "totalLooted": 20000
+      }
+     ]
+    }
+   ],
+   "defenseLog": [
+    {
+     "attacker": {
+      "tag": "#OPPONENTANONYMIZED",
+      "name": "anonymized-raid-clan-2",
+      "level": 7,
+      "badgeUrls": {
+       "small": "https://api-assets.clashofclans.com/badges/200/anonymized.png"
+      }
+     },
+     "attackCount": 3,
+     "districtCount": 5,
+     "districtsDestroyed": 0,
+     "districts": [
+      {
+       "id": 1,
+       "name": "anonymized-home-district",
+       "districtHallLevel": 5,
+       "stars": 0,
+       "destructionPercent": 40,
+       "attackCount": 3,
+       "totalLooted": 0
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "paging": {
+  "cursors": {
+   "before": "RAIDCURSORBEFORE1",
+   "after": "RAIDCURSORAFTER1"
+  }
+ }
+}

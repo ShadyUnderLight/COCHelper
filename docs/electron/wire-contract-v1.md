@@ -424,6 +424,6 @@ CatalogAssetRef { container: String?, exportName: String?, renderedPath: String?
 | catalog-contract.json | #270 Catalog TS 归属登记（fixture-registry） | packages/testkit/src/catalog.contract.test.ts；manifest `projection/catalog-contract` |
 | village-projection-contract.json | #271 Village projection TS 归属；village Swift oracle deferred | packages/testkit/src/village-projection.contract.test.ts；manifest `projection/village-projection-contract` |
 | storage-fault-contract.json | #275 storage write fault / replay 归属 | packages/testkit/src/storage-fault.contract.test.ts；manifest `error/storage-fault-contract` |
-| official_war_log_page.json 等 | 复用 `Tests/COCHelperCoreTests/Fixtures/` 既有匿名分页/官方快照 fixtures（不复制），映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | 既有 ClanPaginationDecodeTests / GameCatalogTests |
+| official_war_log_page.json 等 | 复用 `fixtures/account/` 既有匿名分页/官方快照 fixtures，映射见 dto-mapping.md；catalog 侧活体 fixture 见 §WA-9（仓库源路径 + 运行时 bundle 路径） | Electron domain/testkit fixture tests |
 
 全量 fixture 登记见 `Tests/Golden/manifest.json`（含 error 场景）。

@@ -1,0 +1,9 @@
+{
+  "tag": "#MINIMALCLAN",
+  "name": "minimal-clan",
+  "clanLevel": 1,
+  "members": 2,
+  "badgeUrls": {
+    "medium": "https://api-assets.clashofclans.com/badges/200/minimal.png"
+  }
+}

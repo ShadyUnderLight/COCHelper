@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import type { DesktopBridge } from '@coc-helper/contracts';
 
@@ -7,13 +7,22 @@ import { useTokenSettings } from '../use-token-settings';
 export function TokenSettingsPanel({
   bridge,
   onTokenChanged,
+  onRefreshReady,
 }: {
   readonly bridge: Pick<DesktopBridge, 'tokenStatus' | 'tokenSave' | 'tokenClear'>;
   readonly onTokenChanged?: () => void;
+  readonly onRefreshReady?: (refresh: (() => Promise<void>) | null) => void;
 }) {
   const api = useTokenSettings(bridge);
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
+  useEffect(() => {
+    if (onRefreshReady === undefined) {
+      return;
+    }
+    onRefreshReady(api.refresh);
+    return () => onRefreshReady(null);
+  }, [api.refresh, onRefreshReady]);
   const storageWritable =
     api.state.token?.storage === 'available' || api.state.token?.storage === 'decryptFailed';
   const saving = api.state.status === 'saving';

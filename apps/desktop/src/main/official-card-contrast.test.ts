@@ -6,12 +6,13 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(join(__dirname, '../renderer/styles.css'), 'utf8');
 
 function declaration(selector: string, property: string): string {
-  const escaped = selector.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
-  const block = css.match(new RegExp('(?:^|\\n)\\s*' + escaped + '\\s*\\{([^}]+)\\}'));
-  if (block === null) {
+  const block = Array.from(css.matchAll(new RegExp('([^{}]+)\\{([^{}]+)\\}', 'g'))).find((match) =>
+    match[1]?.split(',').some((candidate) => candidate.trim() === selector),
+  );
+  if (block?.[2] === undefined) {
     throw new Error('找不到选择器 ' + selector);
   }
-  const match = block[1]?.match(new RegExp(property + '\\s*:\\s*([^;]+)'));
+  const match = block[2].match(new RegExp(property + '\\s*:\\s*([^;]+)'));
   if (match?.[1] === undefined) {
     throw new Error('找不到 ' + selector + ' 的 ' + property);
   }
@@ -63,6 +64,31 @@ describe('Official 卡片对比度（#277）', () => {
         expect(
           contrastRatio(foreground, background),
           selector + ' contrast on ' + background,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+});
+
+describe('升级总览小字对比度', () => {
+  it('默认与选中记录、统计卡和区块说明至少 4.5:1', () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      ['.overview-item-meta', '.overview-item', '默认升级记录'],
+      ['.overview-item-meta', '.overview-item.selected', '选中升级记录'],
+      ['.card-heading p', '.content-card', '区块说明'],
+      ['.stat-top', '.stat-card', '统计标签'],
+      ['.stat-value small', '.stat-card', '统计单位'],
+      ['.section-eyebrow', '.preview-box', '内容区小标题'],
+      ['.record-badge', '.record-badge', '记录数量'],
+      ['.empty-state.compact', '.content-card', '空态说明'],
+      ['.quiet-card p', '.quiet-card', '无待处理说明'],
+    ];
+    for (const [foregroundSelector, backgroundSelector, label] of cases) {
+      const foreground = declaration(foregroundSelector, 'color');
+      for (const background of colorStops(backgroundSelector, 'background')) {
+        expect(
+          contrastRatio(foreground, background),
+          label + ' contrast on ' + background,
         ).toBeGreaterThanOrEqual(4.5);
       }
     }

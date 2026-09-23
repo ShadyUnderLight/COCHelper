@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { AppSnapshotPayload, TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
@@ -70,6 +70,10 @@ export function AppShell({
   const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
   const activeRoute = route ?? internalRoute;
   const activeRouteRef = useRef(activeRoute);
+  const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
+    tokenSettingsRefreshRef.current = refresh;
+  }, []);
   activeRouteRef.current = activeRoute;
   const { state, recoveryStatus } = session;
   const snapshot = state.snapshot;
@@ -192,7 +196,11 @@ export function AppShell({
     } else if (tab === 'detail') {
       void detail.refresh();
     } else if (tab === 'info') {
-      void diagnostics?.refresh();
+      if (activeRoute.kind === 'info' && activeRoute.section === 'tokenSettings') {
+        void tokenSettingsRefreshRef.current?.();
+      } else {
+        void diagnostics?.refresh();
+      }
     }
   };
 
@@ -304,6 +312,7 @@ export function AppShell({
                     diagnostics={diagnostics}
                     tokenBridge={tokenBridge}
                     onTokenChanged={() => void diagnostics?.refresh()}
+                    onTokenSettingsRefreshReady={registerTokenSettingsRefresh}
                     onNavigate={(section) => applyRoute({ kind: 'info', section })}
                   />
                 ) : null}
@@ -511,6 +520,7 @@ function InfoPanel(props: {
   readonly diagnostics?: DiagnosticsApi;
   readonly tokenBridge?: BridgeTokenSettingsClient;
   readonly onTokenChanged: () => void;
+  readonly onTokenSettingsRefreshReady: (refresh: (() => Promise<void>) | null) => void;
   readonly onNavigate: (section: 'diagnostics' | 'tokenSettings') => void;
 }) {
   const section = props.route.kind === 'info' ? props.route.section : 'diagnostics';
@@ -554,7 +564,11 @@ function InfoPanel(props: {
           </p>
         </section>
       ) : (
-        <TokenSettingsPanel bridge={props.tokenBridge} onTokenChanged={props.onTokenChanged} />
+        <TokenSettingsPanel
+          bridge={props.tokenBridge}
+          onTokenChanged={props.onTokenChanged}
+          onRefreshReady={props.onTokenSettingsRefreshReady}
+        />
       )}
     </div>
   );

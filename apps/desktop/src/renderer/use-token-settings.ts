@@ -20,6 +20,7 @@ export type BridgeTokenSettingsClient = Pick<
 
 export type TokenSettingsApi = {
   readonly state: TokenSettingsState;
+  readonly refresh: () => Promise<void>;
   readonly save: (token: string) => Promise<boolean>;
   readonly clear: () => Promise<boolean>;
 };
@@ -72,5 +73,5 @@ export function useTokenSettings(bridge: BridgeTokenSettingsClient): TokenSettin
     return true;
   }, [bridge]);
 
-  return { state, save, clear };
+  return { state, refresh, save, clear };
 }

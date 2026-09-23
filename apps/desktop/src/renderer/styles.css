@@ -916,7 +916,7 @@ button.danger {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  color: #786e50;
+  color: #6b6148;
   font-size: 9px;
   font-weight: 800;
 }
@@ -957,7 +957,7 @@ button.danger {
 }
 
 .stat-value small {
-  color: #8d805e;
+  color: #6b6148;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0;
@@ -1032,7 +1032,7 @@ button.danger {
 
 .card-heading p {
   margin: 3px 0 0;
-  color: #8a7c5d;
+  color: #6b6148;
   font-size: 8px;
 }
 
@@ -1043,7 +1043,7 @@ button.danger {
   flex: none;
   place-items: center;
   padding: 0 6px;
-  color: #80652c;
+  color: #6f5728;
   border: 1px solid #d1ba7f;
   border-radius: 9px;
   background: #f3e7bf;
@@ -1070,7 +1070,7 @@ button.danger {
   color: #443c2a;
   border: 1px solid #e0d4b3;
   border-radius: 13px;
-  background: rgb(255 251 238 / 85%);
+  background: #fffbee;
   box-shadow: inset 0 1px 0 #fff;
   text-align: left;
 }
@@ -1144,7 +1144,7 @@ button.danger {
 
 .overview-item-meta {
   overflow: hidden;
-  color: #827658;
+  color: #6b6148;
   font-size: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1186,7 +1186,7 @@ button.danger {
 
 .empty-state.compact {
   min-height: 78px;
-  color: #8a7c5d;
+  color: #6b6148;
   font-size: 10px;
 }
 
@@ -1233,7 +1233,7 @@ button.danger {
 
 .quiet-card p {
   margin: 3px 0 0;
-  color: #73785c;
+  color: #57633e;
   font-size: 8px;
 }
 
@@ -1267,7 +1267,7 @@ button.danger {
 }
 
 .section-eyebrow {
-  color: #9a8249;
+  color: #6f5728;
 }
 
 .import-intro h2,

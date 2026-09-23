@@ -96,7 +96,11 @@ export function UpgradeOverview({
           <h2>让营地进度一目了然</h2>
           <p className="camp-description">
             {empty
-              ? '导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'
+              ? payload.state.manualCompletedCount > 0
+                ? '当前没有进行中或待处理的升级，已记录 ' +
+                  payload.state.manualCompletedCount +
+                  ' 项手动完成。'
+                : '导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'
               : '目前有 ' + active.length + ' 项升级正在进行，' + pending.length + ' 项等待开始。'}
           </p>
           <OverviewCounts

@@ -1,9 +1,9 @@
-"""建筑展示分类（displayCategory）：从 Swift 白名单迁移到 catalog 数据。
+"""建筑展示分类（displayCategory）：catalog 生成器的唯一事实源。
 
 Issue #75 工作流 C。**本文件是分类知识的唯一事实源——改分类必须改本文件**，
-不要在其他地方维护第二份 ID 集合（防双源漂移；Swift 侧白名单由 Task 2 删除）。
+不要在其他地方维护第二份 ID 集合（防双源漂移）。
 
-分类结论（与 Swift BuildingDisplayCategoryRules 现状逐字一致，基础设施迁移不改变分类）：
+分类结论（Electron catalog 消费契约）：
 - 73 个 home buildings = 33 分类（20 defense + 1 walls 1000010 + 11 military
   + 1 craftTable 1000097）+ 40 兜底；
 - 兜底项维持现状契约（含 TH17 新建筑 1000093/1000098/1000099/1000100 等），

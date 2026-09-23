@@ -21,10 +21,10 @@
   ],
   "dispositions": [
     {
-      "id": "village/swift-oracle-parity",
+      "id": "village/ts-contract-deferred",
       "category": "projection",
       "status": "deferred",
-      "reason": "PR #291 明确推迟 E1-02 village projection golden；语义由 TS contract 测试持有，未执行不得记为通过。"
+      "reason": "village projection 语义由 TypeScript contract 测试持有；未建立独立 fixture 时保持 deferred，不得记为通过。"
     }
   ]
 }

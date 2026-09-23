@@ -9,32 +9,14 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Swift migration-reference tests
-    runs-on: macos-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Show toolchain
-        run: |
-          sw_vers
-          swift --version
-          uname -m
-      - name: Swift tests
-        run: swift test --parallel --num-workers 1
-      - name: Whitespace check against main
-        run: |
-          git fetch --no-tags origin main
-          git diff --check origin/main...HEAD
-
   electron:
     name: Electron bootstrap
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +26,10 @@ jobs:
         run: |
           node --version
           pnpm --version
+      - name: Whitespace check against main
+        run: |
+          git fetch --no-tags origin main
+          git diff --check origin/main...HEAD
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Format, lint, typecheck
@@ -55,7 +41,6 @@ jobs:
         run: pnpm test
       - name: Security scans
         run: |
-          pnpm check:account-fixtures
           pnpm check:renderer-isolation
           pnpm check:secrets
       - name: Package

@@ -2,13 +2,13 @@
 
 > 状态：**契约冻结（渲染相关条目已实测回写，2026-08-05 Issue #30）**。
 > 本契约冻结 `renderedPath` 的输出规则，使 Python 生成器、manifest 校验器、
-> Swift Bundle 加载与 UI 使用遵循同一语义。渲染无关的条目（路径、命名、失败
+> Electron packaged resource loader 与 renderer 使用遵循同一语义。渲染无关的条目（路径、命名、失败
 > 语义、依赖）为强制契约；PNG 规格（R3）与字节稳定性（R4）已由 Issue #30
 > 固定样本实测回写（见 §12.1 解锁状态）。
 >
 > 关联：issue #13（生成管线）、#27（spike + 契约）、#30（解锁 + 固定样本）、#25（图标渲染管线 + UI 接入）。
 > 相关文件：`Tools/game_catalog/sc2.py`、`Tools/render_spike.py`、
-> `Sources/COCHelperCore/GameCatalog.swift`、`Tools/game_catalog/validate.py`、
+> `apps/desktop/src/main/catalog-service.ts`、`Tools/game_catalog/validate.py`、
 > `Tools/game_catalog/__init__.py`、`apps/desktop/resources/GameCatalog/18.400.13/manifest.json`。
 
 ---
@@ -19,8 +19,8 @@
 |---|---|---|
 | Python 生成器（渲染管线，#25 实现） | `Tools/game_catalog/` 渲染扩展 | 全部 |
 | Python 校验器 | `Tools/validate_game_catalog.py` + `validate.py` | R1/R2/R4/R5/R6/R7/R8 |
-| Swift Bundle 加载 | `Sources/COCHelperCore/GameCatalog.swift` | R1/R5/R7/R8 |
-| Swift UI 使用 | `CatalogAssetRef.isRenderable` | R8 |
+| Electron Main catalog loader | `apps/desktop/src/main/catalog-service.ts` | R1/R5/R7/R8 |
+| Electron renderer 使用 | asset protocol / `AssetImage` | R8 |
 | spike 渲染模块（现状） | `sc2.py` + `render_spike.py` | R9 例外 |
 
 ---
@@ -29,8 +29,8 @@
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
-| R1.1 | `renderedPath` 是**相对版本目录**的路径，语义根为 `GameCatalog/<gameVersion>/icons/`。完整 Bundle 内路径 = `Bundle.module` 下 `GameCatalog/<gameVersion>/icons/<path>`。 | Swift `Bundle.module.url(forResource:withExtension:subdirectory: "GameCatalog/<version>")` 解析后文件存在；validate.py 以 `catalog.json` 所在目录为根解析 |
-| R1.2 | SwiftPM 以 `.copy("GameCatalog")` 打包，目录结构逐级保留（现有约定，README §Tools），`renderedPath` 不得假设 Bundle 内路径被扁平化。 | 打包后 Bundle 内目录结构抽查 |
+| R1.1 | `renderedPath` 是**相对版本目录**的路径，语义根为 `GameCatalog/<gameVersion>/icons/`。开发态根为 `apps/desktop/resources/`，packaged 根为 Forge extraResource 复制后的 `resources/GameCatalog/`。 | Electron Main catalog service 与 `cochelper://catalog` protocol 解析后文件存在；validate.py 以 `catalog.json` 所在目录为根解析 |
+| R1.2 | Electron Forge 以 extraResource 逐级复制 `GameCatalog/<version>`，`renderedPath` 不得假设资源目录被扁平化。 | packaged app Resources 目录结构抽查 |
 | R1.3 | `renderedPath` 永不写绝对路径、不包含 `gameVersion` 段（版本由目录层级表达，见 R7）。 | validate.py 负例（`contract.rendered_path_format_ok`：`icons/<container>/<export>.png` 两级结构 + 拒绝对路径/`..` 段/版本段） |
 
 ---
@@ -81,7 +81,7 @@
 |---|---|---|
 | R5.1 | 失败必须设置 `missingReason`（枚举域，见下表），`renderedPath` 为 null。**禁止空 PNG / 伪成功路径**：0×0 尺寸、数据长度不符、无内嵌数据、解析异常 → 一律 blocked + missingReason，绝不写占位/空文件（spike 已按此实现防御分支）。 | 生成器负例测试（0×0、长度不符 fixture） |
 | R5.2 | **互斥不变量**：`renderedPath` 非空（含空串，见 R8.1）⇒ `missingReason` 为 null（`missingReason` 按 `is not None` 判定，空串也是失败原因）；`renderedPath` 为 null ⇒ 渲染失败类引用必须给 `missingReason`（不留空解释）。**空串 `renderedPath` 是非法路径**：不得绕过校验（P1-2），校验器报格式非法。 | validate.py 负例 + property-based 测试（含空串边界） |
-| R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 App Bundle。 | validate.py `rendered_path_file_must_exist`（含格式/`..`/版本段拒绝）；Swift 加载路径检查（#25 UI 接入时落实，当前 loadBundled 只解码 catalog.json） |
+| R5.3 | `renderedPath` 非空 ⇒ 文件必须真实存在于版本目录与 packaged resources。 | validate.py `rendered_path_file_must_exist`（含格式/`..`/版本段拒绝）；Electron catalog protocol 读取检查 |
 
 **missingReason 枚举（Issue #30 Task 7 实现定稿，`ASSET_MISSING_REASONS` 域）**：
 
@@ -136,7 +136,7 @@
 | # | 契约规则 | 校验方式 |
 |---|---|---|
 | R7.1 | 目录按 `gameVersion` 分层：`GameCatalog/<gameVersion>/`；`renderedPath` 永远相对版本目录，**跨版本无共享路径、同名资源不互相覆盖**（现有结构已支持）。 | 多版本目录并存时 validate.py 各自独立校验通过 |
-| R7.2 | Bundle 内同构：`GameCatalog/<version>/icons/<path>`，`loadBundled(version:)` 解析对应版本，绝不回退到其他版本目录。 | Swift 测试（不存在的版本 → nil，不串目录） |
+| R7.2 | packaged resources 内同构：`GameCatalog/<version>/icons/<path>`，catalog service 解析对应版本，绝不回退到其他版本目录。 | TypeScript catalog loader/protocol 测试（不存在的版本 → unavailable，不串目录） |
 
 ---
 
@@ -144,9 +144,9 @@
 
 | # | 契约规则 | 校验方式 |
 |---|---|---|
-| R8.1 | 单一语义：`isRenderable ⇔ renderedPath 非空（非 nil 且非空串）∧ missingReason == nil`。**空串路径不可渲染**（交叉审核 P1-2：空路径不得被视为可渲染资源；Swift `isRenderable` 与 Python `contract.is_renderable` 同规则）。 | Swift 属性 + Python property-based 测试（真值表含空串） |
+| R8.1 | 单一语义：`isRenderable ⇔ renderedPath 非空（非 nil 且非空串）∧ missingReason == nil`。**空串路径不可渲染**（交叉审核 P1-2：空路径不得被视为可渲染资源；Electron contract 与 Python `contract.is_renderable` 同规则）。 | TypeScript/Python contract 测试（真值表含空串） |
 | R8.2 | Python 校验器同一规则：任何 ref 的 `renderedPath`/`missingReason` 组合必须满足互斥不变量（R5.2，`missingReason` 按 `is not None` 判定，空串也是失败原因），且渲染失败必须落 `ASSET_MISSING_REASONS` 域（空串 reason → "未知 missingReason"）。 | property-based 测试（域闭合 + 空串边界） |
-| R8.3 | UI 使用侧不得自行发明判定（如只查 `renderedPath` 存在性）；必须消费 `isRenderable`（Swift）或同规则校验器输出（Python）。 | 代码评审 + 契约测试 |
+| R8.3 | UI 使用侧不得自行发明判定（如只查 `renderedPath` 存在性）；必须消费 catalog protocol/contract 输出。 | 代码评审 + 契约测试 |
 
 ---
 
@@ -194,7 +194,7 @@
 | 阻塞 1：MovieClip 引用链 | `sc2.py` 帧解析（Task 1 实证：MovieClipFrameElement = 6 字节 3×u16，instance_index→children_ids[i]→shape 全局 id；单帧为主）；Shape 命令/顶点完整解析（Task 2：12 字节顶点 x/y float + u/v u16/0xFFFF，**实证 icon 为 6-8 顶点多边形非矩形**）；MatrixBank/Matrix2x3（Task 3：24B float32x6，half 未使用） |
 | 阻塞 2：ASTC/KTX/SCTX | `astc.py`（Task 4：**与官方 astcenc 5.7.0 全图逐像素对拍 diff=0**，4x4+6x6，LDR only，HDR→AstcError）；`ktx.py`（Task 5：KTX 1.x + SCTX 布局实证，ASTC 4x4/6x6/8x8 格式映射） |
 | 渲染/编码 | `render.py`（Task 6：bounds 1:1 + 多边形光栅化（edge function + 重心 UV + 双线性采样）+ 确定性 PNG（gAMA 45455、filter 0、zlib 9）） |
-| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Swift Bundle 读取断言（Task 9）。**E0-03/Issue #303 起**：不再刷新 manifest（精简为版本元数据四字段）；png_relpaths 来源仍为 catalog 最终 renderedPath 集合（去重、icons/ 内），事务提交后清理孤儿 PNG（旧成功→本次失败：PNG 删除 + catalog 引用置 null），清理失败不阻断（记录 cleaned/cleanupFailed） |
+| 生成/验收 | `render_generator.py`（Task 7：4 成功样本 PNG + 2 失败样本 missingReason；catalog.json 105 引用回写；validate verdict OK）；`validate.py` PNG 魔数校验（Task 8）；Electron catalog protocol 读取断言（Task 9）。**E0-03/Issue #303 起**：不再刷新 manifest（精简为版本元数据四字段）；png_relpaths 来源仍为 catalog 最终 renderedPath 集合（去重、icons/ 内），事务提交后清理孤儿 PNG（旧成功→本次失败：PNG 删除 + catalog 引用置 null），清理失败不阻断（记录 cleaned/cleanupFailed） |
 
 **固定样本实测**（sha256 三次生成一致，R4 成立）：
 - `icons/ui/icon_unit_barbarian.png` 166x166（64,039B）、`icons/ui/icon_spell_rage.png` 166x166（79,083B）、`icons/buildings/fireplace_lvl1.png` 75x58（9,146B）、`icons/buildings/blacksmith_lvl1.png` 110x126（26,696B）
@@ -238,5 +238,5 @@
 | # | 契约规则 |
 |---|---|
 | R12.1 | 所有游戏资产版权归 Supercell 所有；本目录为游戏数据的静态快照，**仅限个人学习/非商业用途**。 |
-| R12.2 | 遵循 Supercell Fan Content Policy：非商业使用、**不加免责声明不得分发**；渲染产物 PNG 仅作为应用 Bundle 内部资源随私有分发使用（SwiftPM `.copy("GameCatalog")` 打包），**不单独分发**。 |
-| R12.3 | 仓库不提交 APK 与游戏原始资源（`.sc`/`.sctx`/`.zktx` 等）；**渲染产物 PNG 为例外**——为满足 SwiftPM `.copy("GameCatalog")` 打包与 #25 Bundle 读取（Issue #30 验收标准 8），渲染 PNG 可提交入库。当前仓库为 **private**、个人学习/非商业用途，符合 Supercell Fan Content Policy；若仓库转为 public 或对外分发应用，须重新评估（免责声明 + 非商业限制）。 |
+| R12.2 | 遵循 Supercell Fan Content Policy：非商业使用、**不加免责声明不得分发**；渲染产物 PNG 仅作为 Electron packaged resources 随私有应用分发，**不单独分发**。 |
+| R12.3 | 仓库不提交 APK 与游戏原始资源（`.sc`/`.sctx`/`.zktx` 等）；**渲染产物 PNG 为例外**——为满足 Electron Forge extraResource 打包与 catalog protocol 读取，渲染 PNG 可提交入库。当前仓库为 **private**、个人学习/非商业用途，符合 Supercell Fan Content Policy；若仓库转为 public 或对外分发应用，须重新评估（免责声明 + 非商业限制）。 |

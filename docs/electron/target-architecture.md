@@ -1,6 +1,6 @@
 # Electron 重写目标架构（E0-02 冻结）
 
-> Issue #265 交付物。本文冻结纯 Electron 终态的模块边界与现有 Swift 实现的对应关系，
+> Issue #265 交付物。本文冻结纯 Electron 主线的模块边界与历史迁移职责映射，
 > 作为 #266/#267/#268 及 E2-* 的引用基线。**本文不决定** SQLite、事件溯源、状态管理框架等
 > 具体技术选型（Issue #265 非目标）。
 >
@@ -9,19 +9,19 @@
 
 ## 1. 终态形态定义
 
-「纯 Electron」= 最终发布包与主分支不包含 Swift runtime、Swift helper、native addon 或旧 Swift
-fallback（总控 Issue #264）。迁移期间旧 Swift 实现仅作为行为参考，
-不得进入终态运行链路。
+「纯 Electron」= 发布包与主分支不包含 Swift runtime、Swift helper、native addon 或旧 Swift
+fallback（总控 Issue #264）。E6-01-C2 已删除迁移期 Swift package；历史 Swift 名称只作为
+契约出处和审计背景，不是运行链路。
 
 ## 2. 目标进程结构
 
 ```text
 Electron Main（权威态）
-├─ AppState / command handlers          ← 现 AppModel.swift 的编排职责
+├─ AppState / command handlers          ← 迁移前 AppModel 的编排职责
 ├─ file stores + journal recovery       ← 现 VillageStore / SnapshotHistoryStore /
-│                                          ManualTrackerStore + *Transaction.swift
-├─ API client / retry / cancellation    ← 现 CoAPIClient / EndpointRefresher / *Refresher
-├─ secret store（safeStorage）          ← 现 CoAPITokenStore（Keychain）
+│                                          ManualTrackerStore + transaction services
+├─ API client / retry / cancellation    ← 官方 API service/refresher
+├─ secret store（safeStorage）          ← Electron token service
 └─ UtilityProcess                       ← 解析 / canonicalization / 投影等纯计算
 Preload
 └─ typed contextBridge API              ← renderer 无 Node.js、无裸 ipcRenderer
@@ -32,15 +32,15 @@ packages/
 └─ testkit     ← 可重放 Clock/随机 seam + TypeScript contract fixtures（#267/#281）
 ```
 
-## 3. 现有 Swift 边界 → 终态归属映射
+## 3. 历史职责 → 当前归属映射
 
 | 现有边界 | 规模职责 | 终态归属 |
 |---|---|---|
-| `Sources/COCHelperCore` | 解析、canonicalization、投影、对账、容量、分页合并等纯计算，**以及**文件持久化 store（SnapshotHistoryStore / ManualTrackerStore）与 URLSession HTTP client（CoAPIClient） | 纯计算部分 → `wire` + `domain`（UtilityProcess 可运行）；store 与网络层 → Main process application services |
-| `Sources/COCHelperApp` | 编排：AppModel、UserDefaults store、事务 journal、资源加载 | Main process application services |
-| `Sources/COCHelper` | SwiftUI UI | React renderer（E4-01，#277） |
-| `Tools/`（Python 目录管线 + Electron perf fixture 工具） | catalog 生成、性能 fixture/provenance | Node 工具链（E6-01-C1；Swift acceptance/smoke/seed 入口已删除） |
-| `Tests/` | Swift XCTest 迁移期参考测试 | E6-01 分阶段删除；Electron contract tests 位于 `packages/` |
+| 历史 Core 纯计算与 wire 语义 | 解析、canonicalization、投影、对账、容量、分页合并 | `packages/wire` + `packages/domain`，必要时由 Main/UtilityProcess 运行 |
+| 历史 App 编排与持久化 | store、journal、API、恢复和 secret 边界 | `apps/desktop/src/main` + `packages/domain` |
+| 历史 SwiftUI UI | 用户可见页面和交互 | `apps/desktop/src/renderer` |
+| 历史 Swift XCTest/Golden | 回归、fixture 和契约验证 | `apps/desktop`、`packages`、`fixtures` 下的 TypeScript 测试 |
+| 离线目录与性能工具 | catalog 生成、fixture/provenance、性能门禁 | `Tools/` Python 工具 + `scripts/` Node 工具 |
 
 ## 4. 持久化拓扑（现状冻结）
 
@@ -73,6 +73,7 @@ E0-03 硬切换细则（Issue #302）：新旧 schema 版本与旧文件行为�
    baseline/history wire shape 先稳定）→ #305（最后：golden/testkit 历史 hash 协议移除 +
    fixtures 重生成；等领域 wire shape 收敛）。#275 只接收新 store schema；
    #276/#278 真实接入与 packaged E2E 等上述 shape 稳定后再执行。
+7. **E6-01-C2（#281，本次切换）**：删除 Swift package、Swift resources/tests 与 Swift CI；主线进入纯 Electron 状态。
 
 ## 6. 验收锚点（对照 Issue #265 验收标准，本 PR 为阶段性状态）
 

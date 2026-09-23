@@ -4,16 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      '**/node_modules/**',
-      '**/.webpack/**',
-      '**/out/**',
-      'Sources/**',
-      'Tests/**',
-      'Tools/**',
-      'docs/**',
-      'Resources/**',
-    ],
+    ignores: ['**/node_modules/**', '**/.webpack/**', '**/out/**', 'Tools/**', 'docs/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

@@ -57,15 +57,13 @@ pnpm check:renderer-isolation
 pnpm check:secrets
 ```
 
-### Swift 迁移期参考实现（非产品路线）
+### Swift 迁移期参考测试（非产品路线）
 
-Swift 代码仅用于迁移期行为诊断，不新增产品功能，也不作为 Electron 发布包的运行依赖：
+Swift package 仅在 E6-01-C2 删除前保留普通 XCTest；它不再提供产品启动、Release
+打包、API smoke 或性能入口：
 
 ```bash
-swift test
-swift run COCHelper
-./scripts/build_app.sh
-open .build/COCHelper.app
+swift test --parallel --num-workers 1
 ```
 
 实现顺序和边界见 [Electron 目标架构](docs/electron/target-architecture.md)、[wire 契约](docs/electron/wire-contract-v1.md)、[行为矩阵](docs/electron/behavior-matrix.md) 与 [DTO 映射](docs/electron/dto-mapping.md)。
@@ -189,9 +187,10 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
   `icons/` 以 `.gitkeep` 占位跟踪。
 
 
-## API 连接（迁移期参考实现）
+## API 连接（Electron）
 
-下面的 API 命令与行为说明来自迁移期参考实现，用于验证凭证、IP 白名单、网络连通性和 Electron 重写的行为基线；它们不代表 Electron 业务 UI 已完成。当前只提供 `/v1/locations` 探测，不解析玩家数据，不投影到 UI。
+官方 API 由 Electron Main 的客户端和 renderer 的 Token Settings / 官方数据卡片提供。
+应用不会提供独立的 Swift smoke 命令；当前产品路径直接验证 token、请求和错误状态。
 
 ### 凭证准备
 
@@ -199,38 +198,20 @@ export_not_found 10 + render_failed 13，均写稳定 missingReason 不产空 PN
 2. "My Account" 页面创建 API key，绑定运行本应用的机器的 **Allowed IP addresses**（家庭宽带为公网出口 IP；VPN/代理会改变出口 IP，需同步更新）。
 3. 复制生成的 JWT 字符串作为 token。
 
-### token 存储（二选一）
+### Token 设置
 
-- **环境变量（临时验证）**：`COC_TOKEN=<你的token> swift run smoke-api`。注意：token 会留在 shell history 与进程环境中，临时验证后建议清理；长期使用推荐下面的 Keychain 方式。
-- **Keychain（推荐）**：token 存入 macOS Keychain（service `com.coc-helper.coapi`，account `developer-token`）。运行下面的配置脚本，在终端隐藏输入 token，写入 Keychain 后自动执行 smoke：
-
-  ```bash
-  zsh scripts/configure_coc_api.sh
-  ```
-
-  使用项目脚本即可；它通过 Swift Keychain API 写入完整 JWT，避免系统命令交互式密码输入的长度限制。
+在应用“官方玩家数据”卡片或 Token Settings 页面粘贴开发者门户生成的 JWT。Electron
+Main 使用 `safeStorage` 保存加密 token；token 不进入 renderer 可序列化状态、UserDefaults、
+村庄 JSON、日志或测试 fixture。性能 fixture 模式使用独立的
+`COCHELPER_PERF_API_TOKEN`，不会读取用户 token。
 
 **安全边界**：token 绝不写入源码、UserDefaults、村庄 JSON、日志或测试 fixture；本仓库任何文件都不应出现真实凭证。
 
 ### 连通性验证
 
-```bash
-swift run smoke-api
-```
-
-输出与退出码：
-
-| 结果 | 含义 | 退出码 |
-|---|---|---|
-| `SUCCESS: 连通性验证通过，locations=N` | API 可达且授权通过 | 0 |
-| `FAILED: 未配置凭证` | 未设置 COC_TOKEN 且 Keychain 无 token | 2 |
-| `FAILED: 授权失败 reason=...` | 401/403：token 无效或 IP 不在白名单（reason 含 `invalidIp` 时检查 Allowed IP） | 1 |
-| `FAILED: 请求被限流（429）` | 超过官方速率限制 | 1 |
-| `FAILED: 端点不存在（404）` | 路径/版本错误 | 1 |
-| `FAILED: 服务器错误（5xx）` | 官方服务异常 | 1 |
-| `FAILED: 网络失败 ...` | 超时/断网/响应解析失败 | 1 |
-
-错误映射（HTTP → 本地错误）：401 → unauthorized；403 → accessDenied(reason)；404 → notFound；429 → rateLimited（自动限次退避重试）；5xx → serverError；超时/断网 → timeout/network；2xx 但 JSON 解析失败 → malformedResponse。
+保存 token 后，在官方玩家数据卡片点击刷新；界面会按 401/403/404/429/5xx、超时、
+网络失败和 malformed response 显示对应状态。刷新失败不会删除本地导入数据，后续失败
+会保留 last-good 官方快照。
 
 ## 官方玩家数据（阶段二：手动/批量刷新）
 
@@ -252,7 +233,7 @@ swift run smoke-api
 
 ### Token 设置
 
-在“官方玩家数据”卡片点击“设置 API Token”，粘贴开发者门户生成的 JWT。Token 只写入 macOS Keychain，绝不写入 UserDefaults、村庄 JSON、日志或测试 fixture；也可以用命令行 `security add-generic-password -s com.coc-helper.coapi -a developer-token -w` 写入。
+在“官方玩家数据”卡片点击“设置 API Token”，粘贴开发者门户生成的 JWT。Token 只由 Electron Main 通过 `safeStorage` 保存，绝不写入 renderer 状态、UserDefaults、村庄 JSON、日志或测试 fixture。
 
 ### 已知边界
 

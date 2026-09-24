@@ -1597,7 +1597,11 @@ async function measureScroll(page, durationMs) {
     page,
     ({ duration }) =>
       new Promise((resolve) => {
-        const target = globalThis.document.scrollingElement;
+        const pageScroll = globalThis.document.querySelector('.page-scroll');
+        const pageScrollMax =
+          pageScroll === null ? 0 : Math.max(0, pageScroll.scrollHeight - pageScroll.clientHeight);
+        const target =
+          pageScrollMax > 0 ? pageScroll : globalThis.document.scrollingElement;
         const initialMax =
           target === null ? 0 : Math.max(0, target.scrollHeight - target.clientHeight);
         if (target === null || initialMax <= 0) {

@@ -35,7 +35,7 @@ export const DEV_CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  "img-src 'self' data: cochelper:",
   "font-src 'self'",
   "connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:*",
   "base-uri 'none'",

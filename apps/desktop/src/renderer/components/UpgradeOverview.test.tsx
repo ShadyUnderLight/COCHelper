@@ -58,7 +58,7 @@ function stateShape(
 describe('UpgradeOverview', () => {
   it('loading 显示加载文案', () => {
     render(<UpgradeOverview {...propsOf({ status: 'loading', payload: null, lastError: null })} />);
-    expect(screen.getByText('正在加载升级总览…')).toBeTruthy();
+    expect(screen.getByText('正在整理营地数据…')).toBeTruthy();
     expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('loading');
   });
 
@@ -83,8 +83,21 @@ describe('UpgradeOverview', () => {
   it('空 Overview 显示空态而非错误', () => {
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape()))} />);
     expect(screen.getByText('暂无进行中的升级')).toBeTruthy();
+    expect(
+      screen.getByText('导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'),
+    ).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('ready');
+  });
+
+  it('只有近期窗口外的手动完成记录时显示无待处理文案', () => {
+    const payload = stateShape();
+    payload.state.manualCompletedCount = 3;
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    expect(screen.getByText('当前没有进行中或待处理的升级，已记录 3 项手动完成。')).toBeTruthy();
+    expect(
+      screen.queryByText('导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'),
+    ).toBeNull();
   });
 
   it('列表使用 effective 等级和权威状态，不并列展示 raw 状态', () => {
@@ -110,6 +123,13 @@ describe('UpgradeOverview', () => {
     expect(row.textContent).toContain('已记录');
     expect(row.textContent).not.toContain('5 → 6 级');
     expect(row.textContent).not.toContain('已完成');
+  });
+
+  it('升级记录行保持四个元素的完整子树，将箭头作为 CSS 装饰绘制', () => {
+    const rec = recordFixture({ id: 'r-flat-row' });
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />);
+    const row = screen.getByRole('button', { name: /加农炮/ });
+    expect(row.querySelectorAll('*')).toHaveLength(4);
   });
 
   it('catalogIsUsable=false 显示不可用横幅且仍列出记录', () => {
@@ -179,7 +199,7 @@ describe('UpgradeOverview', () => {
     expect(onOpenDetail).toHaveBeenCalledWith('rec-open', 'vB');
   });
 
-  it('有图标时行内渲染 28px 图标且 src 正确（#277-C2）', () => {
+  it('有图标时行内渲染 36px 图标且 src 正确（#277-C2）', () => {
     const rec = recordFixture({
       id: 'r-icon',
       item: {
@@ -197,8 +217,8 @@ describe('UpgradeOverview', () => {
     );
     const img = container.querySelector('img.overview-item-icon') as HTMLImageElement | null;
     expect(img?.getAttribute('src')).toBe('cochelper://catalog/18.400.13/icons/ui/icon_x.png');
-    expect(img?.getAttribute('width')).toBe('28');
-    expect(img?.getAttribute('height')).toBe('28');
+    expect(img?.getAttribute('width')).toBe('36');
+    expect(img?.getAttribute('height')).toBe('36');
   });
 
   it('图标全空时显示分类 glyph 而非消失（#277-C2 review）', () => {

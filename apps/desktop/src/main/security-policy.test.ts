@@ -73,4 +73,15 @@ describe('renderer URL allowlist', () => {
     expect(PRODUCTION_CONTENT_SECURITY_POLICY).toContain(`${APP_PROTOCOL}:`);
     expect(PRODUCTION_CONTENT_SECURITY_POLICY).not.toContain('unsafe-eval');
   });
+
+  it('开发态只为应用图片协议放行 cochelper', () => {
+    const directive = (name: string) =>
+      DEV_CONTENT_SECURITY_POLICY.split('; ').find((entry) => entry.startsWith(name + ' '));
+
+    expect(directive('img-src')).toBe("img-src 'self' data: cochelper:");
+    expect(directive('script-src')).toBe("script-src 'self' 'unsafe-eval' 'unsafe-inline'");
+    expect(directive('connect-src')).toBe(
+      "connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:*",
+    );
+  });
 });

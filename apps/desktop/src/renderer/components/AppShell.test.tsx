@@ -236,6 +236,42 @@ describe('AppShell', () => {
     expect(refreshDiagnostics).toHaveBeenCalledTimes(1);
   });
 
+  it('Token Settings 路由的顶部刷新会重新读取 Token 状态', async () => {
+    const tokenStatus = vi.fn(async () => ({
+      ok: true as const,
+      value: { configured: false, storage: 'available' as const, message: null },
+    }));
+    const tokenBridge = {
+      tokenStatus,
+      tokenSave: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: true, storage: 'available' as const, message: null },
+      })),
+      tokenClear: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: false, storage: 'available' as const, message: null },
+      })),
+    };
+
+    render(
+      <AppShell
+        session={sessionApi({
+          ...INITIAL_APP_SESSION,
+          status: 'ready',
+          snapshot: snapshot(),
+        })}
+        overview={overviewApi()}
+        detail={detailApi()}
+        tokenBridge={tokenBridge}
+        route={{ kind: 'info', section: 'tokenSettings' }}
+      />,
+    );
+
+    await waitFor(() => expect(tokenStatus).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '刷新数据' }));
+    await waitFor(() => expect(tokenStatus).toHaveBeenCalledTimes(2));
+  });
+
   it('recovery 状态仍保留 Info 入口', () => {
     render(
       <AppShell

@@ -479,9 +479,12 @@ button.danger {
 }
 
 .status-technical {
-  display: block;
+  display: inline-block;
   margin-top: 3px;
-  color: rgb(248 246 229 / 45%);
+  padding: 2px 4px;
+  color: #fff9e8;
+  border-radius: 5px;
+  background: #233329;
   font-size: 8px;
 }
 
@@ -1063,9 +1066,9 @@ button.danger {
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: 40px minmax(0, 1fr) 11px;
+  grid-template-columns: 40px minmax(0, 1fr) auto 11px;
   align-items: center;
-  gap: 9px;
+  gap: 2px 9px;
   padding: 7px 9px;
   color: #443c2a;
   border: 1px solid #e0d4b3;
@@ -1088,6 +1091,8 @@ button.danger {
 
 .overview-item-icon,
 .overview-item-glyph {
+  grid-column: 1;
+  grid-row: 1 / 3;
   width: 36px;
   height: 36px;
   flex: none;
@@ -1106,21 +1111,9 @@ button.danger {
   font-weight: 700;
 }
 
-.overview-item-body {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.overview-item-topline {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 7px;
-}
-
 .overview-item-name {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   color: #443c2a;
@@ -1128,6 +1121,11 @@ button.danger {
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.overview-item .level-pill {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .level-pill {
@@ -1143,6 +1141,8 @@ button.danger {
 }
 
 .overview-item-meta {
+  grid-column: 2 / 4;
+  grid-row: 2;
   overflow: hidden;
   color: #6b6148;
   font-size: 8px;
@@ -1150,11 +1150,18 @@ button.danger {
   white-space: nowrap;
 }
 
-.record-open {
+.overview-item::after {
+  width: 7px;
+  height: 7px;
+  grid-column: 4;
+  grid-row: 1 / 3;
+  align-self: center;
+  justify-self: center;
   color: #a58c4a;
-  font:
-    18px Georgia,
-    serif;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg);
 }
 
 .empty-state {
@@ -1508,7 +1515,7 @@ button.danger {
 }
 
 .preview-facts span {
-  color: #86795b;
+  color: #6b6148;
   font-size: 8px;
 }
 
@@ -1519,7 +1526,7 @@ button.danger {
 
 .preview-diagnostic {
   margin: 8px 0 0;
-  color: #76684b;
+  color: #6b6148;
   font-size: 9px;
   overflow-wrap: anywhere;
 }
@@ -1757,7 +1764,7 @@ button.danger {
 }
 
 .metric-card .muted {
-  color: #86795b;
+  color: #6b6148;
   font-size: 9px;
 }
 
@@ -1976,7 +1983,7 @@ button.danger {
 }
 
 .diagnostic-row dt {
-  color: #887b5e;
+  color: #6b6148;
 }
 
 .diagnostic-row dd {

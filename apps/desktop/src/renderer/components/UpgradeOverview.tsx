@@ -350,24 +350,17 @@ function RecordList(props: {
                   </span>
                 }
               />
-              <span className="overview-item-body">
-                <span className="overview-item-topline">
-                  <span className="overview-item-name">{record.item.name}</span>
-                  <span className="level-pill">
-                    {levelTransitionText(
-                      record.item.effectiveCurrentLevel,
-                      record.item.effectiveTargetLevel,
-                    )}
-                  </span>
-                </span>
-                <span className="overview-item-meta">
-                  {record.villageName} · {baseLabel(record.base)} ·{' '}
-                  {authoritativeLevelStatus(record.item)}
-                  {availabilityText(record)}
-                </span>
+              <span className="overview-item-name">{record.item.name}</span>
+              <span className="level-pill">
+                {levelTransitionText(
+                  record.item.effectiveCurrentLevel,
+                  record.item.effectiveTargetLevel,
+                )}
               </span>
-              <span className="record-open" aria-hidden="true">
-                ›
+              <span className="overview-item-meta">
+                {record.villageName} · {baseLabel(record.base)} ·{' '}
+                {authoritativeLevelStatus(record.item)}
+                {availabilityText(record)}
               </span>
             </button>
           </li>

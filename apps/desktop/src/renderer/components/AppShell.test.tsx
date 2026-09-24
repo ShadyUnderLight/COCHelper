@@ -360,15 +360,25 @@ describe('AppShell', () => {
     expect(screen.getByRole('heading', { level: 1, name: '村庄详情' })).toBeTruthy();
   });
 
-  it('点击当前村庄可进入升级追踪而不重复切换档案', () => {
+  it('详情 route 点击当前村庄可进入升级追踪而不重复切换档案', () => {
     const selectVillage = vi.fn(async () => true);
-    render(
-      <AppShell
-        session={{ ...readySession(), selectVillage }}
-        overview={overviewApi()}
-        detail={detailApi()}
-      />,
-    );
+    function Shell() {
+      const [route, setRoute] = useState<AppRoute>({
+        kind: 'villageDetail',
+        villageId: 'v1',
+        base: 'home',
+      });
+      return (
+        <AppShell
+          session={{ ...readySession(), selectVillage }}
+          overview={overviewApi()}
+          detail={detailApi()}
+          route={route}
+          onRouteChange={setRoute}
+        />
+      );
+    }
+    render(<Shell />);
 
     fireEvent.click(screen.getByRole('button', { name: /主村/ }));
 
@@ -441,6 +451,34 @@ describe('AppShell', () => {
         base: 'home',
       });
     });
+  });
+
+  it('导入 route 下 sidebar 切换目标村庄时保留导入页面', async () => {
+    const onRouteChange = vi.fn();
+    const selectVillage = vi.fn(async () => true);
+    render(
+      <AppShell
+        session={{
+          ...sessionApi({
+            ...INITIAL_APP_SESSION,
+            status: 'ready',
+            snapshot: snapshot({ selectedVillageId: 'v1' }),
+          }),
+          selectVillage,
+        }}
+        overview={overviewApi()}
+        detail={detailApi()}
+        route={{ kind: 'import' }}
+        onRouteChange={onRouteChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /分村/ }));
+
+    await waitFor(() => expect(selectVillage).toHaveBeenCalledWith('v2'));
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    expect(screen.queryByLabelText('升级追踪')).toBeNull();
+    expect(onRouteChange).not.toHaveBeenCalled();
   });
 
   it('详情 route 下 sidebar 选村失败时 route 不变', async () => {

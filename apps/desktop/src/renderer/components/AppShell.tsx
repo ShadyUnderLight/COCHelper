@@ -187,7 +187,7 @@ export function AppShell({
       );
       return;
     }
-    if (currentRoute.kind !== 'overview') {
+    if (currentRoute.kind !== 'overview' && currentRoute.kind !== 'import') {
       applyRoute({ kind: 'overview' });
     }
   };

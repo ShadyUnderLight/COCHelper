@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UpgradeRecentCompletionDto, VillageSummaryDto } from '@coc-helper/contracts';
 
@@ -10,10 +10,12 @@ import {
   recordFixture,
   type OverviewState,
 } from '../overview-session';
+import { advanceClockStoreForTests, resetClockStoreForTests } from '../clock-store';
 import { UpgradeOverview } from './UpgradeOverview';
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
 });
 
 type Props = {
@@ -147,7 +149,8 @@ describe('UpgradeOverview', () => {
     expect(screen.getByRole('button', { name: /加农炮/ }).textContent).toContain('分村（#BBB）');
   });
 
-  it('正在升级的记录显示剩余时间', () => {
+  it('正在升级的记录显示会随显示时钟递减的剩余时间', () => {
+    resetClockStoreForTests(1);
     const record = recordFixture({
       id: 'r-timer',
       effectiveRemainingSeconds: 3_600,
@@ -160,9 +163,12 @@ describe('UpgradeOverview', () => {
     render(
       <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [record] })))} />,
     );
-    expect(screen.getByRole('button', { name: /加农炮/ }).textContent).toContain(
-      '剩余 1小时 0分钟',
-    );
+    const row = screen.getByRole('button', { name: /加农炮/ });
+    expect(row.textContent).toContain('剩余 1小时 0分钟');
+
+    act(() => advanceClockStoreForTests(60_000));
+
+    expect(row.textContent).toContain('剩余 59分钟');
   });
 
   it('近期完成记录显示所属村庄和标签', () => {

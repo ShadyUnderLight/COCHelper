@@ -19,6 +19,7 @@ import {
   levelTransitionText,
   primaryLevelAssets,
 } from '../village-detail-session';
+import { useClock } from '../use-clock';
 import { AssetImage } from './AssetImage';
 
 type UpgradeOverviewProps = {
@@ -39,6 +40,9 @@ export function UpgradeOverview({
   onRetry,
 }: UpgradeOverviewProps) {
   const { status, payload, lastError } = state;
+  const hasActiveCountdown =
+    payload?.active.some((record) => (record.effectiveRemainingSeconds ?? 0) > 0) ?? false;
+  const nowMs = useClock(hasActiveCountdown);
 
   useEffect(() => {
     if (payload !== null) {
@@ -81,6 +85,7 @@ export function UpgradeOverview({
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
   const needsReimport = payload.state.needsReimportRecords;
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - payload.nowMs) / 1000));
 
   return (
     <section className="overview-panel" aria-label="升级追踪" data-perf-state="ready">
@@ -142,6 +147,7 @@ export function UpgradeOverview({
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
             emphasis
+            elapsedSeconds={elapsedSeconds}
           />
         ) : (
           <section className="content-card empty-card" aria-label="进行中">
@@ -373,6 +379,7 @@ function RecordList(props: {
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly emphasis?: boolean;
+  readonly elapsedSeconds?: number;
 }) {
   if (props.records.length === 0) {
     return null;
@@ -430,9 +437,7 @@ function RecordList(props: {
                 {record.villageName}
                 {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
                 {baseLabel(record.base)} · {authoritativeLevelStatus(record.item)}
-                {record.effectiveRemainingSeconds !== null && record.effectiveRemainingSeconds > 0
-                  ? ` · 剩余 ${formatDurationSeconds(record.effectiveRemainingSeconds)}`
-                  : ''}
+                {remainingTimeText(record, props.elapsedSeconds ?? 0)}
                 {availabilityText(record)}
               </span>
             </button>
@@ -441,6 +446,14 @@ function RecordList(props: {
       </ul>
     </section>
   );
+}
+
+function remainingTimeText(record: UpgradeDisplayRecordDto, elapsedSeconds: number): string {
+  if (record.effectiveRemainingSeconds === null) {
+    return '';
+  }
+  const remainingSeconds = Math.max(0, record.effectiveRemainingSeconds - elapsedSeconds);
+  return remainingSeconds > 0 ? ` · 剩余 ${formatDurationSeconds(remainingSeconds)}` : '';
 }
 
 function sectionSymbol(title: string): string {

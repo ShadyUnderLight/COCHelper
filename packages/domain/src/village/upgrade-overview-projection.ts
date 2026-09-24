@@ -62,8 +62,11 @@ export type UpgradeRecentCompletion = {
   readonly id: string;
 };
 
-export function upgradeRecentCompletionId(completion: UpgradeRecentCompletion): string {
-  return `${trackerItemKeyStableId(completion.itemKey)}:${completion.targetLevel}:${completion.completedAtMs}`;
+export function upgradeRecentCompletionId(input: {
+  readonly villageID: string;
+  readonly recordID: string;
+}): string {
+  return `${input.villageID}:${input.recordID}`;
 }
 
 export type UpgradeOverviewState = {
@@ -329,9 +332,9 @@ function upgradeOverviewStateCore(input: {
           targetLevel: record.targetLevel,
           quantity: record.quantity,
           completedAtMs: record.expectedEndAtMs,
-          id: '',
+          id: upgradeRecentCompletionId({ villageID, recordID: record.recordID }),
         };
-        return [{ ...completion, id: upgradeRecentCompletionId(completion) }];
+        return [completion];
       }),
     )
     .sort((left, right) => right.completedAtMs - left.completedAtMs);

@@ -150,10 +150,11 @@ describe('UpgradeOverview', () => {
   it('正在升级的记录显示剩余时间', () => {
     const record = recordFixture({
       id: 'r-timer',
+      effectiveRemainingSeconds: 3_600,
       item: {
         ...recordFixture().item,
         timerSeconds: 7_200,
-        remainingSeconds: 3_600,
+        remainingSeconds: null,
       },
     });
     render(

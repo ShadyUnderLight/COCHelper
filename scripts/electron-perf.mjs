@@ -1417,7 +1417,7 @@ async function captureFailureDiagnostics(context, session, error) {
               .map((element) => boundedText(element.textContent?.trim() ?? '')),
             bodyText: boundedText(globalThis.document.body.innerText ?? ''),
             import: panelEvidence('section[aria-label="账号导入"]'),
-            overview: panelEvidence('section[aria-label="升级总览"]'),
+            overview: panelEvidence('section[aria-label="升级追踪"]'),
             detail: panelEvidence('section[aria-label="村庄详情"]'),
           };
         },
@@ -1498,7 +1498,7 @@ async function measureIpc(page, kind, villageId, clanTag) {
       if (requestKind === 'overview' || requestKind === 'detail') {
         const panel = globalThis.document.querySelector(
           requestKind === 'overview'
-            ? 'section[aria-label="升级总览"]'
+            ? 'section[aria-label="升级追踪"]'
             : 'section[aria-label="村庄详情"]',
         );
         if (panel === null) {
@@ -1763,7 +1763,7 @@ async function measureViews(session, includeOfficial) {
   const overviewColdMark = 0;
   await beginRendererCommitMeasure(page, 'overview');
   const overviewCold = await measureProcessPhase(session, async () => {
-    const navigationMs = await goToTab(page, '升级总览', '升级总览');
+    const navigationMs = await goToTab(page, '升级追踪', '升级追踪');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
@@ -1785,7 +1785,7 @@ async function measureViews(session, includeOfficial) {
   assert.equal(detailScroll.value.notApplicable, false, '村庄详情没有可滚动内容');
 
   for (let index = 0; index < warmupCount; index += 1) {
-    await goToTab(page, '升级总览', '升级总览');
+    await goToTab(page, '升级追踪', '升级追踪');
     await settleCatalogRequests(page, probe);
     await goToTab(page, '村庄详情', '村庄详情');
     await settleCatalogRequests(page, probe);
@@ -1794,7 +1794,7 @@ async function measureViews(session, includeOfficial) {
   const overviewHotMark = probe.mark();
   await beginRendererCommitMeasure(page, 'overview');
   const overviewHot = await measureProcessPhase(session, async () => {
-    const navigationMs = await goToTab(page, '升级总览', '升级总览');
+    const navigationMs = await goToTab(page, '升级追踪', '升级追踪');
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });

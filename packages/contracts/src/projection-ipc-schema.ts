@@ -268,6 +268,7 @@ export const upgradeDisplayRecordDtoSchema: z.ZodType<UpgradeDisplayRecordDto> =
     villageTag: z.string().max(32).nullable(),
     base: trackerBaseSchema,
     item: villageItemStateDtoSchema,
+    effectiveRemainingSeconds: safeIntSchema.nullable(),
     catalogVersion: z.string().max(64).nullable(),
     villageMetrics: villageProgressMetricsDtoSchema,
   })

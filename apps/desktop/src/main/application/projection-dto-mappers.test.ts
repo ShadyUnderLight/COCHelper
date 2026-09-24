@@ -2,10 +2,12 @@ import {
   createGameCatalog,
   createManualItemStateForStatus,
   createManualLevelDistributionFromPairs,
+  createManualUpgradeRecord,
   createManualUpgradeCoreState,
   createVillageProfile,
   projectVillageCatalog,
   trackerItemKeyRoot,
+  upgradeOverviewRender,
   type AccountItem,
   type AccountSnapshot,
   type CatalogAssetRef,
@@ -14,9 +16,10 @@ import {
   type CatalogUpgradeCost,
   type EffectiveVillageItemState,
 } from '@coc-helper/domain';
+import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
 
-import { toVillageItemStateDto } from './projection-dto-mappers';
+import { toUpgradeOverviewPayload, toVillageItemStateDto } from './projection-dto-mappers';
 
 const IMPORTED_AT_MS = 1_700_000_000_000;
 const ITEM_DATA_ID = 1_000_001n;
@@ -71,10 +74,19 @@ function catalog(
     levelVisual: asset('cannon'),
     missingReason: null,
     displayCategory: 'defense',
-    lifecycle: null,
+    lifecycle: 'permanent',
     levels,
   };
-  return createGameCatalog({ gameVersion: '18.400.13', items: [item] });
+  return createGameCatalog({
+    gameVersion: '18.400.13',
+    items: [item],
+    manifest: {
+      schemaVersion: 3,
+      gameVersion: '18.400.13',
+      buildTag: 'test',
+      locale: 'zh-CN',
+    },
+  });
 }
 
 function accountItem(): AccountItem {
@@ -114,6 +126,68 @@ function snapshot(item: AccountItem = accountItem()): AccountSnapshot {
 }
 
 describe('projection DTO effective state mapping', () => {
+  it('manualActive 的有效剩余时间在 raw remainingSeconds 为空时进入总览 DTO', () => {
+    const itemKey = trackerItemKeyRoot('home', 'buildings', ITEM_DATA_ID);
+    const baselineReference = { revision: 'snapshot-1', lineageID: null };
+    const expectedEndAtMs = IMPORTED_AT_MS + 300_000;
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference,
+          imported: createManualLevelDistributionFromPairs([[1, 1n]]),
+          manual: createManualLevelDistributionFromPairs([[1, 1n]]),
+          status: 'manualCompleted',
+          sourceTimestampMs: IMPORTED_AT_MS,
+        }),
+      ],
+      records: [
+        createManualUpgradeRecord({
+          recordID: parseUuid('00000000-0000-0000-0000-000000000011')!,
+          itemKey,
+          fromLevel: 1,
+          targetLevel: 2,
+          quantity: 1n,
+          startedAtMs: IMPORTED_AT_MS,
+          expectedEndAtMs,
+          durationSeconds: 300n,
+          durationKind: 'timed',
+          frozenCosts: null,
+          catalogProvenance: {
+            gameVersion: '18.400.13',
+            buildTag: 'test',
+            manifestSchemaVersion: 3,
+          },
+          baselineReference,
+        }),
+      ],
+    });
+    const village = createVillageProfile({
+      id: '00000000-0000-0000-0000-0000000000ad',
+      name: 'DTO 手动升级村',
+      accountSnapshot: snapshot({ ...accountItem(), remainingSeconds: null }),
+    });
+    const nowMs = IMPORTED_AT_MS + 10_000;
+    const render = upgradeOverviewRender({
+      villages: [village],
+      catalog: catalog(),
+      manualUpgradeCores: { [village.id]: manualUpgradeCore },
+      nowMs,
+    });
+
+    const payload = toUpgradeOverviewPayload({
+      generation: 1,
+      nowMs,
+      catalogVersion: '18.400.13',
+      catalogIsUsable: true,
+      render,
+    });
+
+    expect(payload.active).toHaveLength(1);
+    expect(payload.active[0]?.item.remainingSeconds).toBeNull();
+    expect(payload.active[0]?.effectiveRemainingSeconds).toBe(290);
+  });
+
   it('真实 projection 的 globalMaxed 和 effective duration 经过 mapper 仍保持 fail-closed', () => {
     const itemKey = trackerItemKeyRoot('home', 'buildings', ITEM_DATA_ID);
     const manualUpgradeCore = createManualUpgradeCoreState({

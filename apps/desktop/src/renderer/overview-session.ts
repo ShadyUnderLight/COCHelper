@@ -186,6 +186,7 @@ export function recordFixture(
     base: 'home',
     catalogVersion: '18.400.13',
     villageMetrics: metrics,
+    effectiveRemainingSeconds: null,
     item: itemFixture(),
     ...overrides,
   };

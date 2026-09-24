@@ -199,6 +199,7 @@ export type UpgradeDisplayRecordDto = {
   readonly villageTag: string | null;
   readonly base: TrackerBaseDto;
   readonly item: VillageItemStateDto;
+  readonly effectiveRemainingSeconds: number | null;
   readonly catalogVersion: string | null;
   readonly villageMetrics: VillageProgressMetricsDto;
 };

@@ -430,8 +430,8 @@ function RecordList(props: {
                 {record.villageName}
                 {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
                 {baseLabel(record.base)} · {authoritativeLevelStatus(record.item)}
-                {record.item.remainingSeconds !== null && record.item.remainingSeconds > 0
-                  ? ` · 剩余 ${formatDurationSeconds(record.item.remainingSeconds)}`
+                {record.effectiveRemainingSeconds !== null && record.effectiveRemainingSeconds > 0
+                  ? ` · 剩余 ${formatDurationSeconds(record.effectiveRemainingSeconds)}`
                   : ''}
                 {availabilityText(record)}
               </span>

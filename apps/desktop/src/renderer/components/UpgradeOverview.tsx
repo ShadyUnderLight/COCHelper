@@ -12,6 +12,7 @@ import {
   isEmptyOverview,
   type OverviewState,
 } from '../overview-session';
+import { clockStore } from '../clock-store';
 import {
   authoritativeLevelStatus,
   categoryGlyph,
@@ -40,8 +41,14 @@ export function UpgradeOverview({
   onRetry,
 }: UpgradeOverviewProps) {
   const { status, payload, lastError } = state;
+  const clockNowMs = clockStore.getSnapshot();
+  const elapsedBeforeSubscription =
+    payload === null ? 0 : elapsedSecondsSince(payload.nowMs, clockNowMs);
   const hasActiveCountdown =
-    payload?.active.some((record) => (record.effectiveRemainingSeconds ?? 0) > 0) ?? false;
+    payload?.active.some((record) => {
+      const remainingSeconds = remainingSecondsAfterElapsed(record, elapsedBeforeSubscription);
+      return remainingSeconds !== null && remainingSeconds > 0;
+    }) ?? false;
   const nowMs = useClock(hasActiveCountdown);
 
   useEffect(() => {
@@ -81,11 +88,28 @@ export function UpgradeOverview({
 
   const unavailable = isCatalogUnavailable(payload);
   const empty = isEmptyOverview(payload);
-  const active = payload.active;
+  const elapsedSeconds = elapsedSecondsSince(payload.nowMs, nowMs);
+  const pendingSettlement = payload.active.filter(
+    (record) =>
+      record.item.effectiveStatus === 'manualActive' &&
+      remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
+  );
+  const expiredImported = payload.active.filter(
+    (record) =>
+      record.item.effectiveStatus === 'importedActive' &&
+      remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
+  );
+  const expiredImportedIds = new Set(expiredImported.map((record) => record.id));
+  const expiredIds = new Set([...pendingSettlement, ...expiredImported].map((record) => record.id));
+  const active = payload.active.filter((record) => !expiredIds.has(record.id));
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
-  const needsReimport = payload.state.needsReimportRecords;
-  const elapsedSeconds = Math.max(0, Math.floor((nowMs - payload.nowMs) / 1000));
+  const needsReimport = [...payload.state.needsReimportRecords, ...expiredImported];
+  const manualActiveCount = Math.max(0, payload.state.manualActiveCount - pendingSettlement.length);
+  const expiredImportedCount = expiredImported.filter(
+    (record) => record.item.timerSeconds !== null,
+  ).length;
+  const importedActiveCount = Math.max(0, payload.state.importedActiveCount - expiredImportedCount);
 
   return (
     <section className="overview-panel" aria-label="升级追踪" data-perf-state="ready">
@@ -119,11 +143,16 @@ export function UpgradeOverview({
                 active.length +
                 ' 项进行中，' +
                 pending.length +
-                ' 项待开始。点击条目查看对应村庄详情。'}
+                ' 项待开始' +
+                (pendingSettlement.length === 0
+                  ? ''
+                  : '，另有 ' + pendingSettlement.length + ' 项手动升级待结算') +
+                '。点击条目查看对应村庄详情。'}
           </p>
           <OverviewCounts
-            manualActiveCount={payload.state.manualActiveCount}
-            importedActiveCount={payload.state.importedActiveCount}
+            manualActiveCount={manualActiveCount}
+            manualPendingSettlementCount={pendingSettlement.length}
+            importedActiveCount={importedActiveCount}
             manualCompletedCount={payload.state.manualCompletedCount}
           />
         </div>
@@ -169,6 +198,16 @@ export function UpgradeOverview({
 
         <div className="overview-rail">
           <RecordList
+            title="待结算"
+            description="计时已结束，进入村庄详情结算手动记录"
+            records={pendingSettlement}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onOpenDetail={onOpenDetail}
+            statusTextOverride="待结算"
+            elapsedSeconds={elapsedSeconds}
+          />
+          <RecordList
             title="待开始"
             description="已安排，等待开工"
             records={pending}
@@ -191,8 +230,13 @@ export function UpgradeOverview({
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
+            statusTextForRecord={(record) =>
+              expiredImportedIds.has(record.id) ? '待重新导入确认' : null
+            }
+            elapsedSeconds={elapsedSeconds}
           />
-          {pending.length + attention.length + needsReimport.length === 0 ? (
+          {pendingSettlement.length + pending.length + attention.length + needsReimport.length ===
+          0 ? (
             <div className="quiet-card">
               <span className="quiet-mark" aria-hidden="true">
                 ✦
@@ -267,6 +311,7 @@ function RecentCompletions(props: {
 
 function OverviewCounts(props: {
   readonly manualActiveCount: number;
+  readonly manualPendingSettlementCount: number;
   readonly importedActiveCount: number;
   readonly manualCompletedCount: number;
 }) {
@@ -276,6 +321,12 @@ function OverviewCounts(props: {
         <i className="meta-dot manual" />
         手动进行中 {props.manualActiveCount}
       </span>
+      {props.manualPendingSettlementCount > 0 ? (
+        <span>
+          <i className="meta-dot" />
+          手动待结算 {props.manualPendingSettlementCount}
+        </span>
+      ) : null}
       <span>
         <i className="meta-dot imported" />
         导入进行中 {props.importedActiveCount}
@@ -380,6 +431,8 @@ function RecordList(props: {
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly emphasis?: boolean;
   readonly elapsedSeconds?: number;
+  readonly statusTextOverride?: string;
+  readonly statusTextForRecord?: (record: UpgradeDisplayRecordDto) => string | null;
 }) {
   if (props.records.length === 0) {
     return null;
@@ -436,7 +489,10 @@ function RecordList(props: {
               <span className="overview-item-meta">
                 {record.villageName}
                 {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
-                {baseLabel(record.base)} · {authoritativeLevelStatus(record.item)}
+                {baseLabel(record.base)} ·{' '}
+                {props.statusTextOverride ??
+                  props.statusTextForRecord?.(record) ??
+                  authoritativeLevelStatus(record.item)}
                 {remainingTimeText(record, props.elapsedSeconds ?? 0)}
                 {availabilityText(record)}
               </span>
@@ -449,11 +505,24 @@ function RecordList(props: {
 }
 
 function remainingTimeText(record: UpgradeDisplayRecordDto, elapsedSeconds: number): string {
+  const remainingSeconds = remainingSecondsAfterElapsed(record, elapsedSeconds);
+  return remainingSeconds !== null && remainingSeconds > 0
+    ? ` · 剩余 ${formatDurationSeconds(remainingSeconds)}`
+    : '';
+}
+
+function remainingSecondsAfterElapsed(
+  record: UpgradeDisplayRecordDto,
+  elapsedSeconds: number,
+): number | null {
   if (record.effectiveRemainingSeconds === null) {
-    return '';
+    return null;
   }
-  const remainingSeconds = Math.max(0, record.effectiveRemainingSeconds - elapsedSeconds);
-  return remainingSeconds > 0 ? ` · 剩余 ${formatDurationSeconds(remainingSeconds)}` : '';
+  return Math.max(0, record.effectiveRemainingSeconds - elapsedSeconds);
+}
+
+function elapsedSecondsSince(startMs: number, nowMs: number): number {
+  return Math.max(0, Math.floor((nowMs - startMs) / 1000));
 }
 
 function sectionSymbol(title: string): string {
@@ -461,6 +530,7 @@ function sectionSymbol(title: string): string {
     case '进行中':
       return '↗';
     case '待开始':
+    case '待结算':
       return '◷';
     case '需要关注':
       return '!';

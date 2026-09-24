@@ -16,6 +16,7 @@ import { UpgradeOverview } from './UpgradeOverview';
 afterEach(() => {
   cleanup();
   resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 type Props = {
@@ -169,6 +170,62 @@ describe('UpgradeOverview', () => {
     act(() => advanceClockStoreForTests(60_000));
 
     expect(row.textContent).toContain('剩余 59分钟');
+  });
+
+  it('计时归零后将记录移入待处理状态并停止时钟订阅', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const baseItem = recordFixture().item;
+    const manualRecord = recordFixture({
+      id: 'manual-due',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: null,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const importedRecord = recordFixture({
+      id: 'imported-due',
+      villageID: 'v2',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: 2,
+        remainingSeconds: 2,
+        effectiveStatus: 'importedActive',
+      },
+    });
+    const payload = stateShape({
+      active: [manualRecord, importedRecord],
+    });
+    payload.state.manualActiveCount = 1;
+    payload.state.importedActiveCount = 1;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    const activeCount = screen
+      .getByLabelText('升级记录概况')
+      .querySelector('.stat-card.active .stat-value');
+    expect(activeCount?.textContent).toContain('0');
+    expect(screen.getByText('手动进行中 0')).toBeTruthy();
+    expect(screen.getByText('手动待结算 1')).toBeTruthy();
+    expect(screen.getByLabelText('待结算').querySelector('button')?.textContent).toContain(
+      '待结算',
+    );
+    expect(screen.getByLabelText('待重新导入').querySelector('button')?.textContent).toContain(
+      '待重新导入确认',
+    );
+    expect(screen.queryByText(/正在升级/)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('近期完成记录显示所属村庄和标签', () => {

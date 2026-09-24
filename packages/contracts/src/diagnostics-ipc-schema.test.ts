@@ -6,6 +6,7 @@ import {
   isTokenStatusPayload,
   tokenSaveRequestSchema,
 } from './diagnostics-ipc-schema';
+import { TOKEN_MAX_LENGTH } from './diagnostics-ipc';
 
 const payload = {
   sessionId: 'session-1',
@@ -61,11 +62,14 @@ describe('diagnostics IPC schema', () => {
   });
 
   it('限制 token.save 输入形状和长度', () => {
-    expect(tokenSaveRequestSchema.parse({ token: 'secret-token' })).toEqual({
-      token: 'secret-token',
+    const token = 'x'.repeat(564);
+    expect(tokenSaveRequestSchema.parse({ token })).toEqual({
+      token,
     });
     expect(() => tokenSaveRequestSchema.parse({ token: '' })).toThrow();
-    expect(() => tokenSaveRequestSchema.parse({ token: 'x'.repeat(513) })).toThrow();
+    expect(() =>
+      tokenSaveRequestSchema.parse({ token: 'x'.repeat(TOKEN_MAX_LENGTH + 1) }),
+    ).toThrow();
     expect(() => tokenSaveRequestSchema.parse({ token: 'secret-token', extra: true })).toThrow();
   });
 });

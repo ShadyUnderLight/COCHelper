@@ -3,6 +3,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { TOKEN_MAX_LENGTH } from '@coc-helper/contracts';
+
 import { TokenSettingsPanel } from './TokenSettingsPanel';
 
 describe('TokenSettingsPanel', () => {
@@ -11,6 +13,7 @@ describe('TokenSettingsPanel', () => {
   });
 
   it('保存成功后清空局部输入框，不回显 token', async () => {
+    const token = 'x'.repeat(564);
     const tokenSave = vi.fn(async () => ({
       ok: true as const,
       value: { configured: true, storage: 'available' as const, message: null },
@@ -32,13 +35,35 @@ describe('TokenSettingsPanel', () => {
     await waitFor(() => expect(screen.getByText('当前未配置 Token。')).toBeTruthy());
 
     const input = screen.getByLabelText('CoC API Token') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: 'secret-token' } });
+    fireEvent.change(input, { target: { value: `  ${token}  ` } });
     fireEvent.click(screen.getByRole('button', { name: '保存 Token' }));
 
-    await waitFor(() => expect(tokenSave).toHaveBeenCalledWith({ token: 'secret-token' }));
+    await waitFor(() => expect(tokenSave).toHaveBeenCalledWith({ token }));
     await waitFor(() => expect(input.value).toBe(''));
     expect(onTokenChanged).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).not.toContain('secret-token');
+    expect(document.body.textContent).not.toContain(token);
+  });
+
+  it('拒绝超出 IPC 上限的 token，并显示长度错误', async () => {
+    const tokenSave = vi.fn();
+    const bridge = {
+      tokenStatus: vi.fn(async () => ({
+        ok: true as const,
+        value: { configured: false, storage: 'available' as const, message: null },
+      })),
+      tokenSave,
+      tokenClear: vi.fn(),
+    };
+
+    render(<TokenSettingsPanel bridge={bridge} />);
+    await waitFor(() => expect(screen.getByText('当前未配置 Token。')).toBeTruthy());
+
+    const input = screen.getByLabelText('CoC API Token') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'x'.repeat(TOKEN_MAX_LENGTH + 1) } });
+    fireEvent.click(screen.getByRole('button', { name: '保存 Token' }));
+
+    expect(await screen.findByText(`Token 长度不能超过 ${TOKEN_MAX_LENGTH} 个字符。`)).toBeTruthy();
+    expect(tokenSave).not.toHaveBeenCalled();
   });
 
   it('安全存储不可用时禁用保存', async () => {

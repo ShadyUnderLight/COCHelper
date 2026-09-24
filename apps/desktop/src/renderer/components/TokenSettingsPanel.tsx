@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
-import type { DesktopBridge } from '@coc-helper/contracts';
+import { TOKEN_MAX_LENGTH, type DesktopBridge } from '@coc-helper/contracts';
 
 import { useTokenSettings } from '../use-token-settings';
 
@@ -31,12 +31,17 @@ export function TokenSettingsPanel({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (input.trim().length === 0) {
+    const normalizedInput = input.trim();
+    if (normalizedInput.length === 0) {
       setInputError('请输入 Token。');
       return;
     }
+    if (normalizedInput.length > TOKEN_MAX_LENGTH) {
+      setInputError(`Token 长度不能超过 ${TOKEN_MAX_LENGTH} 个字符。`);
+      return;
+    }
     setInputError(null);
-    if (await api.save(input)) {
+    if (await api.save(normalizedInput)) {
       setInput('');
       onTokenChanged?.();
     }

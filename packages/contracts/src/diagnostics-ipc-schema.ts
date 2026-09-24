@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
-import type {
-  DiagnosticsSnapshotPayload,
-  TokenSaveRequest,
-  TokenStatusPayload,
+import {
+  TOKEN_MAX_LENGTH,
+  type DiagnosticsSnapshotPayload,
+  type TokenSaveRequest,
+  type TokenStatusPayload,
 } from './diagnostics-ipc';
 import { appAvailabilitySchema, villageStoreStatusDtoSchema } from './app-ipc-schema';
 import { manualTrackerStatusSchema } from './manual-ipc-schema';
@@ -31,7 +32,7 @@ export const tokenStatusPayloadSchema: z.ZodType<TokenStatusPayload> = z
 
 export const tokenSaveRequestSchema: z.ZodType<TokenSaveRequest> = z
   .object({
-    token: z.string().min(1).max(512),
+    token: z.string().min(1).max(TOKEN_MAX_LENGTH),
   })
   .strict();
 

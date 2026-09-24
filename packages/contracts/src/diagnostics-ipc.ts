@@ -7,6 +7,7 @@ export const DIAGNOSTICS_SNAPSHOT_CHANNEL = 'diagnostics.snapshot' as const;
 export const TOKEN_STATUS_CHANNEL = 'token.status' as const;
 export const TOKEN_SAVE_CHANNEL = 'token.save' as const;
 export const TOKEN_CLEAR_CHANNEL = 'token.clear' as const;
+export const TOKEN_MAX_LENGTH = 2048;
 
 export const DIAGNOSTICS_IPC_CHANNELS = [DIAGNOSTICS_SNAPSHOT_CHANNEL] as const;
 export const TOKEN_IPC_CHANNELS = [

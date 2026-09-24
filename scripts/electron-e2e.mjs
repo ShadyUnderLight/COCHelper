@@ -18,6 +18,7 @@ const artifactRoot = path.join(root, 'e2e-artifacts');
 const runId = `${new Date().toISOString().replaceAll(':', '-')}-${process.pid}`;
 const scenarioName = 'import-and-restart';
 const rendererReadyTimeoutMs = 45_000;
+const importedVillageTimeoutMs = 30_000;
 const manifest = JSON.parse(
   readFileSync(path.join(fixtureRoot, 'manifest.json'), 'utf8'),
 );
@@ -281,6 +282,7 @@ async function importFixture(page) {
     page,
     '[aria-label="村庄列表"]',
     scenario.expectedTag,
+    importedVillageTimeoutMs,
   );
   importStep = null;
 }
@@ -291,6 +293,7 @@ async function assertPersistedFixture(page) {
     page,
     '[aria-label="村庄列表"]',
     scenario.expectedTag,
+    importedVillageTimeoutMs,
   );
   const sidebarText = await page.getByRole('complementary', { name: '村庄列表' }).innerText();
   assert.match(sidebarText, new RegExp(scenario.expectedVillageName));
@@ -400,6 +403,10 @@ async function captureFailure(error) {
                   },
             preview: summarize(globalThis.document.querySelector('[aria-label="导入预览"]')),
             villageList: summarize(globalThis.document.querySelector('[aria-label="村庄列表"]')),
+            importPanel: summarize(globalThis.document.querySelector('[aria-label="账号导入"]')),
+            alerts: [...globalThis.document.querySelectorAll('[role="alert"]')]
+              .slice(0, 8)
+              .map((alert) => alert.innerText?.trim().slice(0, 512) ?? ''),
             activeElement:
               activeElement === null
                 ? null

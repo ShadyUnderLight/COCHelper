@@ -396,6 +396,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,
@@ -619,6 +620,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,
@@ -662,6 +664,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,
@@ -709,6 +712,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,
@@ -763,6 +767,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,
@@ -819,6 +824,7 @@ describe('AppShell', () => {
       pending: [],
       state: {
         manualActiveCount: 0,
+        manualActiveRecords: [],
         importedActiveCount: 0,
         deduplicatedDisplayCount: 0,
         manualCompletedCount: 0,

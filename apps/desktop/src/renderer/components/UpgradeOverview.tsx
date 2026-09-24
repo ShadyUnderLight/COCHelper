@@ -23,6 +23,11 @@ import {
 import { useClock } from '../use-clock';
 import { AssetImage } from './AssetImage';
 
+const RECENT_COMPLETION_DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  month: 'numeric',
+  day: 'numeric',
+});
+
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
@@ -45,10 +50,13 @@ export function UpgradeOverview({
   const elapsedBeforeSubscription =
     payload === null ? 0 : elapsedSecondsSince(payload.nowMs, clockNowMs);
   const hasActiveCountdown =
-    payload?.active.some((record) => {
+    (payload?.state.manualActiveRecords.some((record) => record.expectedEndAtMs > clockNowMs) ??
+      false) ||
+    (payload?.active.some((record) => {
       const remainingSeconds = remainingSecondsAfterElapsed(record, elapsedBeforeSubscription);
       return remainingSeconds !== null && remainingSeconds > 0;
-    }) ?? false;
+    }) ??
+      false);
   const nowMs = useClock(hasActiveCountdown);
 
   useEffect(() => {
@@ -89,10 +97,35 @@ export function UpgradeOverview({
   const unavailable = isCatalogUnavailable(payload);
   const empty = isEmptyOverview(payload);
   const elapsedSeconds = elapsedSecondsSince(payload.nowMs, nowMs);
-  const pendingSettlement = payload.active.filter(
-    (record) =>
-      record.item.effectiveStatus === 'manualActive' &&
-      remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
+  const dueManualRecords = payload.state.manualActiveRecords.filter(
+    (record) => record.expectedEndAtMs <= nowMs,
+  );
+  const dueManualRecordCountByGroup = new Map<string, number>();
+  const manualActiveRecordCountByGroup = new Map<string, number>();
+  for (const record of payload.state.manualActiveRecords) {
+    const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
+    manualActiveRecordCountByGroup.set(key, (manualActiveRecordCountByGroup.get(key) ?? 0) + 1);
+  }
+  for (const record of dueManualRecords) {
+    const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
+    dueManualRecordCountByGroup.set(key, (dueManualRecordCountByGroup.get(key) ?? 0) + 1);
+  }
+  const displayedSettlementGroups = new Set<string>();
+  const pendingSettlement = payload.active.filter((record) => {
+    if (record.item.effectiveStatus !== 'manualActive') {
+      return false;
+    }
+    const key = manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId);
+    if (!dueManualRecordCountByGroup.has(key) || displayedSettlementGroups.has(key)) {
+      return false;
+    }
+    displayedSettlementGroups.add(key);
+    return true;
+  });
+  const fullyExpiredManualGroups = new Set(
+    [...dueManualRecordCountByGroup].flatMap(([key, dueCount]) =>
+      dueCount === manualActiveRecordCountByGroup.get(key) ? [key] : [],
+    ),
   );
   const expiredImported = payload.active.filter(
     (record) =>
@@ -100,12 +133,22 @@ export function UpgradeOverview({
       remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
   );
   const expiredImportedIds = new Set(expiredImported.map((record) => record.id));
-  const expiredIds = new Set([...pendingSettlement, ...expiredImported].map((record) => record.id));
-  const active = payload.active.filter((record) => !expiredIds.has(record.id));
+  const active = payload.active.filter((record) => {
+    if (expiredImportedIds.has(record.id)) {
+      return false;
+    }
+    if (record.item.effectiveStatus !== 'manualActive') {
+      return true;
+    }
+    return !fullyExpiredManualGroups.has(
+      manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId),
+    );
+  });
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
   const needsReimport = [...payload.state.needsReimportRecords, ...expiredImported];
-  const manualActiveCount = Math.max(0, payload.state.manualActiveCount - pendingSettlement.length);
+  const pendingSettlementCount = dueManualRecords.length;
+  const manualActiveCount = payload.state.manualActiveCount - pendingSettlementCount;
   const expiredImportedCount = expiredImported.filter(
     (record) => record.item.timerSeconds !== null,
   ).length;
@@ -144,14 +187,14 @@ export function UpgradeOverview({
                 ' 项进行中，' +
                 pending.length +
                 ' 项待开始' +
-                (pendingSettlement.length === 0
+                (pendingSettlementCount === 0
                   ? ''
-                  : '，另有 ' + pendingSettlement.length + ' 项手动升级待结算') +
+                  : '，另有 ' + pendingSettlementCount + ' 项手动升级待结算') +
                 '。点击条目查看对应村庄详情。'}
           </p>
           <OverviewCounts
             manualActiveCount={manualActiveCount}
-            manualPendingSettlementCount={pendingSettlement.length}
+            manualPendingSettlementCount={pendingSettlementCount}
             importedActiveCount={importedActiveCount}
             manualCompletedCount={payload.state.manualCompletedCount}
           />
@@ -204,7 +247,13 @@ export function UpgradeOverview({
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
-            statusTextOverride="待结算"
+            countOverride={pendingSettlementCount}
+            statusTextForRecord={(record) => {
+              const count = dueManualRecordCountByGroup.get(
+                manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId),
+              );
+              return count === undefined ? null : count === 1 ? '待结算' : `待结算 ${count} 条`;
+            }}
             elapsedSeconds={elapsedSeconds}
           />
           <RecordList
@@ -235,7 +284,7 @@ export function UpgradeOverview({
             }
             elapsedSeconds={elapsedSeconds}
           />
-          {pendingSettlement.length + pending.length + attention.length + needsReimport.length ===
+          {pendingSettlementCount + pending.length + attention.length + needsReimport.length ===
           0 ? (
             <div className="quiet-card">
               <span className="quiet-mark" aria-hidden="true">
@@ -297,9 +346,7 @@ function RecentCompletions(props: {
               <time dateTime={Number.isNaN(date.getTime()) ? undefined : date.toISOString()}>
                 {Number.isNaN(date.getTime())
                   ? '时间未知'
-                  : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(
-                      date,
-                    )}
+                  : RECENT_COMPLETION_DATE_FORMATTER.format(date)}
               </time>
             </li>
           );
@@ -429,6 +476,7 @@ function RecordList(props: {
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
+  readonly countOverride?: number;
   readonly emphasis?: boolean;
   readonly elapsedSeconds?: number;
   readonly statusTextOverride?: string;
@@ -452,7 +500,7 @@ function RecordList(props: {
             <p>{props.description}</p>
           </div>
         </div>
-        <span className="record-badge">{props.records.length}</span>
+        <span className="record-badge">{props.countOverride ?? props.records.length}</span>
       </div>
       <ul className="overview-list">
         {props.records.map((record) => (
@@ -523,6 +571,10 @@ function remainingSecondsAfterElapsed(
 
 function elapsedSecondsSince(startMs: number, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - startMs) / 1000));
+}
+
+function manualUpgradeGroupKey(villageID: string, trackerItemKeyStableId: string): string {
+  return `${villageID}\u0000${trackerItemKeyStableId}`;
 }
 
 function sectionSymbol(title: string): string {

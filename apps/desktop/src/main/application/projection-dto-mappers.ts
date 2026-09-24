@@ -128,6 +128,12 @@ function toUpgradeOverviewStateDto(
 ): UpgradeOverviewStateDto {
   return {
     manualActiveCount: state.manualActiveCount,
+    manualActiveRecords: state.manualActiveRecords.map((record) => ({
+      villageID: record.villageID,
+      recordID: record.recordID,
+      itemKey: toTrackerItemKeyDto(record.itemKey),
+      expectedEndAtMs: record.expectedEndAtMs,
+    })),
     importedActiveCount: state.importedActiveCount,
     deduplicatedDisplayCount: state.deduplicatedDisplayCount,
     manualCompletedCount: state.manualCompletedCount,

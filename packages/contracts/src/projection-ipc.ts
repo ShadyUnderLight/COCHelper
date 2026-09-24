@@ -214,8 +214,16 @@ export type UpgradeRecentCompletionDto = {
   readonly completedAtMs: number;
 };
 
+export type UpgradeOverviewManualActiveRecordDto = {
+  readonly villageID: string;
+  readonly recordID: string;
+  readonly itemKey: TrackerItemKeyDto;
+  readonly expectedEndAtMs: number;
+};
+
 export type UpgradeOverviewStateDto = {
   readonly manualActiveCount: number;
+  readonly manualActiveRecords: readonly UpgradeOverviewManualActiveRecordDto[];
   readonly importedActiveCount: number;
   readonly deduplicatedDisplayCount: number;
   readonly manualCompletedCount: number;

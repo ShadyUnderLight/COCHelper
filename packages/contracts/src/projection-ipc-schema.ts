@@ -13,6 +13,7 @@ import type {
   ProgressMetricDto,
   TrackerItemKeyDto,
   UpgradeDisplayRecordDto,
+  UpgradeOverviewManualActiveRecordDto,
   UpgradeOverviewPayload,
   UpgradeOverviewStateDto,
   UpgradeRecentCompletionDto,
@@ -286,9 +287,21 @@ const upgradeRecentCompletionSchema: z.ZodType<UpgradeRecentCompletionDto> = z
   })
   .strict();
 
+const upgradeOverviewManualActiveRecordSchema: z.ZodType<UpgradeOverviewManualActiveRecordDto> = z
+  .object({
+    villageID: villageIdSchema,
+    recordID: z
+      .string()
+      .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/),
+    itemKey: trackerItemKeySchema,
+    expectedEndAtMs: safeIntSchema,
+  })
+  .strict();
+
 const upgradeOverviewStateSchema: z.ZodType<UpgradeOverviewStateDto> = z
   .object({
     manualActiveCount: safeIntSchema,
+    manualActiveRecords: z.array(upgradeOverviewManualActiveRecordSchema),
     importedActiveCount: safeIntSchema,
     deduplicatedDisplayCount: safeIntSchema,
     manualCompletedCount: safeIntSchema,

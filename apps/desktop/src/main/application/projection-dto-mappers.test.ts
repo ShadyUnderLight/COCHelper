@@ -18,6 +18,7 @@ import {
 } from '@coc-helper/domain';
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
+import { upgradeOverviewPayloadSchema } from '@coc-helper/contracts';
 
 import { toUpgradeOverviewPayload, toVillageItemStateDto } from './projection-dto-mappers';
 
@@ -186,6 +187,16 @@ describe('projection DTO effective state mapping', () => {
     expect(payload.active).toHaveLength(1);
     expect(payload.active[0]?.item.remainingSeconds).toBeNull();
     expect(payload.active[0]?.effectiveRemainingSeconds).toBe(290);
+    expect(payload.state.manualActiveRecords).toEqual([
+      {
+        villageID: village.id,
+        recordID: '00000000-0000-0000-0000-000000000011',
+        itemKey: payload.active[0]!.item.trackerItemKey,
+        expectedEndAtMs,
+      },
+    ]);
+    const parsed = upgradeOverviewPayloadSchema.safeParse(payload);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
   });
 
   it('真实 projection 的 globalMaxed 和 effective duration 经过 mapper 仍保持 fail-closed', () => {

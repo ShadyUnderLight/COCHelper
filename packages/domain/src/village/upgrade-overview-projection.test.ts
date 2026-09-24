@@ -33,6 +33,25 @@ function completedRecord(recordID: string) {
   });
 }
 
+function activeRecord(recordID: string, expectedEndAtMs: number) {
+  const startedAtMs = NOW_MS - 1_000;
+  return createManualUpgradeRecord({
+    recordID: parseUuid(recordID)!,
+    itemKey: ITEM_KEY,
+    fromLevel: 1,
+    targetLevel: 2,
+    quantity: 1n,
+    startedAtMs,
+    expectedEndAtMs,
+    durationSeconds: BigInt((expectedEndAtMs - startedAtMs) / 1000),
+    durationKind: 'timed',
+    frozenCosts: null,
+    catalogProvenance: { gameVersion: '18.400.13', buildTag: null, manifestSchemaVersion: null },
+    baselineReference: BASELINE_REFERENCE,
+    status: 'active',
+  });
+}
+
 describe('upgrade overview recent completion identity', () => {
   it('同一项目、等级和完成时间在不同村庄仍有唯一 ID', () => {
     const villages = [
@@ -106,5 +125,50 @@ describe('upgrade overview recent completion identity', () => {
 
     expect(state.completedRecently).toHaveLength(2);
     expect(new Set(state.completedRecently.map((record) => record.id)).size).toBe(2);
+  });
+
+  it('保留同一 tracker key 下每条活动手动记录的结束时刻与身份', () => {
+    const village = createVillageProfile({ id: 'village-a', name: '村庄 A' });
+    const recordIDs = [
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000012',
+    ];
+    const manualCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey: ITEM_KEY,
+          baselineReference: BASELINE_REFERENCE,
+          imported: createManualLevelDistributionFromPairs([[1, 2n]]),
+          manual: createManualLevelDistributionFromPairs([[1, 2n]]),
+          status: 'manualCompleted',
+        }),
+      ],
+      records: [
+        activeRecord(recordIDs[0]!, NOW_MS + 1_000),
+        activeRecord(recordIDs[1]!, NOW_MS + 2_000),
+      ],
+    });
+    const state = upgradeOverviewState({
+      villages: [village],
+      catalog: null,
+      manualUpgradeCores: { 'village-a': manualCore },
+      nowMs: NOW_MS,
+    });
+
+    expect(state.manualActiveCount).toBe(2);
+    expect(state.manualActiveRecords).toEqual([
+      {
+        villageID: 'village-a',
+        recordID: recordIDs[0],
+        itemKey: ITEM_KEY,
+        expectedEndAtMs: NOW_MS + 1_000,
+      },
+      {
+        villageID: 'village-a',
+        recordID: recordIDs[1],
+        itemKey: ITEM_KEY,
+        expectedEndAtMs: NOW_MS + 2_000,
+      },
+    ]);
   });
 });

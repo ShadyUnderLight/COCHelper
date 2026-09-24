@@ -2,7 +2,11 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { UpgradeRecentCompletionDto, VillageSummaryDto } from '@coc-helper/contracts';
+import type {
+  UpgradeOverviewManualActiveRecordDto,
+  UpgradeRecentCompletionDto,
+  VillageSummaryDto,
+} from '@coc-helper/contracts';
 
 import {
   applyOverviewError,
@@ -44,9 +48,10 @@ function stateShape(
     readonly catalogIsUsable: boolean;
     readonly active: ReturnType<typeof recordFixture>[];
     readonly completedRecently: UpgradeRecentCompletionDto[];
+    readonly manualActiveRecords: UpgradeOverviewManualActiveRecordDto[];
   }> = {},
 ) {
-  const { completedRecently = [], ...payloadOverrides } = overrides;
+  const { completedRecently = [], manualActiveRecords = [], ...payloadOverrides } = overrides;
   return {
     generation: 1,
     nowMs: 1,
@@ -56,6 +61,7 @@ function stateShape(
     pending: [] as ReturnType<typeof recordFixture>[],
     state: {
       manualActiveCount: 0,
+      manualActiveRecords,
       importedActiveCount: 0,
       deduplicatedDisplayCount: 0,
       manualCompletedCount: 0,
@@ -178,8 +184,18 @@ describe('UpgradeOverview', () => {
     resetClockStoreForTests(1);
 
     const baseItem = recordFixture().item;
-    const manualRecord = recordFixture({
-      id: 'manual-due',
+    const manualTimerRecord = recordFixture({
+      id: 'manual-timer-due',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: 2,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const manualIdleRecord = recordFixture({
+      id: 'manual-idle-due',
       effectiveRemainingSeconds: 2,
       item: {
         ...baseItem,
@@ -200,7 +216,15 @@ describe('UpgradeOverview', () => {
       },
     });
     const payload = stateShape({
-      active: [manualRecord, importedRecord],
+      active: [manualTimerRecord, manualIdleRecord, importedRecord],
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          recordID: '00000000-0000-0000-0000-000000000001',
+          itemKey: baseItem.trackerItemKey,
+          expectedEndAtMs: 2_001,
+        },
+      ],
     });
     payload.state.manualActiveCount = 1;
     payload.state.importedActiveCount = 1;
@@ -218,13 +242,63 @@ describe('UpgradeOverview', () => {
     expect(activeCount?.textContent).toContain('0');
     expect(screen.getByText('手动进行中 0')).toBeTruthy();
     expect(screen.getByText('手动待结算 1')).toBeTruthy();
-    expect(screen.getByLabelText('待结算').querySelector('button')?.textContent).toContain(
-      '待结算',
-    );
+    const settlementList = screen.getByLabelText('待结算');
+    expect(settlementList.querySelectorAll('button')).toHaveLength(1);
+    expect(settlementList.querySelector('.record-badge')?.textContent).toBe('1');
+    expect(settlementList.querySelector('button')?.textContent).toContain('待结算');
     expect(screen.getByLabelText('待重新导入').querySelector('button')?.textContent).toContain(
       '待重新导入确认',
     );
     expect(screen.queryByText(/正在升级/)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('同 tracker key 的并行手动记录按底层记录数计数并合并展示行', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const item = recordFixture().item;
+    const record = recordFixture({
+      id: 'manual-parallel',
+      effectiveRemainingSeconds: null,
+      item: {
+        ...item,
+        timerSeconds: null,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const payload = stateShape({
+      active: [record],
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          recordID: '00000000-0000-0000-0000-000000000001',
+          itemKey: item.trackerItemKey,
+          expectedEndAtMs: 1_001,
+        },
+        {
+          villageID: 'v1',
+          recordID: '00000000-0000-0000-0000-000000000002',
+          itemKey: item.trackerItemKey,
+          expectedEndAtMs: 2_001,
+        },
+      ],
+    });
+    payload.state.manualActiveCount = 2;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    const settlementList = screen.getByLabelText('待结算');
+    expect(settlementList.querySelectorAll('button')).toHaveLength(1);
+    expect(settlementList.querySelector('.record-badge')?.textContent).toBe('2');
+    expect(settlementList.querySelector('button')?.textContent).toContain('待结算 2 条');
+    expect(screen.getByText('手动进行中 0')).toBeTruthy();
+    expect(screen.getByText('手动待结算 2')).toBeTruthy();
     expect(vi.getTimerCount()).toBe(0);
   });
 

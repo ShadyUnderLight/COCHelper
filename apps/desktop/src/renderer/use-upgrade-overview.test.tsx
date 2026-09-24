@@ -35,6 +35,7 @@ function overview(overrides: Partial<UpgradeOverviewPayload> = {}): UpgradeOverv
     pending: [],
     state: {
       manualActiveCount: 0,
+      manualActiveRecords: [],
       importedActiveCount: 0,
       deduplicatedDisplayCount: 0,
       manualCompletedCount: 0,

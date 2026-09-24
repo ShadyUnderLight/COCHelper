@@ -33,6 +33,7 @@ function payload(overrides: Partial<UpgradeOverviewPayload> = {}): UpgradeOvervi
     pending: [],
     state: {
       manualActiveCount: 0,
+      manualActiveRecords: [],
       importedActiveCount: 0,
       deduplicatedDisplayCount: 0,
       manualCompletedCount: 0,
@@ -48,6 +49,7 @@ function payload(overrides: Partial<UpgradeOverviewPayload> = {}): UpgradeOvervi
 function stateWith(overrides: Partial<UpgradeOverviewStateDto> = {}): UpgradeOverviewStateDto {
   return {
     manualActiveCount: 0,
+    manualActiveRecords: [],
     importedActiveCount: 0,
     deduplicatedDisplayCount: 0,
     manualCompletedCount: 0,

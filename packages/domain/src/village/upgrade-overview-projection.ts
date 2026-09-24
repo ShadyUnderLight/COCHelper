@@ -71,6 +71,7 @@ export function upgradeRecentCompletionId(input: {
 
 export type UpgradeOverviewState = {
   readonly manualActiveCount: number;
+  readonly manualActiveRecords: readonly UpgradeOverviewManualActiveRecord[];
   readonly importedActiveCount: number;
   readonly deduplicatedDisplayCount: number;
   readonly manualCompletedCount: number;
@@ -78,6 +79,13 @@ export type UpgradeOverviewState = {
   readonly activeRecords: readonly UpgradeDisplayRecord[];
   readonly attentionRecords: readonly UpgradeDisplayRecord[];
   readonly needsReimportRecords: readonly UpgradeDisplayRecord[];
+};
+
+export type UpgradeOverviewManualActiveRecord = {
+  readonly villageID: string;
+  readonly recordID: string;
+  readonly itemKey: TrackerItemKey;
+  readonly expectedEndAtMs: number;
 };
 
 export type UpgradeOverviewRender = {
@@ -284,10 +292,23 @@ function upgradeOverviewStateCore(input: {
     return status === 'conflict' || status === 'unknown' || status === 'needsReimport';
   });
 
-  const manualActiveCount = Object.values(input.manualUpgradeCores).reduce(
-    (sum, core) => sum + manualActiveRecords(core).length,
-    0,
-  );
+  const activeManualRecordSummaries = Object.entries(input.manualUpgradeCores)
+    .flatMap(([villageID, core]) =>
+      manualActiveRecords(core).map((record) => ({
+        villageID,
+        recordID: record.recordID,
+        itemKey: record.itemKey,
+        expectedEndAtMs: record.expectedEndAtMs,
+      })),
+    )
+    .sort(
+      (left, right) =>
+        left.villageID.localeCompare(right.villageID) ||
+        trackerItemKeyStableId(left.itemKey).localeCompare(trackerItemKeyStableId(right.itemKey)) ||
+        left.expectedEndAtMs - right.expectedEndAtMs ||
+        left.recordID.localeCompare(right.recordID),
+    );
+  const manualActiveCount = activeManualRecordSummaries.length;
   const manualCompletedCount = Object.values(input.manualUpgradeCores).reduce(
     (sum, core) => sum + core.records.filter((record) => record.status === 'completed').length,
     0,
@@ -341,6 +362,7 @@ function upgradeOverviewStateCore(input: {
 
   return {
     manualActiveCount,
+    manualActiveRecords: activeManualRecordSummaries,
     importedActiveCount,
     deduplicatedDisplayCount,
     manualCompletedCount,

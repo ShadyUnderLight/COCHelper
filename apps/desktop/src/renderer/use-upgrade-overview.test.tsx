@@ -287,7 +287,7 @@ describe('useUpgradeOverview', () => {
     vi.mocked(harness.bridge.upgradeOverview).mockRejectedValueOnce('plain-string');
     rerender({ snap: snapshot({ generation: 2 }) });
     await waitFor(() => {
-      expect(result.current.state.lastError).toBe('升级总览查询失败');
+      expect(result.current.state.lastError).toBe('升级追踪查询失败');
     });
   });
 

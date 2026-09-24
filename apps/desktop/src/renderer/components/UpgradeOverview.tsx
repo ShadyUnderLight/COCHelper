@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
-import type { UpgradeDisplayRecordDto } from '@coc-helper/contracts';
+import type {
+  UpgradeDisplayRecordDto,
+  UpgradeRecentCompletionDto,
+  VillageSummaryDto,
+} from '@coc-helper/contracts';
 
 import {
   availabilityLabel,
@@ -11,6 +15,7 @@ import {
 import {
   authoritativeLevelStatus,
   categoryGlyph,
+  formatDurationSeconds,
   levelTransitionText,
   primaryLevelAssets,
 } from '../village-detail-session';
@@ -19,6 +24,7 @@ import { AssetImage } from './AssetImage';
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
+  readonly villages: readonly VillageSummaryDto[];
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly onRetry: () => void;
@@ -27,6 +33,7 @@ type UpgradeOverviewProps = {
 export function UpgradeOverview({
   state,
   selectedId,
+  villages,
   onSelect,
   onOpenDetail,
   onRetry,
@@ -42,14 +49,14 @@ export function UpgradeOverview({
   if (payload === null) {
     if (status === 'error') {
       return (
-        <section className="overview-panel" aria-label="升级总览" data-perf-state="error">
+        <section className="overview-panel" aria-label="升级追踪" data-perf-state="error">
           <div className="empty-state">
             <span className="empty-mark" aria-hidden="true">
               !
             </span>
             <h2>营地数据暂时不可用</h2>
             <p className="muted" role="alert">
-              {lastError ?? '升级总览加载失败'}
+              {lastError ?? '升级追踪加载失败'}
             </p>
             <button type="button" className="primary-action" onClick={onRetry}>
               重试
@@ -59,7 +66,7 @@ export function UpgradeOverview({
       );
     }
     return (
-      <section className="overview-panel" aria-label="升级总览" data-perf-state="loading">
+      <section className="overview-panel" aria-label="升级追踪" data-perf-state="loading">
         <div className="loading-state">
           <span className="loading-orbit" aria-hidden="true" />
           <p className="muted">正在整理营地数据…</p>
@@ -76,7 +83,7 @@ export function UpgradeOverview({
   const needsReimport = payload.state.needsReimportRecords;
 
   return (
-    <section className="overview-panel" aria-label="升级总览" data-perf-state="ready">
+    <section className="overview-panel" aria-label="升级追踪" data-perf-state="ready">
       {lastError !== null ? (
         <p className="notice-text shell-alert" role="alert">
           数据可能过期：{lastError}
@@ -84,24 +91,30 @@ export function UpgradeOverview({
       ) : null}
       {unavailable ? (
         <p className="notice-text shell-alert" role="alert">
-          游戏目录不可用，升级总览暂不可展示。以下为快照侧记录，仅供参考。
+          游戏目录不可用，升级追踪暂不可展示。以下为快照侧记录，仅供参考。
         </p>
       ) : null}
 
-      <section className="camp-hero" aria-label="营地升级计划">
+      <section className="camp-hero" aria-label="多村庄升级追踪">
         <div className="camp-copy">
           <p className="hero-eyebrow">
-            VILLAGE OPERATIONS <span>/</span> UPGRADE PLAN
+            UPGRADE TRACKER <span>/</span> MULTI-VILLAGE OVERVIEW
           </p>
-          <h2>让营地进度一目了然</h2>
+          <h2>所有村庄的升级动态</h2>
           <p className="camp-description">
             {empty
               ? payload.state.manualCompletedCount > 0
                 ? '当前没有进行中或待处理的升级，已记录 ' +
                   payload.state.manualCompletedCount +
                   ' 项手动完成。'
-                : '导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'
-              : '目前有 ' + active.length + ' 项升级正在进行，' + pending.length + ' 项等待开始。'}
+                : '导入游戏账号后，这里会汇总所有村庄正在进行和待安排的升级。'
+              : '已收录 ' +
+                villages.length +
+                ' 个村庄档案，当前有 ' +
+                active.length +
+                ' 项进行中，' +
+                pending.length +
+                ' 项待开始。点击条目查看对应村庄详情。'}
           </p>
           <OverviewCounts
             manualActiveCount={payload.state.manualActiveCount}
@@ -184,8 +197,64 @@ export function UpgradeOverview({
               </div>
             </div>
           ) : null}
+          <RecentCompletions records={payload.state.completedRecently} villages={villages} />
         </div>
       </div>
+    </section>
+  );
+}
+
+function RecentCompletions(props: {
+  readonly records: readonly UpgradeRecentCompletionDto[];
+  readonly villages: readonly VillageSummaryDto[];
+}) {
+  if (props.records.length === 0) {
+    return null;
+  }
+
+  const villagesById = new Map(props.villages.map((village) => [village.id, village] as const));
+  return (
+    <section className="content-card completion-card" aria-label="近期完成">
+      <div className="card-heading">
+        <div className="heading-left">
+          <span className="section-mark" aria-hidden="true">
+            ✓
+          </span>
+          <div>
+            <h3>近期完成</h3>
+            <p>最近完成的升级</p>
+          </div>
+        </div>
+        <span className="record-badge">{props.records.length}</span>
+      </div>
+      <ul className="completion-list">
+        {props.records.map((record) => {
+          const village = villagesById.get(record.villageID);
+          const villageName =
+            village === undefined
+              ? '已移除的村庄'
+              : `${village.name}${village.tag === null ? '' : `（${village.tag}）`}`;
+          const date = new Date(record.completedAtMs);
+          return (
+            <li key={record.id}>
+              <span className="completion-copy">
+                <strong>{record.itemName}</strong>
+                <span>
+                  {villageName} · {record.quantity > 1 ? `${record.quantity} 项 · ` : ''}升至{' '}
+                  {record.targetLevel} 级
+                </span>
+              </span>
+              <time dateTime={Number.isNaN(date.getTime()) ? undefined : date.toISOString()}>
+                {Number.isNaN(date.getTime())
+                  ? '时间未知'
+                  : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(
+                      date,
+                    )}
+              </time>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -358,8 +427,12 @@ function RecordList(props: {
                 )}
               </span>
               <span className="overview-item-meta">
-                {record.villageName} · {baseLabel(record.base)} ·{' '}
-                {authoritativeLevelStatus(record.item)}
+                {record.villageName}
+                {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                {baseLabel(record.base)} · {authoritativeLevelStatus(record.item)}
+                {record.item.remainingSeconds !== null && record.item.remainingSeconds > 0
+                  ? ` · 剩余 ${formatDurationSeconds(record.item.remainingSeconds)}`
+                  : ''}
                 {availabilityText(record)}
               </span>
             </button>

@@ -188,7 +188,7 @@ describe('AppShell', () => {
     );
     expect(screen.getByLabelText('诊断')).toBeTruthy();
     expect(screen.getByText('诊断服务不可用。')).toBeTruthy();
-    expect(screen.queryByLabelText('升级总览')).toBeNull();
+    expect(screen.queryByLabelText('升级追踪')).toBeNull();
   });
 
   it('Token 变更成功后刷新 Diagnostics', async () => {
@@ -307,7 +307,7 @@ describe('AppShell', () => {
     expect(screen.getByText(/只读模式/)).toBeTruthy();
   });
 
-  it('总览 tab 切换显示升级总览', () => {
+  it('总览 tab 切换显示升级追踪', () => {
     render(
       <AppShell
         session={sessionApi({
@@ -319,12 +319,12 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
-    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     expect(screen.queryByLabelText('账号 JSON')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
     expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
-    expect(screen.queryByLabelText('升级总览')).toBeNull();
+    expect(screen.queryByLabelText('升级追踪')).toBeNull();
   });
 
   it('无选中村庄时详情 tab 禁用', () => {
@@ -357,6 +357,23 @@ describe('AppShell', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: '村庄详情' })).toBeTruthy();
+  });
+
+  it('点击当前村庄可进入升级追踪而不重复切换档案', () => {
+    const selectVillage = vi.fn(async () => true);
+    render(
+      <AppShell
+        session={{ ...readySession(), selectVillage }}
+        overview={overviewApi()}
+        detail={detailApi()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
+
+    expect(selectVillage).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
   });
 
   it('总览行点击切到详情', () => {
@@ -389,7 +406,7 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
@@ -479,13 +496,13 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /分村/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
-    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     act(() => {
       resolveSelect(true);
     });
     await act(async () => {});
-    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
   });
 
@@ -587,7 +604,7 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
     await waitFor(() => {
@@ -630,7 +647,7 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(selectVillage).not.toHaveBeenCalled();
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
@@ -677,7 +694,7 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
@@ -731,13 +748,13 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
     await act(async () => {});
     // 切换未完成：仍在总览，不进详情。
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
-    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     act(() => {
       resolveSelect(true);
     });
@@ -787,14 +804,14 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     fireEvent.click(screen.getByRole('button', { name: /加农炮/ }));
     act(() => {
       resolveSelect(false);
     });
     await act(async () => {});
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
-    expect(screen.getByLabelText('升级总览')).toBeTruthy();
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
   });
 });
 
@@ -1059,7 +1076,7 @@ describe('AppShell Official 接线（#277-E1）', () => {
       expect(harness.refreshPending()).toBe(1);
     });
     const requestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
-    fireEvent.click(screen.getByRole('button', { name: '升级总览' }));
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     expect(harness.bridge.cancel).toHaveBeenCalledWith({ requestId });
   });
 });

@@ -78,8 +78,8 @@ export function VillageSidebar({
                 <button
                   type="button"
                   className={selected ? 'village-item selected' : 'village-item'}
-                  disabled={disabled || selected}
-                  aria-current={selected ? 'page' : undefined}
+                  disabled={disabled}
+                  aria-pressed={selected}
                   onClick={() => onSelect(village.id)}
                 >
                   <span className="village-emblem" aria-hidden="true">

@@ -54,6 +54,7 @@ const environment = {
 const sessions = [];
 let currentSession = null;
 let phase = 'launch';
+let importStep = null;
 
 function getCommitSha() {
   try {
@@ -261,20 +262,27 @@ async function waitForText(page, selector, expected, timeout = 10_000) {
 
 async function importFixture(page) {
   phase = 'import';
+  importStep = 'fill-account';
   await page.locator('#account-json').fill(accountText);
+  importStep = 'click-parse-preview';
   await page.getByRole('button', { name: '解析预览' }).click();
   const preview = page.getByRole('region', { name: '导入预览' });
+  importStep = 'wait-for-preview';
   await preview.waitFor({ state: 'visible' });
+  importStep = 'read-preview';
   const previewText = await preview.innerText();
   assert.match(previewText, /将更新村庄「[^」]+」/);
   assert.match(previewText, new RegExp(scenario.expectedTag.replace('#', '\\#')));
 
+  importStep = 'confirm-import';
   await preview.getByRole('button', { name: '确认导入' }).click();
+  importStep = 'wait-for-imported-village';
   await waitForText(
     page,
     '[aria-label="村庄列表"]',
     scenario.expectedTag,
   );
+  importStep = null;
 }
 
 async function assertPersistedFixture(page) {
@@ -332,6 +340,80 @@ async function captureFailure(error) {
       5_000,
       null,
     );
+    const failureState = await withTimeout(
+      page
+        .evaluate((currentImportStep) => {
+          const summarize = (element) => {
+            if (element === null) return null;
+            const rect = element.getBoundingClientRect();
+            const style = globalThis.getComputedStyle(element);
+            return {
+              visible:
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style.display !== 'none' &&
+                style.visibility !== 'hidden',
+              text: element.innerText?.trim().slice(0, 1200) ?? '',
+              bounds: {
+                x: Math.round(rect.x),
+                y: Math.round(rect.y),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              },
+            };
+          };
+          const parseButton =
+            [...globalThis.document.querySelectorAll('button')].find(
+              (button) => button.textContent?.trim() === '解析预览',
+            ) ?? null;
+          const buttonRect = parseButton?.getBoundingClientRect();
+          const hitTarget =
+            buttonRect === undefined
+              ? null
+              : globalThis.document.elementFromPoint(
+                  buttonRect.x + buttonRect.width / 2,
+                  buttonRect.y + buttonRect.height / 2,
+                );
+          const buttonStyle =
+            parseButton === null ? null : globalThis.getComputedStyle(parseButton);
+          const activeElement = globalThis.document.activeElement;
+          return {
+            importStep: currentImportStep,
+            parseButton:
+              parseButton === null
+                ? null
+                : {
+                    ...summarize(parseButton),
+                    disabled: parseButton.disabled,
+                    ariaDisabled: parseButton.getAttribute('aria-disabled'),
+                    pointerEvents: buttonStyle?.pointerEvents ?? null,
+                    opacity: buttonStyle?.opacity ?? null,
+                    transitionDuration: buttonStyle?.transitionDuration ?? null,
+                    animations: parseButton.getAnimations().length,
+                    centerHitTarget:
+                      hitTarget === null
+                        ? null
+                        : {
+                            tagName: hitTarget.tagName,
+                            text: hitTarget.textContent?.trim().slice(0, 160) ?? '',
+                          },
+                  },
+            preview: summarize(globalThis.document.querySelector('[aria-label="导入预览"]')),
+            villageList: summarize(globalThis.document.querySelector('[aria-label="村庄列表"]')),
+            activeElement:
+              activeElement === null
+                ? null
+                : {
+                    tagName: activeElement.tagName,
+                    ariaLabel: activeElement.getAttribute('aria-label'),
+                    name: activeElement.getAttribute('name'),
+                  },
+          };
+        }, importStep)
+        .catch(() => null),
+      5_000,
+      null,
+    );
     if (diagnostics === null) {
       writeFileSync(path.join(directory, 'diagnostics-error.txt'), '诊断采集超时或失败。\n');
     } else {
@@ -339,6 +421,13 @@ async function captureFailure(error) {
         path.join(directory, 'diagnostics.json'),
         `${JSON.stringify(diagnostics, null, 2)}\n`,
       );
+    }
+    if (failureState === null) {
+      writeFileSync(path.join(directory, 'failure-state-error.txt'), '界面状态采集超时或失败。\n');
+    } else {
+      const serializedFailureState = JSON.stringify(failureState, null, 2);
+      writeFileSync(path.join(directory, 'failure-state.json'), `${serializedFailureState}\n`);
+      console.error(`failure UI state: ${JSON.stringify(failureState)}`);
     }
   }
 
@@ -352,6 +441,7 @@ async function captureFailure(error) {
         node: process.version,
         scenario: scenarioName,
         phase,
+        importStep,
         failureClass: classifyFailure(phase),
         error: error instanceof Error ? error.message : String(error),
       },

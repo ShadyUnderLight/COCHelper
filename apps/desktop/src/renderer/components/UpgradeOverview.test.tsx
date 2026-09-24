@@ -125,11 +125,11 @@ describe('UpgradeOverview', () => {
     expect(row.textContent).not.toContain('已完成');
   });
 
-  it('升级记录行保持四个内容节点，将箭头作为 CSS 装饰绘制', () => {
+  it('升级记录行保持四个元素的完整子树，将箭头作为 CSS 装饰绘制', () => {
     const rec = recordFixture({ id: 'r-flat-row' });
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />);
     const row = screen.getByRole('button', { name: /加农炮/ });
-    expect(row.children).toHaveLength(4);
+    expect(row.querySelectorAll('*')).toHaveLength(4);
   });
 
   it('catalogIsUsable=false 显示不可用横幅且仍列出记录', () => {

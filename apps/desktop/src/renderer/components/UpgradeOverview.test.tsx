@@ -66,9 +66,9 @@ function stateShape(
       deduplicatedDisplayCount: 0,
       manualCompletedCount: 0,
       completedRecently,
-      activeRecords: [],
-      attentionRecords: [],
-      needsReimportRecords: [],
+      activeRecords: [] as ReturnType<typeof recordFixture>[],
+      attentionRecords: [] as ReturnType<typeof recordFixture>[],
+      needsReimportRecords: [] as ReturnType<typeof recordFixture>[],
     },
     ...payloadOverrides,
   };
@@ -220,8 +220,14 @@ describe('UpgradeOverview', () => {
       manualActiveRecords: [
         {
           villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
           recordID: '00000000-0000-0000-0000-000000000001',
           itemKey: baseItem.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
           expectedEndAtMs: 2_001,
         },
       ],
@@ -274,14 +280,26 @@ describe('UpgradeOverview', () => {
       manualActiveRecords: [
         {
           villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
           recordID: '00000000-0000-0000-0000-000000000001',
           itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
           expectedEndAtMs: 1_001,
         },
         {
           villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
           recordID: '00000000-0000-0000-0000-000000000002',
           itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
           expectedEndAtMs: 2_001,
         },
       ],
@@ -300,6 +318,55 @@ describe('UpgradeOverview', () => {
     expect(screen.getByText('手动进行中 0')).toBeTruthy();
     expect(screen.getByText('手动待结算 2')).toBeTruthy();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('冲突状态没有有效进行中行时仍显示可打开的待结算入口', () => {
+    resetClockStoreForTests(3_000);
+    const item = recordFixture().item;
+    const conflictRecord = recordFixture({
+      id: 'conflict-active',
+      item: { ...item, effectiveStatus: 'conflict' },
+    });
+    const recordID = '00000000-0000-0000-0000-000000000021';
+    const payload = stateShape({
+      catalogIsUsable: false,
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
+          recordID,
+          itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
+          expectedEndAtMs: 2_001,
+        },
+      ],
+    });
+    payload.state.manualActiveCount = 1;
+    payload.state.attentionRecords = [conflictRecord];
+    const onOpenDetail = vi.fn();
+
+    const view = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} onOpenDetail={onOpenDetail} />,
+    );
+
+    const settlementButton = screen.getByLabelText('待结算').querySelector('button');
+    expect(settlementButton?.textContent).toContain('加农炮');
+    expect(settlementButton?.textContent).toContain('待结算');
+    fireEvent.click(settlementButton!);
+    expect(onOpenDetail).toHaveBeenCalledWith(recordID, 'v1');
+
+    payload.state.attentionRecords = [];
+    view.rerender(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} onOpenDetail={onOpenDetail} />,
+    );
+    expect(screen.getByLabelText('待结算').querySelector('button')?.textContent).toContain(
+      '加农炮',
+    );
+    expect(screen.queryByText(/导入游戏账号后/)).toBeNull();
   });
 
   it('近期完成记录显示所属村庄和标签', () => {

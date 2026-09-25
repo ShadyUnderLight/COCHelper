@@ -290,10 +290,16 @@ const upgradeRecentCompletionSchema: z.ZodType<UpgradeRecentCompletionDto> = z
 const upgradeOverviewManualActiveRecordSchema: z.ZodType<UpgradeOverviewManualActiveRecordDto> = z
   .object({
     villageID: villageIdSchema,
+    villageName: z.string().min(1).max(256),
+    villageTag: z.string().max(32).nullable(),
     recordID: z
       .string()
       .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/),
     itemKey: trackerItemKeySchema,
+    itemName: z.string().min(1).max(256),
+    fromLevel: safeIntSchema,
+    targetLevel: safeIntSchema,
+    quantity: safeIntSchema,
     expectedEndAtMs: safeIntSchema,
   })
   .strict();

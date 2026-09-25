@@ -190,8 +190,14 @@ describe('projection DTO effective state mapping', () => {
     expect(payload.state.manualActiveRecords).toEqual([
       {
         villageID: village.id,
+        villageName: village.name,
+        villageTag: '#DTO',
         recordID: '00000000-0000-0000-0000-000000000011',
         itemKey: payload.active[0]!.item.trackerItemKey,
+        itemName: '加农炮',
+        fromLevel: 1,
+        targetLevel: 2,
+        quantity: 1,
         expectedEndAtMs,
       },
     ]);

@@ -83,8 +83,14 @@ export type UpgradeOverviewState = {
 
 export type UpgradeOverviewManualActiveRecord = {
   readonly villageID: string;
+  readonly villageName: string;
+  readonly villageTag: string | null;
   readonly recordID: string;
   readonly itemKey: TrackerItemKey;
+  readonly itemName: string;
+  readonly fromLevel: number;
+  readonly targetLevel: number;
+  readonly quantity: bigint;
   readonly expectedEndAtMs: number;
 };
 
@@ -153,6 +159,7 @@ export function upgradeOverviewRender(input: {
     .sort(pendingOrder);
   const state = upgradeOverviewStateCore({
     records,
+    villages: input.villages,
     manualUpgradeCores,
     catalog: input.catalog,
     nowMs,
@@ -237,6 +244,7 @@ export function upgradeOverviewState(input: {
   });
   return upgradeOverviewStateCore({
     records,
+    villages: input.villages,
     manualUpgradeCores,
     catalog: input.catalog,
     nowMs,
@@ -276,6 +284,7 @@ function allUpgradeOverviewRecords(input: {
 
 function upgradeOverviewStateCore(input: {
   readonly records: readonly UpgradeDisplayRecord[];
+  readonly villages: readonly VillageProfile[];
   readonly manualUpgradeCores: Readonly<Record<string, ManualUpgradeCore>>;
   readonly catalog: GameCatalog | null | undefined;
   readonly nowMs: number;
@@ -292,15 +301,25 @@ function upgradeOverviewStateCore(input: {
     return status === 'conflict' || status === 'unknown' || status === 'needsReimport';
   });
 
+  const villagesById = new Map(input.villages.map((village) => [village.id, village] as const));
   const activeManualRecordSummaries = Object.entries(input.manualUpgradeCores)
-    .flatMap(([villageID, core]) =>
-      manualActiveRecords(core).map((record) => ({
+    .flatMap(([villageID, core]) => {
+      const village = villagesById.get(villageID);
+      return manualActiveRecords(core).map((record) => ({
         villageID,
+        villageName: village?.name ?? '已移除的村庄',
+        villageTag: village?.tag ?? village?.accountSnapshot?.tag ?? null,
         recordID: record.recordID,
         itemKey: record.itemKey,
+        itemName:
+          input.catalog?.item(record.itemKey.rawSection, record.itemKey.dataID)?.name ??
+          `未收录项目 ${record.itemKey.dataID.toString()}`,
+        fromLevel: record.fromLevel,
+        targetLevel: record.targetLevel,
+        quantity: record.quantity,
         expectedEndAtMs: record.expectedEndAtMs,
-      })),
-    )
+      }));
+    })
     .sort(
       (left, right) =>
         left.villageID.localeCompare(right.villageID) ||

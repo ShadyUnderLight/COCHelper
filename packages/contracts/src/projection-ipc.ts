@@ -216,8 +216,14 @@ export type UpgradeRecentCompletionDto = {
 
 export type UpgradeOverviewManualActiveRecordDto = {
   readonly villageID: string;
+  readonly villageName: string;
+  readonly villageTag: string | null;
   readonly recordID: string;
   readonly itemKey: TrackerItemKeyDto;
+  readonly itemName: string;
+  readonly fromLevel: number;
+  readonly targetLevel: number;
+  readonly quantity: number;
   readonly expectedEndAtMs: number;
 };
 

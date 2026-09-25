@@ -159,14 +159,26 @@ describe('upgrade overview recent completion identity', () => {
     expect(state.manualActiveRecords).toEqual([
       {
         villageID: 'village-a',
+        villageName: '村庄 A',
+        villageTag: null,
         recordID: recordIDs[0],
         itemKey: ITEM_KEY,
+        itemName: '未收录项目 1000001',
+        fromLevel: 1,
+        targetLevel: 2,
+        quantity: 1n,
         expectedEndAtMs: NOW_MS + 1_000,
       },
       {
         villageID: 'village-a',
+        villageName: '村庄 A',
+        villageTag: null,
         recordID: recordIDs[1],
         itemKey: ITEM_KEY,
+        itemName: '未收录项目 1000001',
+        fromLevel: 1,
+        targetLevel: 2,
+        quantity: 1n,
         expectedEndAtMs: NOW_MS + 2_000,
       },
     ]);

@@ -78,6 +78,7 @@ export function isEmptyOverview(payload: UpgradeOverviewPayload): boolean {
   return (
     payload.active.length === 0 &&
     payload.pending.length === 0 &&
+    payload.state.manualActiveRecords.length === 0 &&
     payload.state.activeRecords.length === 0 &&
     payload.state.attentionRecords.length === 0 &&
     payload.state.needsReimportRecords.length === 0 &&

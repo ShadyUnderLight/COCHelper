@@ -182,6 +182,27 @@ describe('isEmptyOverview 参数化（I3）', () => {
     const cases: Array<[string, UpgradeOverviewPayload]> = [
       ['active', payload({ active: [recordFixture()] })],
       ['pending', payload({ pending: [recordFixture()] })],
+      [
+        'state.manualActiveRecords',
+        payload({
+          state: stateWith({
+            manualActiveRecords: [
+              {
+                villageID: 'v1',
+                villageName: '主村',
+                villageTag: null,
+                recordID: '00000000-0000-0000-0000-000000000001',
+                itemKey: recordFixture().item.trackerItemKey,
+                itemName: '加农炮',
+                fromLevel: 5,
+                targetLevel: 6,
+                quantity: 1,
+                expectedEndAtMs: 2,
+              },
+            ],
+          }),
+        }),
+      ],
       ['state.activeRecords', payload({ state: stateWith({ activeRecords: [recordFixture()] }) })],
       [
         'state.attentionRecords',

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type {
   UpgradeDisplayRecordDto,
+  UpgradeOverviewManualActiveRecordDto,
   UpgradeRecentCompletionDto,
   VillageSummaryDto,
 } from '@coc-helper/contracts';
@@ -27,6 +28,12 @@ const RECENT_COMPLETION_DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
   month: 'numeric',
   day: 'numeric',
 });
+
+type ManualSettlementGroup = {
+  readonly key: string;
+  readonly record: UpgradeOverviewManualActiveRecordDto;
+  readonly count: number;
+};
 
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
@@ -101,6 +108,7 @@ export function UpgradeOverview({
     (record) => record.expectedEndAtMs <= nowMs,
   );
   const dueManualRecordCountByGroup = new Map<string, number>();
+  const dueManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
   const manualActiveRecordCountByGroup = new Map<string, number>();
   for (const record of payload.state.manualActiveRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
@@ -109,19 +117,17 @@ export function UpgradeOverview({
   for (const record of dueManualRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
     dueManualRecordCountByGroup.set(key, (dueManualRecordCountByGroup.get(key) ?? 0) + 1);
+    if (!dueManualRepresentativeByGroup.has(key)) {
+      dueManualRepresentativeByGroup.set(key, record);
+    }
   }
-  const displayedSettlementGroups = new Set<string>();
-  const pendingSettlement = payload.active.filter((record) => {
-    if (record.item.effectiveStatus !== 'manualActive') {
-      return false;
-    }
-    const key = manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId);
-    if (!dueManualRecordCountByGroup.has(key) || displayedSettlementGroups.has(key)) {
-      return false;
-    }
-    displayedSettlementGroups.add(key);
-    return true;
-  });
+  const pendingSettlementGroups: ManualSettlementGroup[] = [...dueManualRecordCountByGroup].map(
+    ([key, count]) => ({
+      key,
+      count,
+      record: dueManualRepresentativeByGroup.get(key)!,
+    }),
+  );
   const fullyExpiredManualGroups = new Set(
     [...dueManualRecordCountByGroup].flatMap(([key, dueCount]) =>
       dueCount === manualActiveRecordCountByGroup.get(key) ? [key] : [],
@@ -240,21 +246,12 @@ export function UpgradeOverview({
         )}
 
         <div className="overview-rail">
-          <RecordList
-            title="待结算"
-            description="计时已结束，进入村庄详情结算手动记录"
-            records={pendingSettlement}
+          <ManualSettlementList
+            groups={pendingSettlementGroups}
+            count={pendingSettlementCount}
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
-            countOverride={pendingSettlementCount}
-            statusTextForRecord={(record) => {
-              const count = dueManualRecordCountByGroup.get(
-                manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId),
-              );
-              return count === undefined ? null : count === 1 ? '待结算' : `待结算 ${count} 条`;
-            }}
-            elapsedSeconds={elapsedSeconds}
           />
           <RecordList
             title="待开始"
@@ -299,6 +296,69 @@ export function UpgradeOverview({
           <RecentCompletions records={payload.state.completedRecently} villages={villages} />
         </div>
       </div>
+    </section>
+  );
+}
+
+function ManualSettlementList(props: {
+  readonly groups: readonly ManualSettlementGroup[];
+  readonly count: number;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
+}) {
+  if (props.groups.length === 0) {
+    return null;
+  }
+  return (
+    <section className="content-card record-card" aria-label="待结算">
+      <div className="card-heading">
+        <div className="heading-left">
+          <span className="section-mark" aria-hidden="true">
+            {sectionSymbol('待结算')}
+          </span>
+          <div>
+            <h3>待结算</h3>
+            <p>计时已结束，进入对应村庄详情结算手动记录</p>
+          </div>
+        </div>
+        <span className="record-badge">{props.count}</span>
+      </div>
+      <ul className="overview-list">
+        {props.groups.map((group) => {
+          const { record } = group;
+          return (
+            <li key={group.key}>
+              <button
+                type="button"
+                className={
+                  record.recordID === props.selectedId ? 'overview-item selected' : 'overview-item'
+                }
+                aria-pressed={record.recordID === props.selectedId}
+                onClick={() => {
+                  props.onSelect(record.recordID);
+                  props.onOpenDetail?.(record.recordID, record.villageID);
+                }}
+              >
+                <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
+                  ◷
+                </span>
+                <span className="overview-item-name">{record.itemName}</span>
+                <span className="level-pill">
+                  {levelTransitionText(record.fromLevel, record.targetLevel)}
+                  {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                </span>
+                <span className="overview-item-meta">
+                  {record.villageName}
+                  {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                  {baseLabel(record.itemKey.base)} ·{' '}
+                  {group.count === 1 ? '待结算' : `待结算 ${group.count} 条`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -476,10 +536,8 @@ function RecordList(props: {
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
-  readonly countOverride?: number;
   readonly emphasis?: boolean;
   readonly elapsedSeconds?: number;
-  readonly statusTextOverride?: string;
   readonly statusTextForRecord?: (record: UpgradeDisplayRecordDto) => string | null;
 }) {
   if (props.records.length === 0) {
@@ -500,7 +558,7 @@ function RecordList(props: {
             <p>{props.description}</p>
           </div>
         </div>
-        <span className="record-badge">{props.countOverride ?? props.records.length}</span>
+        <span className="record-badge">{props.records.length}</span>
       </div>
       <ul className="overview-list">
         {props.records.map((record) => (
@@ -538,9 +596,7 @@ function RecordList(props: {
                 {record.villageName}
                 {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
                 {baseLabel(record.base)} ·{' '}
-                {props.statusTextOverride ??
-                  props.statusTextForRecord?.(record) ??
-                  authoritativeLevelStatus(record.item)}
+                {props.statusTextForRecord?.(record) ?? authoritativeLevelStatus(record.item)}
                 {remainingTimeText(record, props.elapsedSeconds ?? 0)}
                 {availabilityText(record)}
               </span>

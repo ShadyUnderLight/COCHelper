@@ -207,6 +207,8 @@ describe('UpgradeOverview', () => {
     const importedRecord = recordFixture({
       id: 'imported-due',
       villageID: 'v2',
+      villageName: '副村',
+      villageTag: '#BBB',
       effectiveRemainingSeconds: 2,
       item: {
         ...baseItem,
@@ -237,6 +239,19 @@ describe('UpgradeOverview', () => {
 
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
     expect(vi.getTimerCount()).toBe(1);
+    const activeList = screen.getByLabelText('进行中');
+    expect(activeList.querySelectorAll('button')).toHaveLength(2);
+    expect(
+      Array.from(activeList.querySelectorAll('button')).filter((button) =>
+        button.textContent?.includes('最早完成剩余'),
+      ),
+    ).toHaveLength(1);
+    expect(activeList.textContent).toContain('正在升级');
+    expect(activeList.textContent).toContain('最早完成剩余');
+    expect(
+      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
+        ?.textContent,
+    ).toContain('2');
 
     act(() => {
       vi.advanceTimersByTime(2_000);
@@ -307,8 +322,29 @@ describe('UpgradeOverview', () => {
     payload.state.manualActiveCount = 2;
 
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    const activeList = screen.getByLabelText('进行中');
+    expect(activeList.querySelectorAll('button')).toHaveLength(1);
+    expect(activeList.querySelector('button')?.textContent).toContain('正在升级 2 条');
+    expect(activeList.querySelector('button')?.textContent).toContain('最早完成剩余');
+    expect(screen.getByText('手动进行中 2')).toBeTruthy();
+
     act(() => {
-      vi.advanceTimersByTime(2_000);
+      vi.advanceTimersByTime(1_000);
+    });
+
+    const partiallyExpiredActiveList = screen.getByLabelText('进行中');
+    expect(partiallyExpiredActiveList.querySelectorAll('button')).toHaveLength(1);
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain('正在升级');
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
+      '正在升级 2 条',
+    );
+    expect(screen.getByText('手动进行中 1')).toBeTruthy();
+    expect(screen.getByText('手动待结算 1')).toBeTruthy();
+    expect(screen.getByLabelText('待结算').querySelector('.record-badge')?.textContent).toBe('1');
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
     });
 
     const settlementList = screen.getByLabelText('待结算');

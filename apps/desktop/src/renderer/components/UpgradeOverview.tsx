@@ -35,6 +35,10 @@ type ManualSettlementGroup = {
   readonly count: number;
 };
 
+type ManualActiveGroup = ManualSettlementGroup & {
+  readonly remainingSeconds: number;
+};
+
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
@@ -109,10 +113,18 @@ export function UpgradeOverview({
   );
   const dueManualRecordCountByGroup = new Map<string, number>();
   const dueManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
-  const manualActiveRecordCountByGroup = new Map<string, number>();
+  const activeManualRecordCountByGroup = new Map<string, number>();
+  const activeManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
   for (const record of payload.state.manualActiveRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
-    manualActiveRecordCountByGroup.set(key, (manualActiveRecordCountByGroup.get(key) ?? 0) + 1);
+    if (record.expectedEndAtMs > nowMs) {
+      const activeCount = activeManualRecordCountByGroup.get(key) ?? 0;
+      activeManualRecordCountByGroup.set(key, activeCount + 1);
+      const representative = activeManualRepresentativeByGroup.get(key);
+      if (representative === undefined || record.expectedEndAtMs < representative.expectedEndAtMs) {
+        activeManualRepresentativeByGroup.set(key, record);
+      }
+    }
   }
   for (const record of dueManualRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
@@ -128,10 +140,16 @@ export function UpgradeOverview({
       record: dueManualRepresentativeByGroup.get(key)!,
     }),
   );
-  const fullyExpiredManualGroups = new Set(
-    [...dueManualRecordCountByGroup].flatMap(([key, dueCount]) =>
-      dueCount === manualActiveRecordCountByGroup.get(key) ? [key] : [],
-    ),
+  const activeManualGroups: ManualActiveGroup[] = [...activeManualRecordCountByGroup].map(
+    ([key, count]) => {
+      const record = activeManualRepresentativeByGroup.get(key)!;
+      return {
+        key,
+        count,
+        record,
+        remainingSeconds: Math.ceil((record.expectedEndAtMs - nowMs) / 1000),
+      };
+    },
   );
   const expiredImported = payload.active.filter(
     (record) =>
@@ -139,17 +157,11 @@ export function UpgradeOverview({
       remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
   );
   const expiredImportedIds = new Set(expiredImported.map((record) => record.id));
-  const active = payload.active.filter((record) => {
-    if (expiredImportedIds.has(record.id)) {
-      return false;
-    }
-    if (record.item.effectiveStatus !== 'manualActive') {
-      return true;
-    }
-    return !fullyExpiredManualGroups.has(
-      manualUpgradeGroupKey(record.villageID, record.item.trackerItemKey.stableId),
-    );
-  });
+  const active = payload.active.filter(
+    (record) =>
+      record.item.effectiveStatus !== 'manualActive' && !expiredImportedIds.has(record.id),
+  );
+  const activeRowCount = active.length + activeManualGroups.length;
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
   const needsReimport = [...payload.state.needsReimportRecords, ...expiredImported];
@@ -189,7 +201,7 @@ export function UpgradeOverview({
               : '已收录 ' +
                 villages.length +
                 ' 个村庄档案，当前有 ' +
-                active.length +
+                activeRowCount +
                 ' 项进行中，' +
                 pending.length +
                 ' 项待开始' +
@@ -209,18 +221,19 @@ export function UpgradeOverview({
       </section>
 
       <div className="overview-stats" aria-label="升级记录概况">
-        <SummaryCard label="进行中" value={active.length} symbol="↗" tone="active" />
+        <SummaryCard label="进行中" value={activeRowCount} symbol="↗" tone="active" />
         <SummaryCard label="待开始" value={pending.length} symbol="◷" tone="pending" />
         <SummaryCard label="需要关注" value={attention.length} symbol="!" tone="attention" />
         <SummaryCard label="待重新导入" value={needsReimport.length} symbol="↻" tone="reimport" />
       </div>
 
       <div className="overview-grid">
-        {active.length > 0 ? (
+        {activeRowCount > 0 ? (
           <RecordList
             title="进行中"
             description="当前正在推进的升级"
             records={active}
+            manualGroups={activeManualGroups}
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
@@ -533,6 +546,7 @@ function RecordList(props: {
   readonly title: string;
   readonly description: string;
   readonly records: readonly UpgradeDisplayRecordDto[];
+  readonly manualGroups?: readonly ManualActiveGroup[];
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
@@ -540,7 +554,9 @@ function RecordList(props: {
   readonly elapsedSeconds?: number;
   readonly statusTextForRecord?: (record: UpgradeDisplayRecordDto) => string | null;
 }) {
-  if (props.records.length === 0) {
+  const manualGroups = props.manualGroups ?? [];
+  const displayCount = props.records.length + manualGroups.length;
+  if (displayCount === 0) {
     return null;
   }
   return (
@@ -558,9 +574,43 @@ function RecordList(props: {
             <p>{props.description}</p>
           </div>
         </div>
-        <span className="record-badge">{props.records.length}</span>
+        <span className="record-badge">{displayCount}</span>
       </div>
       <ul className="overview-list">
+        {manualGroups.map((group) => {
+          const { record } = group;
+          return (
+            <li key={`manual:${group.key}`}>
+              <button
+                type="button"
+                className={
+                  record.recordID === props.selectedId ? 'overview-item selected' : 'overview-item'
+                }
+                aria-pressed={record.recordID === props.selectedId}
+                onClick={() => {
+                  props.onSelect(record.recordID);
+                  props.onOpenDetail?.(record.recordID, record.villageID);
+                }}
+              >
+                <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
+                  ↗
+                </span>
+                <span className="overview-item-name">{record.itemName}</span>
+                <span className="level-pill">
+                  {levelTransitionText(record.fromLevel, record.targetLevel)}
+                  {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                </span>
+                <span className="overview-item-meta">
+                  {record.villageName}
+                  {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                  {baseLabel(record.itemKey.base)} ·{' '}
+                  {group.count === 1 ? '正在升级' : `正在升级 ${group.count} 条`} · 最早完成剩余{' '}
+                  {formatDurationSeconds(group.remainingSeconds)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
         {props.records.map((record) => (
           <li key={record.id}>
             <button

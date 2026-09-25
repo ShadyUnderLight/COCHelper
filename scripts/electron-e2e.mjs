@@ -19,6 +19,7 @@ const runId = `${new Date().toISOString().replaceAll(':', '-')}-${process.pid}`;
 const scenarioName = 'import-and-restart';
 const rendererReadyTimeoutMs = 45_000;
 const importedVillageTimeoutMs = 30_000;
+const clickMotionTraceKey = '__cocHelperPackagedE2eClickMotionTrace';
 const manifest = JSON.parse(
   readFileSync(path.join(fixtureRoot, 'manifest.json'), 'utf8'),
 );
@@ -261,12 +262,81 @@ async function waitForText(page, selector, expected, timeout = 10_000) {
   );
 }
 
+async function startClickMotionTrace(locator) {
+  await locator.evaluate((element, traceKey) => {
+    const trace = {
+      startedAtMs: performance.now(),
+      timerId: null,
+      samples: [],
+    };
+    const sample = () => {
+      if (!element.isConnected || trace.samples.length >= 300) {
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const style = globalThis.getComputedStyle(element);
+      const hitTarget = globalThis.document.elementFromPoint(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+      );
+      trace.samples.push({
+        elapsedMs: Math.round(performance.now() - trace.startedAtMs),
+        bounds: {
+          x: Number(rect.x.toFixed(2)),
+          y: Number(rect.y.toFixed(2)),
+          width: Number(rect.width.toFixed(2)),
+          height: Number(rect.height.toFixed(2)),
+        },
+        transform: style.transform,
+        transitionProperty: style.transitionProperty,
+        transitionDuration: style.transitionDuration,
+        hovered: element.matches(':hover'),
+        active: element.matches(':active'),
+        animations: element.getAnimations().map((animation) => ({
+          playState: animation.playState,
+          currentTime: animation.currentTime,
+          ...animation.effect?.getTiming(),
+        })),
+        centerHitTarget:
+          hitTarget === null
+            ? null
+            : {
+                tagName: hitTarget.tagName,
+                text: hitTarget.textContent?.trim().slice(0, 80) ?? '',
+              },
+      });
+    };
+    globalThis[traceKey] = trace;
+    sample();
+    trace.timerId = globalThis.setInterval(sample, 40);
+  }, clickMotionTraceKey);
+}
+
+async function stopClickMotionTrace(page) {
+  await page
+    .evaluate((traceKey) => {
+      const trace = globalThis[traceKey];
+      if (trace?.timerId !== null && trace?.timerId !== undefined) {
+        globalThis.clearInterval(trace.timerId);
+        trace.timerId = null;
+      }
+      if (trace !== undefined && trace !== null) {
+        trace.stoppedAtMs = performance.now();
+      }
+      return trace ?? null;
+    }, clickMotionTraceKey)
+    .catch(() => null);
+}
+
 async function importFixture(page) {
   phase = 'import';
   importStep = 'fill-account';
   await page.locator('#account-json').fill(accountText);
   importStep = 'click-parse-preview';
-  await page.getByRole('button', { name: '解析预览' }).click();
+  const parsePreviewButton = page.getByRole('button', { name: '解析预览' });
+  await startClickMotionTrace(parsePreviewButton);
+  await parsePreviewButton.click();
+  await stopClickMotionTrace(page);
   const preview = page.getByRole('region', { name: '导入预览' });
   importStep = 'wait-for-preview';
   await preview.waitFor({ state: 'visible' });
@@ -320,6 +390,25 @@ async function captureFailure(error) {
   mkdirSync(directory, { recursive: true });
   const page = currentSession?.page;
   if (page !== null && page !== undefined && !page.isClosed()) {
+    const clickMotionTrace = await page
+      .evaluate((traceKey) => {
+        const trace = globalThis[traceKey];
+        if (trace?.timerId !== null && trace?.timerId !== undefined) {
+          globalThis.clearInterval(trace.timerId);
+          trace.timerId = null;
+        }
+        if (trace !== undefined && trace !== null) {
+          trace.stoppedAtMs = performance.now();
+        }
+        return trace ?? null;
+      }, clickMotionTraceKey)
+      .catch(() => null);
+    if (clickMotionTrace !== null) {
+      writeFileSync(
+        path.join(directory, 'click-motion-trace.json'),
+        `${JSON.stringify(clickMotionTrace, null, 2)}\n`,
+      );
+    }
     await withTimeout(
       page.screenshot({ path: path.join(directory, 'renderer.png'), fullPage: true }).catch(() => {}),
       5_000,

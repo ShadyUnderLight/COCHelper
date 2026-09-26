@@ -1,5 +1,10 @@
 import { useEffect } from 'react';
-import type { UpgradeDisplayRecordDto } from '@coc-helper/contracts';
+import type {
+  UpgradeDisplayRecordDto,
+  UpgradeOverviewManualActiveRecordDto,
+  UpgradeRecentCompletionDto,
+  VillageSummaryDto,
+} from '@coc-helper/contracts';
 
 import {
   availabilityLabel,
@@ -8,17 +13,37 @@ import {
   isEmptyOverview,
   type OverviewState,
 } from '../overview-session';
+import { clockStore } from '../clock-store';
 import {
   authoritativeLevelStatus,
   categoryGlyph,
+  formatDurationSeconds,
   levelTransitionText,
   primaryLevelAssets,
 } from '../village-detail-session';
+import { useClock } from '../use-clock';
 import { AssetImage } from './AssetImage';
+
+const RECENT_COMPLETION_DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  month: 'numeric',
+  day: 'numeric',
+});
+
+type ManualSettlementGroup = {
+  readonly key: string;
+  readonly record: UpgradeOverviewManualActiveRecordDto;
+  readonly count: number;
+  readonly hasMixedUpgradeDetails: boolean;
+};
+
+type ManualActiveGroup = ManualSettlementGroup & {
+  readonly remainingSeconds: number;
+};
 
 type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
+  readonly villages: readonly VillageSummaryDto[];
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly onRetry: () => void;
@@ -27,11 +52,24 @@ type UpgradeOverviewProps = {
 export function UpgradeOverview({
   state,
   selectedId,
+  villages,
   onSelect,
   onOpenDetail,
   onRetry,
 }: UpgradeOverviewProps) {
   const { status, payload, lastError } = state;
+  const clockNowMs = clockStore.getSnapshot();
+  const elapsedBeforeSubscription =
+    payload === null ? 0 : elapsedSecondsSince(payload.nowMs, clockNowMs);
+  const hasActiveCountdown =
+    (payload?.state.manualActiveRecords.some((record) => record.expectedEndAtMs > clockNowMs) ??
+      false) ||
+    (payload?.active.some((record) => {
+      const remainingSeconds = remainingSecondsAfterElapsed(record, elapsedBeforeSubscription);
+      return remainingSeconds !== null && remainingSeconds > 0;
+    }) ??
+      false);
+  const nowMs = useClock(hasActiveCountdown);
 
   useEffect(() => {
     if (payload !== null) {
@@ -42,14 +80,14 @@ export function UpgradeOverview({
   if (payload === null) {
     if (status === 'error') {
       return (
-        <section className="overview-panel" aria-label="升级总览" data-perf-state="error">
+        <section className="overview-panel" aria-label="升级追踪" data-perf-state="error">
           <div className="empty-state">
             <span className="empty-mark" aria-hidden="true">
               !
             </span>
             <h2>营地数据暂时不可用</h2>
             <p className="muted" role="alert">
-              {lastError ?? '升级总览加载失败'}
+              {lastError ?? '升级追踪加载失败'}
             </p>
             <button type="button" className="primary-action" onClick={onRetry}>
               重试
@@ -59,7 +97,7 @@ export function UpgradeOverview({
       );
     }
     return (
-      <section className="overview-panel" aria-label="升级总览" data-perf-state="loading">
+      <section className="overview-panel" aria-label="升级追踪" data-perf-state="loading">
         <div className="loading-state">
           <span className="loading-orbit" aria-hidden="true" />
           <p className="muted">正在整理营地数据…</p>
@@ -70,13 +108,93 @@ export function UpgradeOverview({
 
   const unavailable = isCatalogUnavailable(payload);
   const empty = isEmptyOverview(payload);
-  const active = payload.active;
+  const elapsedSeconds = elapsedSecondsSince(payload.nowMs, nowMs);
+  const dueManualRecords = payload.state.manualActiveRecords.filter(
+    (record) => record.expectedEndAtMs <= nowMs,
+  );
+  const dueManualRecordCountByGroup = new Map<string, number>();
+  const dueManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
+  const dueManualGroupsWithMixedDetails = new Set<string>();
+  const activeManualRecordCountByGroup = new Map<string, number>();
+  const activeManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
+  const activeManualGroupsWithMixedDetails = new Set<string>();
+  for (const record of payload.state.manualActiveRecords) {
+    const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
+    if (record.expectedEndAtMs > nowMs) {
+      const activeCount = activeManualRecordCountByGroup.get(key) ?? 0;
+      activeManualRecordCountByGroup.set(key, activeCount + 1);
+      const representative = activeManualRepresentativeByGroup.get(key);
+      if (representative === undefined) {
+        activeManualRepresentativeByGroup.set(key, record);
+      } else {
+        if (!sameManualUpgradeDetails(record, representative)) {
+          activeManualGroupsWithMixedDetails.add(key);
+        }
+        if (record.expectedEndAtMs < representative.expectedEndAtMs) {
+          activeManualRepresentativeByGroup.set(key, record);
+        }
+      }
+    }
+  }
+  for (const record of dueManualRecords) {
+    const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
+    dueManualRecordCountByGroup.set(key, (dueManualRecordCountByGroup.get(key) ?? 0) + 1);
+    const representative = dueManualRepresentativeByGroup.get(key);
+    if (representative === undefined) {
+      dueManualRepresentativeByGroup.set(key, record);
+    } else {
+      if (!sameManualUpgradeDetails(record, representative)) {
+        dueManualGroupsWithMixedDetails.add(key);
+      }
+      if (record.expectedEndAtMs < representative.expectedEndAtMs) {
+        dueManualRepresentativeByGroup.set(key, record);
+      }
+    }
+  }
+  const pendingSettlementGroups: ManualSettlementGroup[] = [...dueManualRecordCountByGroup].map(
+    ([key, count]) => ({
+      key,
+      count,
+      record: dueManualRepresentativeByGroup.get(key)!,
+      hasMixedUpgradeDetails: dueManualGroupsWithMixedDetails.has(key),
+    }),
+  );
+  const activeManualGroups: ManualActiveGroup[] = [...activeManualRecordCountByGroup].map(
+    ([key, count]) => {
+      const record = activeManualRepresentativeByGroup.get(key)!;
+      return {
+        key,
+        count,
+        record,
+        hasMixedUpgradeDetails: activeManualGroupsWithMixedDetails.has(key),
+        remainingSeconds: Math.ceil((record.expectedEndAtMs - nowMs) / 1000),
+      };
+    },
+  );
+  const expiredImported = payload.active.filter(
+    (record) =>
+      record.item.effectiveStatus === 'importedActive' &&
+      remainingSecondsAfterElapsed(record, elapsedSeconds) === 0,
+  );
+  const expiredImportedIds = new Set(expiredImported.map((record) => record.id));
+  const active = payload.active.filter(
+    (record) =>
+      record.item.effectiveStatus !== 'manualActive' && !expiredImportedIds.has(record.id),
+  );
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
-  const needsReimport = payload.state.needsReimportRecords;
+  const needsReimport = [...payload.state.needsReimportRecords, ...expiredImported];
+  const pendingSettlementCount = dueManualRecords.length;
+  const manualActiveCount = payload.state.manualActiveCount - pendingSettlementCount;
+  const expiredImportedCount = expiredImported.filter(
+    (record) => record.item.timerSeconds !== null,
+  ).length;
+  const importedActiveCount = Math.max(0, payload.state.importedActiveCount - expiredImportedCount);
+  const activeRowCount = active.length + activeManualGroups.length;
+  const activeRecordCount = manualActiveCount + importedActiveCount;
 
   return (
-    <section className="overview-panel" aria-label="升级总览" data-perf-state="ready">
+    <section className="overview-panel" aria-label="升级追踪" data-perf-state="ready">
       {lastError !== null ? (
         <p className="notice-text shell-alert" role="alert">
           数据可能过期：{lastError}
@@ -84,28 +202,39 @@ export function UpgradeOverview({
       ) : null}
       {unavailable ? (
         <p className="notice-text shell-alert" role="alert">
-          游戏目录不可用，升级总览暂不可展示。以下为快照侧记录，仅供参考。
+          游戏目录不可用，升级追踪暂不可展示。以下为快照侧记录，仅供参考。
         </p>
       ) : null}
 
-      <section className="camp-hero" aria-label="营地升级计划">
+      <section className="camp-hero" aria-label="多村庄升级追踪">
         <div className="camp-copy">
           <p className="hero-eyebrow">
-            VILLAGE OPERATIONS <span>/</span> UPGRADE PLAN
+            UPGRADE TRACKER <span>/</span> MULTI-VILLAGE OVERVIEW
           </p>
-          <h2>让营地进度一目了然</h2>
+          <h2>所有村庄的升级动态</h2>
           <p className="camp-description">
             {empty
               ? payload.state.manualCompletedCount > 0
                 ? '当前没有进行中或待处理的升级，已记录 ' +
                   payload.state.manualCompletedCount +
                   ' 项手动完成。'
-                : '导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'
-              : '目前有 ' + active.length + ' 项升级正在进行，' + pending.length + ' 项等待开始。'}
+                : '导入游戏账号后，这里会汇总所有村庄正在进行和待安排的升级。'
+              : '已收录 ' +
+                villages.length +
+                ' 个村庄档案，当前有 ' +
+                activeRecordCount +
+                ' 项进行中，' +
+                pending.length +
+                ' 项待开始' +
+                (pendingSettlementCount === 0
+                  ? ''
+                  : '，另有 ' + pendingSettlementCount + ' 项手动升级待结算') +
+                '。点击条目查看对应村庄详情。'}
           </p>
           <OverviewCounts
-            manualActiveCount={payload.state.manualActiveCount}
-            importedActiveCount={payload.state.importedActiveCount}
+            manualActiveCount={manualActiveCount}
+            manualPendingSettlementCount={pendingSettlementCount}
+            importedActiveCount={importedActiveCount}
             manualCompletedCount={payload.state.manualCompletedCount}
           />
         </div>
@@ -113,22 +242,25 @@ export function UpgradeOverview({
       </section>
 
       <div className="overview-stats" aria-label="升级记录概况">
-        <SummaryCard label="进行中" value={active.length} symbol="↗" tone="active" />
+        <SummaryCard label="进行中" value={activeRecordCount} symbol="↗" tone="active" />
         <SummaryCard label="待开始" value={pending.length} symbol="◷" tone="pending" />
         <SummaryCard label="需要关注" value={attention.length} symbol="!" tone="attention" />
         <SummaryCard label="待重新导入" value={needsReimport.length} symbol="↻" tone="reimport" />
       </div>
 
       <div className="overview-grid">
-        {active.length > 0 ? (
+        {activeRowCount > 0 ? (
           <RecordList
             title="进行中"
             description="当前正在推进的升级"
             records={active}
+            manualGroups={activeManualGroups}
+            badgeCount={activeRecordCount}
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
             emphasis
+            elapsedSeconds={elapsedSeconds}
           />
         ) : (
           <section className="content-card empty-card" aria-label="进行中">
@@ -149,6 +281,13 @@ export function UpgradeOverview({
         )}
 
         <div className="overview-rail">
+          <ManualSettlementList
+            groups={pendingSettlementGroups}
+            count={pendingSettlementCount}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onOpenDetail={onOpenDetail}
+          />
           <RecordList
             title="待开始"
             description="已安排，等待开工"
@@ -172,8 +311,13 @@ export function UpgradeOverview({
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
+            statusTextForRecord={(record) =>
+              expiredImportedIds.has(record.id) ? '待重新导入确认' : null
+            }
+            elapsedSeconds={elapsedSeconds}
           />
-          {pending.length + attention.length + needsReimport.length === 0 ? (
+          {pendingSettlementCount + pending.length + attention.length + needsReimport.length ===
+          0 ? (
             <div className="quiet-card">
               <span className="quiet-mark" aria-hidden="true">
                 ✦
@@ -184,14 +328,133 @@ export function UpgradeOverview({
               </div>
             </div>
           ) : null}
+          <RecentCompletions records={payload.state.completedRecently} villages={villages} />
         </div>
       </div>
     </section>
   );
 }
 
+function ManualSettlementList(props: {
+  readonly groups: readonly ManualSettlementGroup[];
+  readonly count: number;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+  readonly onOpenDetail?: (recordId: string, villageId: string) => void;
+}) {
+  if (props.groups.length === 0) {
+    return null;
+  }
+  return (
+    <section className="content-card record-card" aria-label="待结算">
+      <div className="card-heading">
+        <div className="heading-left">
+          <span className="section-mark" aria-hidden="true">
+            {sectionSymbol('待结算')}
+          </span>
+          <div>
+            <h3>待结算</h3>
+            <p>计时已结束，进入对应村庄详情结算手动记录</p>
+          </div>
+        </div>
+        <span className="record-badge">{props.count}</span>
+      </div>
+      <ul className="overview-list">
+        {props.groups.map((group) => {
+          const { record } = group;
+          return (
+            <li key={group.key}>
+              <button
+                type="button"
+                className={
+                  record.recordID === props.selectedId ? 'overview-item selected' : 'overview-item'
+                }
+                aria-pressed={record.recordID === props.selectedId}
+                onClick={() => {
+                  props.onSelect(record.recordID);
+                  props.onOpenDetail?.(record.recordID, record.villageID);
+                }}
+              >
+                <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
+                  ◷
+                </span>
+                <span className="overview-item-name">{record.itemName}</span>
+                <span className="level-pill">
+                  {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
+                  {levelTransitionText(record.fromLevel, record.targetLevel)}
+                  {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                </span>
+                <span className="overview-item-meta">
+                  {record.villageName}
+                  {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                  {baseLabel(record.itemKey.base)} ·{' '}
+                  {group.count === 1 ? '待结算' : `待结算 ${group.count} 条`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function RecentCompletions(props: {
+  readonly records: readonly UpgradeRecentCompletionDto[];
+  readonly villages: readonly VillageSummaryDto[];
+}) {
+  if (props.records.length === 0) {
+    return null;
+  }
+
+  const villagesById = new Map(props.villages.map((village) => [village.id, village] as const));
+  return (
+    <section className="content-card completion-card" aria-label="近期完成">
+      <div className="card-heading">
+        <div className="heading-left">
+          <span className="section-mark" aria-hidden="true">
+            ✓
+          </span>
+          <div>
+            <h3>近期完成</h3>
+            <p>最近完成的升级</p>
+          </div>
+        </div>
+        <span className="record-badge">{props.records.length}</span>
+      </div>
+      <ul className="completion-list">
+        {props.records.map((record) => {
+          const village = villagesById.get(record.villageID);
+          const villageName =
+            village === undefined
+              ? '已移除的村庄'
+              : `${village.name}${village.tag === null ? '' : `（${village.tag}）`}`;
+          const date = new Date(record.completedAtMs);
+          return (
+            <li key={record.id}>
+              <span className="completion-copy">
+                <strong>{record.itemName}</strong>
+                <span>
+                  {villageName} · {record.quantity > 1 ? `${record.quantity} 项 · ` : ''}升至{' '}
+                  {record.targetLevel} 级
+                </span>
+              </span>
+              <time dateTime={Number.isNaN(date.getTime()) ? undefined : date.toISOString()}>
+                {Number.isNaN(date.getTime())
+                  ? '时间未知'
+                  : RECENT_COMPLETION_DATE_FORMATTER.format(date)}
+              </time>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function OverviewCounts(props: {
   readonly manualActiveCount: number;
+  readonly manualPendingSettlementCount: number;
   readonly importedActiveCount: number;
   readonly manualCompletedCount: number;
 }) {
@@ -201,6 +464,12 @@ function OverviewCounts(props: {
         <i className="meta-dot manual" />
         手动进行中 {props.manualActiveCount}
       </span>
+      {props.manualPendingSettlementCount > 0 ? (
+        <span>
+          <i className="meta-dot" />
+          手动待结算 {props.manualPendingSettlementCount}
+        </span>
+      ) : null}
       <span>
         <i className="meta-dot imported" />
         导入进行中 {props.importedActiveCount}
@@ -300,12 +569,36 @@ function RecordList(props: {
   readonly title: string;
   readonly description: string;
   readonly records: readonly UpgradeDisplayRecordDto[];
+  readonly manualGroups?: readonly ManualActiveGroup[];
+  readonly badgeCount?: number;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly emphasis?: boolean;
+  readonly elapsedSeconds?: number;
+  readonly statusTextForRecord?: (record: UpgradeDisplayRecordDto) => string | null;
 }) {
-  if (props.records.length === 0) {
+  const manualGroups = props.manualGroups ?? [];
+  const displayCount = props.records.length + manualGroups.length;
+  const listEntries = [
+    ...manualGroups.map((group) => ({
+      key: `manual:${group.key}`,
+      kind: 'manual' as const,
+      group,
+      sortRemainingSeconds: group.remainingSeconds,
+    })),
+    ...props.records.map((record) => ({
+      key: record.id,
+      kind: 'record' as const,
+      record,
+      sortRemainingSeconds:
+        remainingSecondsAfterElapsed(record, props.elapsedSeconds ?? 0) ?? Number.MAX_SAFE_INTEGER,
+    })),
+  ];
+  if (manualGroups.length > 0) {
+    listEntries.sort((left, right) => left.sortRemainingSeconds - right.sortRemainingSeconds);
+  }
+  if (displayCount === 0) {
     return null;
   }
   return (
@@ -323,50 +616,130 @@ function RecordList(props: {
             <p>{props.description}</p>
           </div>
         </div>
-        <span className="record-badge">{props.records.length}</span>
+        <span className="record-badge">{props.badgeCount ?? displayCount}</span>
       </div>
       <ul className="overview-list">
-        {props.records.map((record) => (
-          <li key={record.id}>
-            <button
-              type="button"
-              className={
-                record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
-              }
-              aria-pressed={record.id === props.selectedId}
-              onClick={() => {
-                props.onSelect(record.id);
-                props.onOpenDetail?.(record.id, record.villageID);
-              }}
-            >
-              <AssetImage
-                catalogVersion={record.catalogVersion}
-                candidates={primaryLevelAssets(record.item)}
-                size={36}
-                className="overview-item-icon"
-                fallbackNode={
-                  <span className="overview-item-glyph" aria-hidden="true">
-                    {categoryGlyph(record.item.displayCategory, record.item.category)}
+        {listEntries.map((entry) => {
+          if (entry.kind === 'manual') {
+            const { group } = entry;
+            const { record } = group;
+            return (
+              <li key={entry.key}>
+                <button
+                  type="button"
+                  className={
+                    record.recordID === props.selectedId
+                      ? 'overview-item selected'
+                      : 'overview-item'
+                  }
+                  aria-pressed={record.recordID === props.selectedId}
+                  onClick={() => {
+                    props.onSelect(record.recordID);
+                    props.onOpenDetail?.(record.recordID, record.villageID);
+                  }}
+                >
+                  <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
+                    ↗
                   </span>
+                  <span className="overview-item-name">{record.itemName}</span>
+                  <span className="level-pill">
+                    {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
+                    {levelTransitionText(record.fromLevel, record.targetLevel)}
+                    {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                  </span>
+                  <span className="overview-item-meta">
+                    {record.villageName}
+                    {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                    {baseLabel(record.itemKey.base)} ·{' '}
+                    {group.count === 1 ? '正在升级' : `正在升级 ${group.count} 条`} · 最早完成剩余{' '}
+                    {formatDurationSeconds(group.remainingSeconds)}
+                  </span>
+                </button>
+              </li>
+            );
+          }
+          const { record } = entry;
+          return (
+            <li key={entry.key}>
+              <button
+                type="button"
+                className={
+                  record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
                 }
-              />
-              <span className="overview-item-name">{record.item.name}</span>
-              <span className="level-pill">
-                {levelTransitionText(
-                  record.item.effectiveCurrentLevel,
-                  record.item.effectiveTargetLevel,
-                )}
-              </span>
-              <span className="overview-item-meta">
-                {record.villageName} · {baseLabel(record.base)} ·{' '}
-                {authoritativeLevelStatus(record.item)}
-                {availabilityText(record)}
-              </span>
-            </button>
-          </li>
-        ))}
+                aria-pressed={record.id === props.selectedId}
+                onClick={() => {
+                  props.onSelect(record.id);
+                  props.onOpenDetail?.(record.id, record.villageID);
+                }}
+              >
+                <AssetImage
+                  catalogVersion={record.catalogVersion}
+                  candidates={primaryLevelAssets(record.item)}
+                  size={36}
+                  className="overview-item-icon"
+                  fallbackNode={
+                    <span className="overview-item-glyph" aria-hidden="true">
+                      {categoryGlyph(record.item.displayCategory, record.item.category)}
+                    </span>
+                  }
+                />
+                <span className="overview-item-name">{record.item.name}</span>
+                <span className="level-pill">
+                  {levelTransitionText(
+                    record.item.effectiveCurrentLevel,
+                    record.item.effectiveTargetLevel,
+                  )}
+                </span>
+                <span className="overview-item-meta">
+                  {record.villageName}
+                  {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                  {baseLabel(record.base)} ·{' '}
+                  {props.statusTextForRecord?.(record) ?? authoritativeLevelStatus(record.item)}
+                  {remainingTimeText(record, props.elapsedSeconds ?? 0)}
+                  {availabilityText(record)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
+  );
+}
+
+function remainingTimeText(record: UpgradeDisplayRecordDto, elapsedSeconds: number): string {
+  const remainingSeconds = remainingSecondsAfterElapsed(record, elapsedSeconds);
+  return remainingSeconds !== null && remainingSeconds > 0
+    ? ` · 剩余 ${formatDurationSeconds(remainingSeconds)}`
+    : '';
+}
+
+function remainingSecondsAfterElapsed(
+  record: UpgradeDisplayRecordDto,
+  elapsedSeconds: number,
+): number | null {
+  if (record.effectiveRemainingSeconds === null) {
+    return null;
+  }
+  return Math.max(0, record.effectiveRemainingSeconds - elapsedSeconds);
+}
+
+function elapsedSecondsSince(startMs: number, nowMs: number): number {
+  return Math.max(0, Math.floor((nowMs - startMs) / 1000));
+}
+
+function manualUpgradeGroupKey(villageID: string, trackerItemKeyStableId: string): string {
+  return `${villageID}\u0000${trackerItemKeyStableId}`;
+}
+
+function sameManualUpgradeDetails(
+  left: UpgradeOverviewManualActiveRecordDto,
+  right: UpgradeOverviewManualActiveRecordDto,
+): boolean {
+  return (
+    left.fromLevel === right.fromLevel &&
+    left.targetLevel === right.targetLevel &&
+    left.quantity === right.quantity
   );
 }
 
@@ -375,6 +748,7 @@ function sectionSymbol(title: string): string {
     case '进行中':
       return '↗';
     case '待开始':
+    case '待结算':
       return '◷';
     case '需要关注':
       return '!';

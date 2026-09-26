@@ -199,6 +199,7 @@ export type UpgradeDisplayRecordDto = {
   readonly villageTag: string | null;
   readonly base: TrackerBaseDto;
   readonly item: VillageItemStateDto;
+  readonly effectiveRemainingSeconds: number | null;
   readonly catalogVersion: string | null;
   readonly villageMetrics: VillageProgressMetricsDto;
 };
@@ -213,8 +214,22 @@ export type UpgradeRecentCompletionDto = {
   readonly completedAtMs: number;
 };
 
+export type UpgradeOverviewManualActiveRecordDto = {
+  readonly villageID: string;
+  readonly villageName: string;
+  readonly villageTag: string | null;
+  readonly recordID: string;
+  readonly itemKey: TrackerItemKeyDto;
+  readonly itemName: string;
+  readonly fromLevel: number;
+  readonly targetLevel: number;
+  readonly quantity: number;
+  readonly expectedEndAtMs: number;
+};
+
 export type UpgradeOverviewStateDto = {
   readonly manualActiveCount: number;
+  readonly manualActiveRecords: readonly UpgradeOverviewManualActiveRecordDto[];
   readonly importedActiveCount: number;
   readonly deduplicatedDisplayCount: number;
   readonly manualCompletedCount: number;

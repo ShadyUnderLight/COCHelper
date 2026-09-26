@@ -53,6 +53,7 @@ import {
   trackerItemKeyRoot,
   trackerItemKeyStableId,
   upgradeActionCoverageForItem,
+  upgradeDisplayRecordRemainingSecondsAt,
 } from '@coc-helper/domain';
 
 export type VillageItemManualProjectionContext = {
@@ -75,9 +76,9 @@ export function toUpgradeOverviewPayload(input: {
     nowMs: input.nowMs,
     catalogVersion: input.catalogVersion,
     catalogIsUsable: input.catalogIsUsable,
-    active: input.render.active.map(toUpgradeDisplayRecordDto),
-    pending: input.render.pending.map(toUpgradeDisplayRecordDto),
-    state: toUpgradeOverviewStateDto(input.render.state),
+    active: input.render.active.map((record) => toUpgradeDisplayRecordDto(record, input.nowMs)),
+    pending: input.render.pending.map((record) => toUpgradeDisplayRecordDto(record, input.nowMs)),
+    state: toUpgradeOverviewStateDto(input.render.state, input.nowMs),
   };
 }
 
@@ -121,20 +122,42 @@ export function toVillageDetailPayload(input: {
   };
 }
 
-function toUpgradeOverviewStateDto(state: UpgradeOverviewRender['state']): UpgradeOverviewStateDto {
+function toUpgradeOverviewStateDto(
+  state: UpgradeOverviewRender['state'],
+  nowMs: number,
+): UpgradeOverviewStateDto {
   return {
     manualActiveCount: state.manualActiveCount,
+    manualActiveRecords: state.manualActiveRecords.map((record) => ({
+      villageID: record.villageID,
+      villageName: record.villageName,
+      villageTag: record.villageTag,
+      recordID: record.recordID,
+      itemKey: toTrackerItemKeyDto(record.itemKey),
+      itemName: record.itemName,
+      fromLevel: record.fromLevel,
+      targetLevel: record.targetLevel,
+      quantity: bigintToNumber(record.quantity),
+      expectedEndAtMs: record.expectedEndAtMs,
+    })),
     importedActiveCount: state.importedActiveCount,
     deduplicatedDisplayCount: state.deduplicatedDisplayCount,
     manualCompletedCount: state.manualCompletedCount,
     completedRecently: state.completedRecently.map(toUpgradeRecentCompletionDto),
-    activeRecords: state.activeRecords.map(toUpgradeDisplayRecordDto),
-    attentionRecords: state.attentionRecords.map(toUpgradeDisplayRecordDto),
-    needsReimportRecords: state.needsReimportRecords.map(toUpgradeDisplayRecordDto),
+    activeRecords: state.activeRecords.map((record) => toUpgradeDisplayRecordDto(record, nowMs)),
+    attentionRecords: state.attentionRecords.map((record) =>
+      toUpgradeDisplayRecordDto(record, nowMs),
+    ),
+    needsReimportRecords: state.needsReimportRecords.map((record) =>
+      toUpgradeDisplayRecordDto(record, nowMs),
+    ),
   };
 }
 
-function toUpgradeDisplayRecordDto(record: UpgradeDisplayRecord): UpgradeDisplayRecordDto {
+function toUpgradeDisplayRecordDto(
+  record: UpgradeDisplayRecord,
+  nowMs: number,
+): UpgradeDisplayRecordDto {
   return {
     id: record.id,
     villageID: record.villageID,
@@ -142,6 +165,9 @@ function toUpgradeDisplayRecordDto(record: UpgradeDisplayRecord): UpgradeDisplay
     villageTag: record.villageTag,
     base: record.base,
     item: toVillageItemStateDto(record.item),
+    effectiveRemainingSeconds: optionalBigintToNumber(
+      upgradeDisplayRecordRemainingSecondsAt(record, nowMs),
+    ),
     catalogVersion: record.catalogVersion,
     villageMetrics: toVillageProgressMetricsDto(record.villageMetrics),
   };

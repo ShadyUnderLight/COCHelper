@@ -175,13 +175,20 @@ export function AppShell({
   };
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
-    const ok = await session.selectVillage(villageId);
-    if (!ok) {
+    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
     const currentRoute = activeRouteRef.current;
     if (currentRoute.kind === 'villageDetail') {
-      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+      applyRoute(
+        currentRoute.villageId === villageId
+          ? { kind: 'overview' }
+          : { kind: 'villageDetail', villageId, base: currentRoute.base },
+      );
+      return;
+    }
+    if (currentRoute.kind !== 'overview' && currentRoute.kind !== 'import') {
+      applyRoute({ kind: 'overview' });
     }
   };
 
@@ -335,6 +342,7 @@ export function AppShell({
                   <UpgradeOverview
                     state={overview.state}
                     selectedId={overview.selectedId}
+                    villages={snapshot.villages}
                     onSelect={overview.select}
                     onOpenDetail={openDetail}
                     onRetry={() => void overview.refresh()}
@@ -377,9 +385,9 @@ function pageTitle(route: AppRoute): string {
     case 'overview':
     case 'official':
     case 'manual':
-      return '营地总览';
+      return '升级追踪';
     case 'villageDetail':
-      return '村庄档案';
+      return '村庄详情';
     case 'info':
       return '设置与诊断';
     default: {
@@ -595,7 +603,7 @@ function TabNav(props: {
                 <path d="M3 19.5h18M5.5 16V10M10 16V5M14.5 16v-3M4 7l5-3 5 2 5-3" />
               </svg>
             </span>
-            <span>升级总览</span>
+            <span>升级追踪</span>
           </button>
           <button
             className="nav-item"

@@ -92,7 +92,7 @@ export class ProjectionService {
       );
     } catch (error) {
       if (error instanceof RangeError) {
-        throw new AppServiceError('validation', '升级总览包含无法经 IPC 传递的数值。');
+        throw new AppServiceError('validation', '升级追踪包含无法经 IPC 传递的数值。');
       }
       throw error;
     }
@@ -100,7 +100,7 @@ export class ProjectionService {
       upgradeOverviewPayloadSchema.safeParse(payload),
     );
     if (!parsed.success) {
-      throw new AppServiceError('validation', '升级总览无法经 IPC schema 校验。');
+      throw new AppServiceError('validation', '升级追踪无法经 IPC schema 校验。');
     }
     return parsed.data;
   }

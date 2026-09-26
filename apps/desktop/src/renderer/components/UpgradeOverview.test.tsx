@@ -1,7 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type {
+  UpgradeOverviewManualActiveRecordDto,
+  UpgradeRecentCompletionDto,
+  VillageSummaryDto,
+} from '@coc-helper/contracts';
 
 import {
   applyOverviewError,
@@ -9,21 +14,31 @@ import {
   recordFixture,
   type OverviewState,
 } from '../overview-session';
+import { advanceClockStoreForTests, resetClockStoreForTests } from '../clock-store';
 import { UpgradeOverview } from './UpgradeOverview';
 
 afterEach(() => {
   cleanup();
+  resetClockStoreForTests();
+  vi.useRealTimers();
 });
 
 type Props = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
+  readonly villages: readonly VillageSummaryDto[];
   readonly onSelect: (id: string) => void;
   readonly onRetry: () => void;
 };
 
 function propsOf(state: OverviewState): Props {
-  return { state, selectedId: null, onSelect: () => undefined, onRetry: () => undefined };
+  return {
+    state,
+    selectedId: null,
+    villages: [],
+    onSelect: () => undefined,
+    onRetry: () => undefined,
+  };
 }
 
 function stateShape(
@@ -32,8 +47,11 @@ function stateShape(
     readonly catalogVersion: string | null;
     readonly catalogIsUsable: boolean;
     readonly active: ReturnType<typeof recordFixture>[];
+    readonly completedRecently: UpgradeRecentCompletionDto[];
+    readonly manualActiveRecords: UpgradeOverviewManualActiveRecordDto[];
   }> = {},
 ) {
+  const { completedRecently = [], manualActiveRecords = [], ...payloadOverrides } = overrides;
   return {
     generation: 1,
     nowMs: 1,
@@ -43,15 +61,16 @@ function stateShape(
     pending: [] as ReturnType<typeof recordFixture>[],
     state: {
       manualActiveCount: 0,
+      manualActiveRecords,
       importedActiveCount: 0,
       deduplicatedDisplayCount: 0,
       manualCompletedCount: 0,
-      completedRecently: [],
-      activeRecords: [],
-      attentionRecords: [],
-      needsReimportRecords: [],
+      completedRecently,
+      activeRecords: [] as ReturnType<typeof recordFixture>[],
+      attentionRecords: [] as ReturnType<typeof recordFixture>[],
+      needsReimportRecords: [] as ReturnType<typeof recordFixture>[],
     },
-    ...overrides,
+    ...payloadOverrides,
   };
 }
 
@@ -59,7 +78,7 @@ describe('UpgradeOverview', () => {
   it('loading 显示加载文案', () => {
     render(<UpgradeOverview {...propsOf({ status: 'loading', payload: null, lastError: null })} />);
     expect(screen.getByText('正在整理营地数据…')).toBeTruthy();
-    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('loading');
+    expect(screen.getByLabelText('升级追踪').getAttribute('data-perf-state')).toBe('loading');
   });
 
   it('error 无 last-good 显示错误与重试', () => {
@@ -75,7 +94,7 @@ describe('UpgradeOverview', () => {
       />,
     );
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('error');
+    expect(screen.getByLabelText('升级追踪').getAttribute('data-perf-state')).toBe('error');
     fireEvent.click(screen.getByText('重试'));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -84,10 +103,10 @@ describe('UpgradeOverview', () => {
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape()))} />);
     expect(screen.getByText('暂无进行中的升级')).toBeTruthy();
     expect(
-      screen.getByText('导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'),
+      screen.getByText('导入游戏账号后，这里会汇总所有村庄正在进行和待安排的升级。'),
     ).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.getByLabelText('升级总览').getAttribute('data-perf-state')).toBe('ready');
+    expect(screen.getByLabelText('升级追踪').getAttribute('data-perf-state')).toBe('ready');
   });
 
   it('只有近期窗口外的手动完成记录时显示无待处理文案', () => {
@@ -96,7 +115,7 @@ describe('UpgradeOverview', () => {
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
     expect(screen.getByText('当前没有进行中或待处理的升级，已记录 3 项手动完成。')).toBeTruthy();
     expect(
-      screen.queryByText('导入游戏账号数据后，正在进行与待安排的升级会汇集在这里。'),
+      screen.queryByText('导入游戏账号后，这里会汇总所有村庄正在进行和待安排的升级。'),
     ).toBeNull();
   });
 
@@ -123,6 +142,365 @@ describe('UpgradeOverview', () => {
     expect(row.textContent).toContain('已记录');
     expect(row.textContent).not.toContain('5 → 6 级');
     expect(row.textContent).not.toContain('已完成');
+  });
+
+  it('跨村庄升级记录显示村庄标签以区分账号', () => {
+    const record = recordFixture({
+      id: 'r-tagged',
+      villageName: '分村',
+      villageTag: '#BBB',
+    });
+    render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [record] })))} />,
+    );
+    expect(screen.getByRole('button', { name: /加农炮/ }).textContent).toContain('分村（#BBB）');
+  });
+
+  it('正在升级的记录显示会随显示时钟递减的剩余时间', () => {
+    resetClockStoreForTests(1);
+    const record = recordFixture({
+      id: 'r-timer',
+      effectiveRemainingSeconds: 3_600,
+      item: {
+        ...recordFixture().item,
+        timerSeconds: 7_200,
+        remainingSeconds: null,
+      },
+    });
+    render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [record] })))} />,
+    );
+    const row = screen.getByRole('button', { name: /加农炮/ });
+    expect(row.textContent).toContain('剩余 1小时 0分钟');
+
+    act(() => advanceClockStoreForTests(60_000));
+
+    expect(row.textContent).toContain('剩余 59分钟');
+  });
+
+  it('计时归零后将记录移入待处理状态并停止时钟订阅', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const baseItem = recordFixture().item;
+    const manualTimerRecord = recordFixture({
+      id: 'manual-timer-due',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: 2,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const manualIdleRecord = recordFixture({
+      id: 'manual-idle-due',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: null,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const importedRecord = recordFixture({
+      id: 'imported-due',
+      villageID: 'v2',
+      villageName: '副村',
+      villageTag: '#BBB',
+      effectiveRemainingSeconds: 2,
+      item: {
+        ...baseItem,
+        timerSeconds: 2,
+        remainingSeconds: 2,
+        effectiveStatus: 'importedActive',
+      },
+    });
+    const payload = stateShape({
+      active: [manualTimerRecord, manualIdleRecord, importedRecord],
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
+          recordID: '00000000-0000-0000-0000-000000000001',
+          itemKey: baseItem.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
+          expectedEndAtMs: 2_001,
+        },
+      ],
+    });
+    payload.state.manualActiveCount = 1;
+    payload.state.importedActiveCount = 1;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    expect(vi.getTimerCount()).toBe(1);
+    const activeList = screen.getByLabelText('进行中');
+    expect(activeList.querySelectorAll('button')).toHaveLength(2);
+    expect(
+      Array.from(activeList.querySelectorAll('button')).filter((button) =>
+        button.textContent?.includes('最早完成剩余'),
+      ),
+    ).toHaveLength(1);
+    expect(activeList.textContent).toContain('正在升级');
+    expect(activeList.textContent).toContain('最早完成剩余');
+    expect(
+      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
+        ?.textContent,
+    ).toContain('2');
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    const activeCount = screen
+      .getByLabelText('升级记录概况')
+      .querySelector('.stat-card.active .stat-value');
+    expect(activeCount?.textContent).toContain('0');
+    expect(screen.getByText('手动进行中 0')).toBeTruthy();
+    expect(screen.getByText('手动待结算 1')).toBeTruthy();
+    const settlementList = screen.getByLabelText('待结算');
+    expect(settlementList.querySelectorAll('button')).toHaveLength(1);
+    expect(settlementList.querySelector('.record-badge')?.textContent).toBe('1');
+    expect(settlementList.querySelector('button')?.textContent).toContain('待结算');
+    expect(screen.getByLabelText('待重新导入').querySelector('button')?.textContent).toContain(
+      '待重新导入确认',
+    );
+    expect(screen.queryByText(/正在升级/)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('同 tracker key 的并行手动记录按底层记录数计数并合并展示行', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const item = recordFixture().item;
+    const record = recordFixture({
+      id: 'manual-parallel',
+      effectiveRemainingSeconds: null,
+      item: {
+        ...item,
+        timerSeconds: null,
+        remainingSeconds: null,
+        effectiveStatus: 'manualActive',
+      },
+    });
+    const payload = stateShape({
+      active: [record],
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
+          recordID: '00000000-0000-0000-0000-000000000001',
+          itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
+          expectedEndAtMs: 1_001,
+        },
+        {
+          villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
+          recordID: '00000000-0000-0000-0000-000000000002',
+          itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 6,
+          targetLevel: 7,
+          quantity: 2,
+          expectedEndAtMs: 2_001,
+        },
+      ],
+    });
+    payload.state.manualActiveCount = 2;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+    const activeList = screen.getByLabelText('进行中');
+    const activeStat = () =>
+      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
+        ?.textContent;
+    expect(activeList.querySelectorAll('button')).toHaveLength(1);
+    expect(activeList.querySelector('.record-badge')?.textContent).toBe('2');
+    expect(activeStat()).toContain('2');
+    expect(activeList.querySelector('button')?.textContent).toContain('正在升级 2 条');
+    expect(activeList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
+    expect(activeList.querySelector('button')?.textContent).toContain('最早完成剩余');
+    expect(screen.getByText('手动进行中 2')).toBeTruthy();
+    expect(screen.getByText(/当前有 2 项进行中/)).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    const partiallyExpiredActiveList = screen.getByLabelText('进行中');
+    expect(partiallyExpiredActiveList.querySelectorAll('button')).toHaveLength(1);
+    expect(partiallyExpiredActiveList.querySelector('.record-badge')?.textContent).toBe('1');
+    expect(activeStat()).toContain('1');
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain('正在升级');
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
+      '正在升级 2 条',
+    );
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain(
+      '6 → 7 级 ×2',
+    );
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
+      '最早完成项',
+    );
+    expect(screen.getByText('手动进行中 1')).toBeTruthy();
+    expect(screen.getByText('手动待结算 1')).toBeTruthy();
+    expect(screen.getByLabelText('待结算').querySelector('.record-badge')?.textContent).toBe('1');
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    const settlementList = screen.getByLabelText('待结算');
+    expect(settlementList.querySelectorAll('button')).toHaveLength(1);
+    expect(settlementList.querySelector('.record-badge')?.textContent).toBe('2');
+    expect(settlementList.querySelector('button')?.textContent).toContain('待结算 2 条');
+    expect(settlementList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
+    expect(screen.getByText('手动进行中 0')).toBeTruthy();
+    expect(screen.getByText('手动待结算 2')).toBeTruthy();
+    expect(screen.getByLabelText('进行中').querySelector('.record-badge')?.textContent).toBe('0');
+    expect(activeStat()).toContain('0');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('手动与导入的进行中升级按预计完成时间混排', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const item = recordFixture().item;
+    const importedRecord = recordFixture({
+      id: 'imported-one-hour',
+      villageID: 'v2',
+      villageName: '副村',
+      effectiveRemainingSeconds: 3_600,
+      item: {
+        ...item,
+        timerSeconds: 3_600,
+        remainingSeconds: 3_600,
+        effectiveStatus: 'importedActive',
+      },
+    });
+    const manualRecords: UpgradeOverviewManualActiveRecordDto[] = [
+      {
+        villageID: 'v1',
+        villageName: '主村',
+        villageTag: '#AAA',
+        recordID: '00000000-0000-0000-0000-000000000031',
+        itemKey: item.trackerItemKey,
+        itemName: '加农炮',
+        fromLevel: 5,
+        targetLevel: 6,
+        quantity: 1,
+        expectedEndAtMs: 8 * 60 * 60 * 1_000 + 1,
+      },
+      {
+        villageID: 'v3',
+        villageName: '第三村',
+        villageTag: '#CCC',
+        recordID: '00000000-0000-0000-0000-000000000032',
+        itemKey: item.trackerItemKey,
+        itemName: '加农炮',
+        fromLevel: 5,
+        targetLevel: 6,
+        quantity: 1,
+        expectedEndAtMs: 4 * 60 * 60 * 1_000 + 1,
+      },
+    ];
+    const payload = stateShape({ active: [importedRecord], manualActiveRecords: manualRecords });
+    payload.state.manualActiveCount = 2;
+    payload.state.importedActiveCount = 1;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+
+    const rows = Array.from(screen.getByLabelText('进行中').querySelectorAll('li')).map(
+      (row) => row.textContent ?? '',
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain('副村');
+    expect(rows[0]).toContain('剩余 1小时 0分钟');
+    expect(rows[1]).toContain('第三村');
+    expect(rows[1]).toContain('最早完成剩余 4小时 0分钟');
+    expect(rows[2]).toContain('主村');
+    expect(rows[2]).toContain('最早完成剩余 8小时 0分钟');
+  });
+
+  it('冲突状态没有有效进行中行时仍显示可打开的待结算入口', () => {
+    resetClockStoreForTests(3_000);
+    const item = recordFixture().item;
+    const conflictRecord = recordFixture({
+      id: 'conflict-active',
+      item: { ...item, effectiveStatus: 'conflict' },
+    });
+    const recordID = '00000000-0000-0000-0000-000000000021';
+    const payload = stateShape({
+      catalogIsUsable: false,
+      manualActiveRecords: [
+        {
+          villageID: 'v1',
+          villageName: '主村',
+          villageTag: '#AAA',
+          recordID,
+          itemKey: item.trackerItemKey,
+          itemName: '加农炮',
+          fromLevel: 5,
+          targetLevel: 6,
+          quantity: 1,
+          expectedEndAtMs: 2_001,
+        },
+      ],
+    });
+    payload.state.manualActiveCount = 1;
+    payload.state.attentionRecords = [conflictRecord];
+    const onOpenDetail = vi.fn();
+
+    const view = render(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} onOpenDetail={onOpenDetail} />,
+    );
+
+    const settlementButton = screen.getByLabelText('待结算').querySelector('button');
+    expect(settlementButton?.textContent).toContain('加农炮');
+    expect(settlementButton?.textContent).toContain('待结算');
+    fireEvent.click(settlementButton!);
+    expect(onOpenDetail).toHaveBeenCalledWith(recordID, 'v1');
+
+    payload.state.attentionRecords = [];
+    view.rerender(
+      <UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} onOpenDetail={onOpenDetail} />,
+    );
+    expect(screen.getByLabelText('待结算').querySelector('button')?.textContent).toContain(
+      '加农炮',
+    );
+    expect(screen.queryByText(/导入游戏账号后/)).toBeNull();
+  });
+
+  it('近期完成记录显示所属村庄和标签', () => {
+    const completion: UpgradeRecentCompletionDto = {
+      id: 'completed-cannon',
+      villageID: 'v2',
+      itemKey: recordFixture().item.trackerItemKey,
+      itemName: '加农炮',
+      targetLevel: 6,
+      quantity: 1,
+      completedAtMs: Date.UTC(2026, 8, 23),
+    };
+    const villages: VillageSummaryDto[] = [
+      { id: 'v2', name: '分村', tag: '#BBB', hasImportedData: true },
+    ];
+    const props = propsOf(applyOverviewSuccess(stateShape({ completedRecently: [completion] })));
+    render(<UpgradeOverview {...props} villages={villages} />);
+    expect(screen.getByLabelText('近期完成').textContent).toContain('分村（#BBB）');
   });
 
   it('升级记录行保持四个元素的完整子树，将箭头作为 CSS 装饰绘制', () => {

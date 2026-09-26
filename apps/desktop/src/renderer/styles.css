@@ -348,8 +348,7 @@ button.danger {
   background: rgb(255 255 255 / 13%);
 }
 
-.village-item.selected,
-.village-item:disabled.selected {
+.village-item.selected {
   color: #34452f;
   border-color: rgb(255 255 255 / 75%);
   background: linear-gradient(140deg, rgb(255 255 246 / 79%), rgb(238 241 220 / 53%));
@@ -1252,6 +1251,49 @@ button.danger {
   place-items: center;
   border-radius: 9px;
   background: rgb(255 255 255 / 60%);
+}
+
+.completion-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 3px 13px;
+  list-style: none;
+}
+
+.completion-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgb(190 170 116 / 30%);
+}
+
+.completion-list li:last-child {
+  border-bottom: 0;
+}
+
+.completion-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.completion-copy strong {
+  overflow-wrap: anywhere;
+  color: #49412d;
+  font-size: 9px;
+}
+
+.completion-copy span,
+.completion-list time {
+  color: #6b6148;
+  font-size: 8px;
+}
+
+.completion-list time {
+  white-space: nowrap;
 }
 
 .import-panel,

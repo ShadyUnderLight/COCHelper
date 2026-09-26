@@ -323,16 +323,16 @@ describe('UpgradeOverview', () => {
 
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
     const activeList = screen.getByLabelText('进行中');
+    const activeStat = () =>
+      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
+        ?.textContent;
     expect(activeList.querySelectorAll('button')).toHaveLength(1);
     expect(activeList.querySelector('.record-badge')?.textContent).toBe('2');
+    expect(activeStat()).toContain('2');
     expect(activeList.querySelector('button')?.textContent).toContain('正在升级 2 条');
     expect(activeList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
     expect(activeList.querySelector('button')?.textContent).toContain('最早完成剩余');
     expect(screen.getByText('手动进行中 2')).toBeTruthy();
-    expect(
-      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
-        ?.textContent,
-    ).toContain('2');
     expect(screen.getByText(/当前有 2 项进行中/)).toBeTruthy();
 
     act(() => {
@@ -341,6 +341,8 @@ describe('UpgradeOverview', () => {
 
     const partiallyExpiredActiveList = screen.getByLabelText('进行中');
     expect(partiallyExpiredActiveList.querySelectorAll('button')).toHaveLength(1);
+    expect(partiallyExpiredActiveList.querySelector('.record-badge')?.textContent).toBe('1');
+    expect(activeStat()).toContain('1');
     expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain('正在升级');
     expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
       '正在升级 2 条',
@@ -367,6 +369,8 @@ describe('UpgradeOverview', () => {
     expect(settlementList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
     expect(screen.getByText('手动进行中 0')).toBeTruthy();
     expect(screen.getByText('手动待结算 2')).toBeTruthy();
+    expect(screen.getByLabelText('进行中').querySelector('.record-badge')?.textContent).toBe('0');
+    expect(activeStat()).toContain('0');
     expect(vi.getTimerCount()).toBe(0);
   });
 

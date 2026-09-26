@@ -324,10 +324,16 @@ describe('UpgradeOverview', () => {
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
     const activeList = screen.getByLabelText('进行中');
     expect(activeList.querySelectorAll('button')).toHaveLength(1);
+    expect(activeList.querySelector('.record-badge')?.textContent).toBe('2');
     expect(activeList.querySelector('button')?.textContent).toContain('正在升级 2 条');
     expect(activeList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
     expect(activeList.querySelector('button')?.textContent).toContain('最早完成剩余');
     expect(screen.getByText('手动进行中 2')).toBeTruthy();
+    expect(
+      screen.getByLabelText('升级记录概况').querySelector('.stat-card.active .stat-value')
+        ?.textContent,
+    ).toContain('2');
+    expect(screen.getByText(/当前有 2 项进行中/)).toBeTruthy();
 
     act(() => {
       vi.advanceTimersByTime(1_000);
@@ -362,6 +368,68 @@ describe('UpgradeOverview', () => {
     expect(screen.getByText('手动进行中 0')).toBeTruthy();
     expect(screen.getByText('手动待结算 2')).toBeTruthy();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('手动与导入的进行中升级按预计完成时间混排', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1);
+    resetClockStoreForTests(1);
+
+    const item = recordFixture().item;
+    const importedRecord = recordFixture({
+      id: 'imported-one-hour',
+      villageID: 'v2',
+      villageName: '副村',
+      effectiveRemainingSeconds: 3_600,
+      item: {
+        ...item,
+        timerSeconds: 3_600,
+        remainingSeconds: 3_600,
+        effectiveStatus: 'importedActive',
+      },
+    });
+    const manualRecords: UpgradeOverviewManualActiveRecordDto[] = [
+      {
+        villageID: 'v1',
+        villageName: '主村',
+        villageTag: '#AAA',
+        recordID: '00000000-0000-0000-0000-000000000031',
+        itemKey: item.trackerItemKey,
+        itemName: '加农炮',
+        fromLevel: 5,
+        targetLevel: 6,
+        quantity: 1,
+        expectedEndAtMs: 8 * 60 * 60 * 1_000 + 1,
+      },
+      {
+        villageID: 'v3',
+        villageName: '第三村',
+        villageTag: '#CCC',
+        recordID: '00000000-0000-0000-0000-000000000032',
+        itemKey: item.trackerItemKey,
+        itemName: '加农炮',
+        fromLevel: 5,
+        targetLevel: 6,
+        quantity: 1,
+        expectedEndAtMs: 4 * 60 * 60 * 1_000 + 1,
+      },
+    ];
+    const payload = stateShape({ active: [importedRecord], manualActiveRecords: manualRecords });
+    payload.state.manualActiveCount = 2;
+    payload.state.importedActiveCount = 1;
+
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(payload))} />);
+
+    const rows = Array.from(screen.getByLabelText('进行中').querySelectorAll('li')).map(
+      (row) => row.textContent ?? '',
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain('副村');
+    expect(rows[0]).toContain('剩余 1小时 0分钟');
+    expect(rows[1]).toContain('第三村');
+    expect(rows[1]).toContain('最早完成剩余 4小时 0分钟');
+    expect(rows[2]).toContain('主村');
+    expect(rows[2]).toContain('最早完成剩余 8小时 0分钟');
   });
 
   it('冲突状态没有有效进行中行时仍显示可打开的待结算入口', () => {

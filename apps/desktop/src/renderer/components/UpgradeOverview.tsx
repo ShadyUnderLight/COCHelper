@@ -181,7 +181,6 @@ export function UpgradeOverview({
     (record) =>
       record.item.effectiveStatus !== 'manualActive' && !expiredImportedIds.has(record.id),
   );
-  const activeRowCount = active.length + activeManualGroups.length;
   const pending = payload.pending;
   const attention = payload.state.attentionRecords;
   const needsReimport = [...payload.state.needsReimportRecords, ...expiredImported];
@@ -191,6 +190,8 @@ export function UpgradeOverview({
     (record) => record.item.timerSeconds !== null,
   ).length;
   const importedActiveCount = Math.max(0, payload.state.importedActiveCount - expiredImportedCount);
+  const activeRowCount = active.length + activeManualGroups.length;
+  const activeRecordCount = manualActiveCount + importedActiveCount;
 
   return (
     <section className="overview-panel" aria-label="升级追踪" data-perf-state="ready">
@@ -221,7 +222,7 @@ export function UpgradeOverview({
               : '已收录 ' +
                 villages.length +
                 ' 个村庄档案，当前有 ' +
-                activeRowCount +
+                activeRecordCount +
                 ' 项进行中，' +
                 pending.length +
                 ' 项待开始' +
@@ -241,7 +242,7 @@ export function UpgradeOverview({
       </section>
 
       <div className="overview-stats" aria-label="升级记录概况">
-        <SummaryCard label="进行中" value={activeRowCount} symbol="↗" tone="active" />
+        <SummaryCard label="进行中" value={activeRecordCount} symbol="↗" tone="active" />
         <SummaryCard label="待开始" value={pending.length} symbol="◷" tone="pending" />
         <SummaryCard label="需要关注" value={attention.length} symbol="!" tone="attention" />
         <SummaryCard label="待重新导入" value={needsReimport.length} symbol="↻" tone="reimport" />
@@ -254,6 +255,7 @@ export function UpgradeOverview({
             description="当前正在推进的升级"
             records={active}
             manualGroups={activeManualGroups}
+            badgeCount={activeRecordCount}
             selectedId={selectedId}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
@@ -568,6 +570,7 @@ function RecordList(props: {
   readonly description: string;
   readonly records: readonly UpgradeDisplayRecordDto[];
   readonly manualGroups?: readonly ManualActiveGroup[];
+  readonly badgeCount?: number;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
@@ -577,6 +580,24 @@ function RecordList(props: {
 }) {
   const manualGroups = props.manualGroups ?? [];
   const displayCount = props.records.length + manualGroups.length;
+  const listEntries = [
+    ...manualGroups.map((group) => ({
+      key: `manual:${group.key}`,
+      kind: 'manual' as const,
+      group,
+      sortRemainingSeconds: group.remainingSeconds,
+    })),
+    ...props.records.map((record) => ({
+      key: record.id,
+      kind: 'record' as const,
+      record,
+      sortRemainingSeconds:
+        remainingSecondsAfterElapsed(record, props.elapsedSeconds ?? 0) ?? Number.MAX_SAFE_INTEGER,
+    })),
+  ];
+  if (manualGroups.length > 0) {
+    listEntries.sort((left, right) => left.sortRemainingSeconds - right.sortRemainingSeconds);
+  }
   if (displayCount === 0) {
     return null;
   }
@@ -595,86 +616,92 @@ function RecordList(props: {
             <p>{props.description}</p>
           </div>
         </div>
-        <span className="record-badge">{displayCount}</span>
+        <span className="record-badge">{props.badgeCount ?? displayCount}</span>
       </div>
       <ul className="overview-list">
-        {manualGroups.map((group) => {
-          const { record } = group;
+        {listEntries.map((entry) => {
+          if (entry.kind === 'manual') {
+            const { group } = entry;
+            const { record } = group;
+            return (
+              <li key={entry.key}>
+                <button
+                  type="button"
+                  className={
+                    record.recordID === props.selectedId
+                      ? 'overview-item selected'
+                      : 'overview-item'
+                  }
+                  aria-pressed={record.recordID === props.selectedId}
+                  onClick={() => {
+                    props.onSelect(record.recordID);
+                    props.onOpenDetail?.(record.recordID, record.villageID);
+                  }}
+                >
+                  <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
+                    ↗
+                  </span>
+                  <span className="overview-item-name">{record.itemName}</span>
+                  <span className="level-pill">
+                    {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
+                    {levelTransitionText(record.fromLevel, record.targetLevel)}
+                    {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                  </span>
+                  <span className="overview-item-meta">
+                    {record.villageName}
+                    {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
+                    {baseLabel(record.itemKey.base)} ·{' '}
+                    {group.count === 1 ? '正在升级' : `正在升级 ${group.count} 条`} · 最早完成剩余{' '}
+                    {formatDurationSeconds(group.remainingSeconds)}
+                  </span>
+                </button>
+              </li>
+            );
+          }
+          const { record } = entry;
           return (
-            <li key={`manual:${group.key}`}>
+            <li key={entry.key}>
               <button
                 type="button"
                 className={
-                  record.recordID === props.selectedId ? 'overview-item selected' : 'overview-item'
+                  record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
                 }
-                aria-pressed={record.recordID === props.selectedId}
+                aria-pressed={record.id === props.selectedId}
                 onClick={() => {
-                  props.onSelect(record.recordID);
-                  props.onOpenDetail?.(record.recordID, record.villageID);
+                  props.onSelect(record.id);
+                  props.onOpenDetail?.(record.id, record.villageID);
                 }}
               >
-                <span className="overview-item-glyph overview-item-icon" aria-hidden="true">
-                  ↗
-                </span>
-                <span className="overview-item-name">{record.itemName}</span>
+                <AssetImage
+                  catalogVersion={record.catalogVersion}
+                  candidates={primaryLevelAssets(record.item)}
+                  size={36}
+                  className="overview-item-icon"
+                  fallbackNode={
+                    <span className="overview-item-glyph" aria-hidden="true">
+                      {categoryGlyph(record.item.displayCategory, record.item.category)}
+                    </span>
+                  }
+                />
+                <span className="overview-item-name">{record.item.name}</span>
                 <span className="level-pill">
-                  {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
-                  {levelTransitionText(record.fromLevel, record.targetLevel)}
-                  {record.quantity > 1 ? ` ×${record.quantity}` : ''}
+                  {levelTransitionText(
+                    record.item.effectiveCurrentLevel,
+                    record.item.effectiveTargetLevel,
+                  )}
                 </span>
                 <span className="overview-item-meta">
                   {record.villageName}
                   {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
-                  {baseLabel(record.itemKey.base)} ·{' '}
-                  {group.count === 1 ? '正在升级' : `正在升级 ${group.count} 条`} · 最早完成剩余{' '}
-                  {formatDurationSeconds(group.remainingSeconds)}
+                  {baseLabel(record.base)} ·{' '}
+                  {props.statusTextForRecord?.(record) ?? authoritativeLevelStatus(record.item)}
+                  {remainingTimeText(record, props.elapsedSeconds ?? 0)}
+                  {availabilityText(record)}
                 </span>
               </button>
             </li>
           );
         })}
-        {props.records.map((record) => (
-          <li key={record.id}>
-            <button
-              type="button"
-              className={
-                record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
-              }
-              aria-pressed={record.id === props.selectedId}
-              onClick={() => {
-                props.onSelect(record.id);
-                props.onOpenDetail?.(record.id, record.villageID);
-              }}
-            >
-              <AssetImage
-                catalogVersion={record.catalogVersion}
-                candidates={primaryLevelAssets(record.item)}
-                size={36}
-                className="overview-item-icon"
-                fallbackNode={
-                  <span className="overview-item-glyph" aria-hidden="true">
-                    {categoryGlyph(record.item.displayCategory, record.item.category)}
-                  </span>
-                }
-              />
-              <span className="overview-item-name">{record.item.name}</span>
-              <span className="level-pill">
-                {levelTransitionText(
-                  record.item.effectiveCurrentLevel,
-                  record.item.effectiveTargetLevel,
-                )}
-              </span>
-              <span className="overview-item-meta">
-                {record.villageName}
-                {record.villageTag === null ? '' : `（${record.villageTag}）`} ·{' '}
-                {baseLabel(record.base)} ·{' '}
-                {props.statusTextForRecord?.(record) ?? authoritativeLevelStatus(record.item)}
-                {remainingTimeText(record, props.elapsedSeconds ?? 0)}
-                {availabilityText(record)}
-              </span>
-            </button>
-          </li>
-        ))}
       </ul>
     </section>
   );

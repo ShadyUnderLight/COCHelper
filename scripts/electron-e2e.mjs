@@ -262,16 +262,34 @@ async function waitForText(page, selector, expected, timeout = 10_000) {
   );
 }
 
-async function startClickMotionTrace(locator) {
-  await locator.evaluate((element, traceKey) => {
+async function startClickMotionTrace(page) {
+  await page.evaluate((traceKey) => {
     const trace = {
       startedAtMs: performance.now(),
       timerId: null,
       samples: [],
+      elementChanges: [],
     };
+    let previousButton = null;
+    let elementId = 0;
+    const findParsePreviewButton = () =>
+      [...globalThis.document.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === '解析预览',
+      ) ?? null;
     const sample = () => {
-      if (!element.isConnected || trace.samples.length >= 300) {
+      if (trace.samples.length >= 300) {
         return;
+      }
+      const elapsedMs = Math.round(performance.now() - trace.startedAtMs);
+      const element = findParsePreviewButton();
+      if (element === null) {
+        previousButton = null;
+        trace.samples.push({ elapsedMs, elementId: null, attached: false });
+        return;
+      }
+      if (element !== previousButton) {
+        elementId += 1;
+        previousButton = element;
       }
       const rect = element.getBoundingClientRect();
       const style = globalThis.getComputedStyle(element);
@@ -280,7 +298,11 @@ async function startClickMotionTrace(locator) {
         rect.y + rect.height / 2,
       );
       trace.samples.push({
-        elapsedMs: Math.round(performance.now() - trace.startedAtMs),
+        elapsedMs,
+        elementId,
+        attached: element.isConnected,
+        disabled: element.disabled,
+        className: element.className,
         bounds: {
           x: Number(rect.x.toFixed(2)),
           y: Number(rect.y.toFixed(2)),
@@ -305,6 +327,23 @@ async function startClickMotionTrace(locator) {
                 text: hitTarget.textContent?.trim().slice(0, 80) ?? '',
               },
       });
+      const previousChange = trace.elementChanges.at(-1);
+      if (previousChange?.elementId !== elementId) {
+        trace.elementChanges.push({
+          elapsedMs,
+          elementId,
+          className: element.className,
+          parentTagName: element.parentElement?.tagName ?? null,
+          parentClassName: element.parentElement?.className ?? null,
+          bounds: {
+            x: Number(rect.x.toFixed(2)),
+            y: Number(rect.y.toFixed(2)),
+            width: Number(rect.width.toFixed(2)),
+            height: Number(rect.height.toFixed(2)),
+          },
+          transform: style.transform,
+        });
+      }
     };
     globalThis[traceKey] = trace;
     sample();
@@ -334,7 +373,7 @@ async function importFixture(page) {
   await page.locator('#account-json').fill(accountText);
   importStep = 'click-parse-preview';
   const parsePreviewButton = page.getByRole('button', { name: '解析预览' });
-  await startClickMotionTrace(parsePreviewButton);
+  await startClickMotionTrace(page);
   await parsePreviewButton.click();
   await stopClickMotionTrace(page);
   const preview = page.getByRole('region', { name: '导入预览' });

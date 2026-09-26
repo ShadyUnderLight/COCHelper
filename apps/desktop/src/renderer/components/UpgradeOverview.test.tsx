@@ -312,9 +312,9 @@ describe('UpgradeOverview', () => {
           recordID: '00000000-0000-0000-0000-000000000002',
           itemKey: item.trackerItemKey,
           itemName: '加农炮',
-          fromLevel: 5,
-          targetLevel: 6,
-          quantity: 1,
+          fromLevel: 6,
+          targetLevel: 7,
+          quantity: 2,
           expectedEndAtMs: 2_001,
         },
       ],
@@ -325,6 +325,7 @@ describe('UpgradeOverview', () => {
     const activeList = screen.getByLabelText('进行中');
     expect(activeList.querySelectorAll('button')).toHaveLength(1);
     expect(activeList.querySelector('button')?.textContent).toContain('正在升级 2 条');
+    expect(activeList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
     expect(activeList.querySelector('button')?.textContent).toContain('最早完成剩余');
     expect(screen.getByText('手动进行中 2')).toBeTruthy();
 
@@ -337,6 +338,12 @@ describe('UpgradeOverview', () => {
     expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain('正在升级');
     expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
       '正在升级 2 条',
+    );
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).toContain(
+      '6 → 7 级 ×2',
+    );
+    expect(partiallyExpiredActiveList.querySelector('button')?.textContent).not.toContain(
+      '最早完成项',
     );
     expect(screen.getByText('手动进行中 1')).toBeTruthy();
     expect(screen.getByText('手动待结算 1')).toBeTruthy();
@@ -351,6 +358,7 @@ describe('UpgradeOverview', () => {
     expect(settlementList.querySelectorAll('button')).toHaveLength(1);
     expect(settlementList.querySelector('.record-badge')?.textContent).toBe('2');
     expect(settlementList.querySelector('button')?.textContent).toContain('待结算 2 条');
+    expect(settlementList.querySelector('button')?.textContent).toContain('最早完成项：5 → 6 级');
     expect(screen.getByText('手动进行中 0')).toBeTruthy();
     expect(screen.getByText('手动待结算 2')).toBeTruthy();
     expect(vi.getTimerCount()).toBe(0);

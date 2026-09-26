@@ -33,6 +33,7 @@ type ManualSettlementGroup = {
   readonly key: string;
   readonly record: UpgradeOverviewManualActiveRecordDto;
   readonly count: number;
+  readonly hasMixedUpgradeDetails: boolean;
 };
 
 type ManualActiveGroup = ManualSettlementGroup & {
@@ -113,24 +114,41 @@ export function UpgradeOverview({
   );
   const dueManualRecordCountByGroup = new Map<string, number>();
   const dueManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
+  const dueManualGroupsWithMixedDetails = new Set<string>();
   const activeManualRecordCountByGroup = new Map<string, number>();
   const activeManualRepresentativeByGroup = new Map<string, UpgradeOverviewManualActiveRecordDto>();
+  const activeManualGroupsWithMixedDetails = new Set<string>();
   for (const record of payload.state.manualActiveRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
     if (record.expectedEndAtMs > nowMs) {
       const activeCount = activeManualRecordCountByGroup.get(key) ?? 0;
       activeManualRecordCountByGroup.set(key, activeCount + 1);
       const representative = activeManualRepresentativeByGroup.get(key);
-      if (representative === undefined || record.expectedEndAtMs < representative.expectedEndAtMs) {
+      if (representative === undefined) {
         activeManualRepresentativeByGroup.set(key, record);
+      } else {
+        if (!sameManualUpgradeDetails(record, representative)) {
+          activeManualGroupsWithMixedDetails.add(key);
+        }
+        if (record.expectedEndAtMs < representative.expectedEndAtMs) {
+          activeManualRepresentativeByGroup.set(key, record);
+        }
       }
     }
   }
   for (const record of dueManualRecords) {
     const key = manualUpgradeGroupKey(record.villageID, record.itemKey.stableId);
     dueManualRecordCountByGroup.set(key, (dueManualRecordCountByGroup.get(key) ?? 0) + 1);
-    if (!dueManualRepresentativeByGroup.has(key)) {
+    const representative = dueManualRepresentativeByGroup.get(key);
+    if (representative === undefined) {
       dueManualRepresentativeByGroup.set(key, record);
+    } else {
+      if (!sameManualUpgradeDetails(record, representative)) {
+        dueManualGroupsWithMixedDetails.add(key);
+      }
+      if (record.expectedEndAtMs < representative.expectedEndAtMs) {
+        dueManualRepresentativeByGroup.set(key, record);
+      }
     }
   }
   const pendingSettlementGroups: ManualSettlementGroup[] = [...dueManualRecordCountByGroup].map(
@@ -138,6 +156,7 @@ export function UpgradeOverview({
       key,
       count,
       record: dueManualRepresentativeByGroup.get(key)!,
+      hasMixedUpgradeDetails: dueManualGroupsWithMixedDetails.has(key),
     }),
   );
   const activeManualGroups: ManualActiveGroup[] = [...activeManualRecordCountByGroup].map(
@@ -147,6 +166,7 @@ export function UpgradeOverview({
         key,
         count,
         record,
+        hasMixedUpgradeDetails: activeManualGroupsWithMixedDetails.has(key),
         remainingSeconds: Math.ceil((record.expectedEndAtMs - nowMs) / 1000),
       };
     },
@@ -358,6 +378,7 @@ function ManualSettlementList(props: {
                 </span>
                 <span className="overview-item-name">{record.itemName}</span>
                 <span className="level-pill">
+                  {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
                   {levelTransitionText(record.fromLevel, record.targetLevel)}
                   {record.quantity > 1 ? ` ×${record.quantity}` : ''}
                 </span>
@@ -597,6 +618,7 @@ function RecordList(props: {
                 </span>
                 <span className="overview-item-name">{record.itemName}</span>
                 <span className="level-pill">
+                  {group.hasMixedUpgradeDetails ? '最早完成项：' : ''}
                   {levelTransitionText(record.fromLevel, record.targetLevel)}
                   {record.quantity > 1 ? ` ×${record.quantity}` : ''}
                 </span>
@@ -681,6 +703,17 @@ function elapsedSecondsSince(startMs: number, nowMs: number): number {
 
 function manualUpgradeGroupKey(villageID: string, trackerItemKeyStableId: string): string {
   return `${villageID}\u0000${trackerItemKeyStableId}`;
+}
+
+function sameManualUpgradeDetails(
+  left: UpgradeOverviewManualActiveRecordDto,
+  right: UpgradeOverviewManualActiveRecordDto,
+): boolean {
+  return (
+    left.fromLevel === right.fromLevel &&
+    left.targetLevel === right.targetLevel &&
+    left.quantity === right.quantity
+  );
 }
 
 function sectionSymbol(title: string): string {

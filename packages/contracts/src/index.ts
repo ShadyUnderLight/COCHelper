@@ -221,6 +221,7 @@ export type {
   ProgressMetricDto,
   TrackerItemKeyDto,
   UpgradeRecentCompletionDto,
+  UpgradeOverviewManualActiveRecordDto,
   VillageCategoryCompletionDto,
   VillageDetailGroupDto,
   VillageNextUpgradeDto,

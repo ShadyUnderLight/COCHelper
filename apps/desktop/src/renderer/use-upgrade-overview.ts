@@ -43,7 +43,7 @@ export function useUpgradeOverview(
     subjectKey,
     fetch: () => bridge.upgradeOverview({}),
     extractGeneration: (payload) => payload.generation,
-    fetchErrorMessage: '升级总览查询失败',
+    fetchErrorMessage: '升级追踪查询失败',
     onSessionReset: () => {
       setSelectedId(null);
     },

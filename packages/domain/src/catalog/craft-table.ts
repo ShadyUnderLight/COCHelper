@@ -11,12 +11,19 @@ export type CraftTableDefenseSpec = {
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
 
+export type CraftTableModuleLevelSpec = {
+  readonly level: number;
+  readonly requiredTownHallLevel: number | null;
+};
+
 export type CraftTableModuleSpec = {
   readonly dataID: bigint;
   readonly name: string;
   readonly sourceName: string;
   readonly statTypes: readonly string[];
   readonly displayTitles: readonly string[];
+  readonly maxLevel: number;
+  readonly levels: readonly CraftTableModuleLevelSpec[];
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
 
@@ -100,8 +107,17 @@ function decodeModule(raw: Record<string, unknown>): CraftTableModuleSpec {
     sourceName: String(raw.sourceName),
     statTypes: (raw.statTypes as string[]).map(String),
     displayTitles: (raw.displayTitles as string[]).map(String),
+    maxLevel: Number(raw.maxLevel),
+    levels: (raw.levels as Array<Record<string, unknown>>).map((level) => ({
+      level: Number(level.level),
+      requiredTownHallLevel: nullableNumber(level.requiredTownHallLevel),
+    })),
     lifecycle: decodeLifecycle(raw.lifecycle),
   };
+}
+
+function nullableNumber(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function decodeLifecycle(value: unknown): 'permanent' | 'seasonalCandidate' | null {

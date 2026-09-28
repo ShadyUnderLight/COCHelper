@@ -1,7 +1,7 @@
 import { generateUuid } from '@coc-helper/wire';
 
 import type { AccountDataDiagnostic, AccountItem, AccountSnapshot } from '../account';
-import type { CraftTableCatalog } from '../catalog/craft-table';
+import type { CraftTableCatalog, CraftTableModuleSpec } from '../catalog/craft-table';
 import { catalogDurationState, type CatalogDurationState } from '../catalog/duration-state';
 import {
   catalogCompatibilityIsUsable,
@@ -281,6 +281,43 @@ export function currentStageMaxLevel(
       return unlock !== null && unlock >= requirement.level;
     });
     if (!satisfied) {
+      break;
+    }
+    highest = level.level;
+  }
+  return highest;
+}
+
+function currentCraftTableModuleStageMaxLevel(
+  module: CraftTableModuleSpec,
+  townHallLevel: number | null,
+): number | null {
+  if (
+    townHallLevel === null ||
+    !Number.isSafeInteger(module.maxLevel) ||
+    module.maxLevel < 1 ||
+    module.levels.length !== module.maxLevel
+  ) {
+    return null;
+  }
+
+  const levels = [...module.levels].sort((left, right) => left.level - right.level);
+  if (
+    !levels.every(
+      (level, index) =>
+        level.level === index + 1 &&
+        level.requiredTownHallLevel !== null &&
+        Number.isSafeInteger(level.requiredTownHallLevel) &&
+        level.requiredTownHallLevel >= 1,
+    )
+  ) {
+    return null;
+  }
+
+  let highest: number | null = null;
+  for (const level of levels) {
+    const requiredTownHallLevel = level.requiredTownHallLevel;
+    if (requiredTownHallLevel === null || requiredTownHallLevel > townHallLevel) {
       break;
     }
     highest = level.level;
@@ -610,12 +647,17 @@ function mapItem(input: {
   const nested = isNestedItem(item);
   const itemKey = `${item.section}:${item.dataID.toString()}`;
   const catalogItem = nested ? undefined : catalog?.item(item.section, item.dataID);
+  const craftTableModule =
+    nested && item.section === 'buildings' && item.id.includes('.modules.')
+      ? craftTableCatalog?.module(item.dataID)
+      : undefined;
 
   let lifecycle: 'permanent' | 'seasonalCandidate' | null | undefined;
   if (catalogItem !== undefined) {
     lifecycle = catalogItem.lifecycle;
   } else if (nested) {
-    lifecycle = craftTableCatalog?.defense(item.dataID)?.lifecycle ?? null;
+    lifecycle =
+      craftTableCatalog?.defense(item.dataID)?.lifecycle ?? craftTableModule?.lifecycle ?? null;
   } else {
     lifecycle = null;
   }
@@ -669,9 +711,11 @@ function mapItem(input: {
     upgrading && item.level !== null && item.level !== undefined ? item.level + 1 : null;
 
   const stageMax =
-    baseMatches && catalogItem !== undefined && catalogIsUsable
-      ? currentStageMaxLevel(catalogItem, unlocks)
-      : null;
+    craftTableModule !== undefined
+      ? currentCraftTableModuleStageMaxLevel(craftTableModule, unlocks.townHall)
+      : baseMatches && catalogItem !== undefined && catalogIsUsable
+        ? currentStageMaxLevel(catalogItem, unlocks)
+        : null;
 
   const realNext = resolveRealNextLevel({
     baseMatches,
@@ -711,6 +755,8 @@ function mapItem(input: {
     catalog,
     catalogIsUsable,
     stageMax,
+    craftTableModule,
+    townHallLevel: unlocks.townHall,
     item,
   });
 
@@ -725,7 +771,7 @@ function mapItem(input: {
     section: item.section,
     dataID: item.dataID,
     base,
-    name: catalogItem?.name ?? accountItemNameLabel(item),
+    name: catalogItem?.name ?? craftTableModule?.name ?? accountItemNameLabel(item),
     category,
     currentLevel: item.level,
     count: item.count,
@@ -734,7 +780,7 @@ function mapItem(input: {
     nextLevel,
     nextLevelDurationSeconds: durationProjection.seconds,
     nextLevelDurationState: durationProjection.state,
-    maxLevel: baseMatches ? (catalogItem?.maxLevel ?? null) : null,
+    maxLevel: craftTableModule?.maxLevel ?? (baseMatches ? (catalogItem?.maxLevel ?? null) : null),
     currentStageMaxLevel: stageMax,
     nextUpgrade,
     status,
@@ -912,12 +958,27 @@ function resolveStatusAndMissingReason(input: {
   readonly catalog: GameCatalog | null;
   readonly catalogIsUsable: boolean;
   readonly stageMax: number | null;
+  readonly craftTableModule: CraftTableModuleSpec | undefined;
+  readonly townHallLevel: number | null;
   readonly item: AccountItem;
 }): { readonly status: VillageItemState['status']; readonly missingReason: string | null } {
-  const { upgrading, nested, baseMatches, catalogItem, catalog, catalogIsUsable, stageMax, item } =
-    input;
+  const {
+    upgrading,
+    nested,
+    baseMatches,
+    catalogItem,
+    catalog,
+    catalogIsUsable,
+    stageMax,
+    craftTableModule,
+    townHallLevel,
+    item,
+  } = input;
 
   if (upgrading) {
+    if (craftTableModule !== undefined) {
+      return { status: 'upgrading', missingReason: null };
+    }
     if (nested) {
       return {
         status: 'upgrading',
@@ -939,6 +1000,47 @@ function resolveStatusAndMissingReason(input: {
         item,
       }),
     };
+  }
+
+  if (craftTableModule !== undefined) {
+    const currentLevel = item.level;
+    if (
+      !Number.isSafeInteger(craftTableModule.maxLevel) ||
+      craftTableModule.maxLevel < 1 ||
+      currentLevel === null ||
+      !Number.isSafeInteger(currentLevel) ||
+      currentLevel < 1 ||
+      currentLevel > craftTableModule.maxLevel
+    ) {
+      return {
+        status: 'unknown',
+        missingReason: `精工防御模组等级与目录上限不匹配（${item.section}:${item.dataID.toString()}）。`,
+      };
+    }
+
+    if (currentLevel === craftTableModule.maxLevel) {
+      return { status: 'maxed', missingReason: null };
+    }
+
+    if (townHallLevel !== null) {
+      if (stageMax === null) {
+        return {
+          status: 'unknown',
+          missingReason: '无法从精工防御目录验证当前大本营等级对应的模组上限。',
+        };
+      }
+      if (currentLevel > stageMax) {
+        return {
+          status: 'unknown',
+          missingReason: '快照中的精工防御模组等级高于当前大本营允许的目录上限。',
+        };
+      }
+      if (currentLevel === stageMax) {
+        return { status: 'maxed', missingReason: null };
+      }
+    }
+
+    return { status: 'complete', missingReason: null };
   }
 
   if (nested) {

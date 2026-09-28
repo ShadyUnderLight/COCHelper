@@ -15,6 +15,8 @@ export type CraftTableModuleSpec = {
   readonly dataID: bigint;
   readonly name: string;
   readonly sourceName: string;
+  readonly statTypes: readonly string[];
+  readonly displayTitles: readonly string[];
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
 
@@ -96,6 +98,8 @@ function decodeModule(raw: Record<string, unknown>): CraftTableModuleSpec {
     dataID: BigInt(raw.dataID as number | string | bigint),
     name: String(raw.name),
     sourceName: String(raw.sourceName),
+    statTypes: (raw.statTypes as string[]).map(String),
+    displayTitles: (raw.displayTitles as string[]).map(String),
     lifecycle: decodeLifecycle(raw.lifecycle),
   };
 }

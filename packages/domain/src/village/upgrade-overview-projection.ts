@@ -308,9 +308,9 @@ function craftTableOverviewItem(
     return { ...item, name: `${module.name} (#${item.dataID})` };
   }
 
-  const moduleLabel = module.name.startsWith(owner.name)
-    ? module.name.slice(owner.name.length)
-    : module.name;
+  const moduleLabel = module.statTypes
+    .map((statType, index) => module.displayTitles[index] ?? statType)
+    .join('、');
   return { ...item, name: `${owner.name} › ${moduleLabel} (#${item.dataID})` };
 }
 

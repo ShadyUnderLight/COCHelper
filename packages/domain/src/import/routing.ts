@@ -61,7 +61,8 @@ export function resolvePendingTarget(
       : villages.findIndex((village) => village.id === options.selectedVillageId);
   if (
     currentIndex >= 0 &&
-    (options.importIntoCurrentVillage ||
+    (snapshotTag === undefined ||
+      options.importIntoCurrentVillage ||
       (villages.length === 1 && !villages[currentIndex]!.hasImportedData))
   ) {
     return { kind: 'existing', villageId: villages[currentIndex]!.id };

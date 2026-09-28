@@ -161,6 +161,7 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
       return;
     }
     setState((prev) => ({ ...prev, busy: true, lastError: null }));
+    // Main 会在解析快照后按 Tag 路由；无 Tag 时回退到当前村庄。
     const result = await bridge.prepareImport({
       text,
       villageId: snapshot.selectedVillageId,

@@ -27,6 +27,97 @@ export type CraftTableModuleSpec = {
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
 
+export type CraftTableModuleLevelAssessment = {
+  readonly currentStageMaxLevel: number | null;
+  readonly status: 'complete' | 'maxed' | 'unknown';
+  readonly missingReason: string | null;
+};
+
+export function craftTableModuleStageMaxLevel(
+  module: CraftTableModuleSpec,
+  townHallLevel: number | null,
+): number | null {
+  if (
+    townHallLevel === null ||
+    !Number.isSafeInteger(module.maxLevel) ||
+    module.maxLevel < 1 ||
+    module.levels.length !== module.maxLevel
+  ) {
+    return null;
+  }
+
+  const levels = [...module.levels].sort((left, right) => left.level - right.level);
+  if (
+    !levels.every(
+      (level, index) =>
+        level.level === index + 1 &&
+        level.requiredTownHallLevel !== null &&
+        Number.isSafeInteger(level.requiredTownHallLevel) &&
+        level.requiredTownHallLevel >= 1,
+    )
+  ) {
+    return null;
+  }
+
+  let highest: number | null = null;
+  for (const level of levels) {
+    const requiredTownHallLevel = level.requiredTownHallLevel;
+    if (requiredTownHallLevel === null || requiredTownHallLevel > townHallLevel) {
+      break;
+    }
+    highest = level.level;
+  }
+  return highest;
+}
+
+export function assessCraftTableModuleLevel(
+  module: CraftTableModuleSpec,
+  currentLevel: number | null,
+  townHallLevel: number | null,
+): CraftTableModuleLevelAssessment {
+  const currentStageMaxLevel = craftTableModuleStageMaxLevel(module, townHallLevel);
+  if (
+    !Number.isSafeInteger(module.maxLevel) ||
+    module.maxLevel < 1 ||
+    currentLevel === null ||
+    !Number.isSafeInteger(currentLevel) ||
+    currentLevel < 1 ||
+    currentLevel > module.maxLevel
+  ) {
+    return {
+      currentStageMaxLevel,
+      status: 'unknown',
+      missingReason: '精工防御模组等级与目录上限不匹配。',
+    };
+  }
+
+  if (townHallLevel === null) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '快照缺少大本营等级，无法验证精工防御模组的当前阶段上限。',
+    };
+  }
+  if (currentStageMaxLevel === null) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '无法从精工防御目录验证当前大本营等级对应的模组上限。',
+    };
+  }
+  if (currentLevel > currentStageMaxLevel) {
+    return {
+      currentStageMaxLevel,
+      status: 'unknown',
+      missingReason: '快照中的精工防御模组等级高于当前大本营允许的目录上限。',
+    };
+  }
+  if (currentLevel === currentStageMaxLevel) {
+    return { currentStageMaxLevel, status: 'maxed', missingReason: null };
+  }
+  return { currentStageMaxLevel, status: 'complete', missingReason: null };
+}
+
 export type CraftTableCatalog = {
   readonly schemaVersion: number;
   readonly gameVersion: string;

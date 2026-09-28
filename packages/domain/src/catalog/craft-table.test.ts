@@ -21,6 +21,9 @@ describeIfBundle('CraftTableCatalog', () => {
     });
     expect(catalog).not.toBeNull();
     expect(catalog!.defense(103_000_000n)?.name).toBe('钩索塔');
+    const module = catalog!.module(102_000_033n);
+    expect(module?.maxLevel).toBe(10);
+    expect(module?.levels.find((level) => level.level === 2)?.requiredTownHallLevel).toBe(12);
   });
 
   it('旧 schemaVersion manifest 被拒绝', () => {

@@ -7,6 +7,7 @@ import {
   refreshTimerDelta,
   refreshingTimers,
 } from './catalog-projection';
+import { createCraftTableCatalog, type CraftTableModuleLevelSpec } from '../catalog/craft-table';
 import {
   createSyntheticCatalog,
   makeAccountItem,
@@ -20,8 +21,98 @@ import {
 } from '../manual/core';
 import { trackerItemKeyRoot } from '../manual/types';
 import type { EffectiveVillageItemState } from './effective-projection';
+import { CRAFT_TABLE_DATA_ID } from './display-category';
 
 const catalog = createSyntheticCatalog();
+const CRAFT_MODULE_DATA_ID = 102_000_033n;
+const CRAFT_MODULE_LEVELS: readonly CraftTableModuleLevelSpec[] = [
+  { level: 1, requiredTownHallLevel: 12 },
+  { level: 2, requiredTownHallLevel: 12 },
+  { level: 3, requiredTownHallLevel: 13 },
+  { level: 4, requiredTownHallLevel: 14 },
+  { level: 5, requiredTownHallLevel: 15 },
+  { level: 6, requiredTownHallLevel: 16 },
+  { level: 7, requiredTownHallLevel: 17 },
+  { level: 8, requiredTownHallLevel: 18 },
+  { level: 9, requiredTownHallLevel: 18 },
+  { level: 10, requiredTownHallLevel: 18 },
+];
+
+function craftTableCatalog(moduleLevels = CRAFT_MODULE_LEVELS) {
+  return createCraftTableCatalog({
+    schemaVersion: 1,
+    gameVersion: '18.400.13',
+    buildTag: '18_400_7',
+    locale: 'zh-CN',
+    source: 'test fixture',
+    defenses: [],
+    modules: [
+      {
+        dataID: CRAFT_MODULE_DATA_ID,
+        name: '火热蜡烛生命值模组',
+        sourceName: 'RoasterHealth',
+        statTypes: ['Hitpoints'],
+        displayTitles: ['生命值'],
+        maxLevel: 10,
+        levels: moduleLevels,
+        lifecycle: null,
+      },
+    ],
+  });
+}
+
+function projectCraftTableModule(input: {
+  readonly level: number | null;
+  readonly townHallLevel?: number;
+  readonly moduleLevels?: readonly CraftTableModuleLevelSpec[];
+  readonly timerSeconds?: bigint | null;
+  readonly remainingSeconds?: bigint | null;
+  readonly rootDataID?: bigint;
+}) {
+  const module = makeAccountItem({
+    section: 'buildings',
+    dataID: CRAFT_MODULE_DATA_ID,
+    level: input.level,
+    timerSeconds: input.timerSeconds,
+    remainingSeconds: input.remainingSeconds,
+    path: '0.types.0.modules.0',
+  });
+  const defense = makeAccountItem({
+    section: 'buildings',
+    dataID: 103_000_000n,
+    level: 1,
+    modules: [module],
+    path: '0.types.0',
+  });
+  const buildings = [
+    makeAccountItem({
+      section: 'buildings',
+      dataID: input.rootDataID ?? CRAFT_TABLE_DATA_ID,
+      level: 1,
+      types: [defense],
+      path: '0',
+    }),
+  ];
+  if (input.townHallLevel !== undefined) {
+    buildings.push(
+      makeAccountItem({
+        section: 'buildings',
+        dataID: 1_000_001n,
+        level: input.townHallLevel,
+        path: '1',
+      }),
+    );
+  }
+
+  const projection = projectVillageCatalog({
+    village: makeTestVillage({ buildings }),
+    catalog,
+    craftTableCatalog: craftTableCatalog(input.moduleLevels),
+    base: 'home',
+    nowMs: TEST_IMPORTED_AT_MS,
+  });
+  return projection.items.find((item) => item.dataID === CRAFT_MODULE_DATA_ID);
+}
 
 describe('VillageCatalogProjection', () => {
   it('home/builder 基地隔离', () => {
@@ -104,6 +195,83 @@ describe('VillageCatalogProjection', () => {
       nowMs: TEST_IMPORTED_AT_MS,
     });
     expect(projection.items[0]?.status).toBe('maxed');
+  });
+
+  it('精工防御模组低于大本营阶段上限时显示已记录', () => {
+    const item = projectCraftTableModule({ level: 1, townHallLevel: 12 });
+
+    expect(item?.status).toBe('complete');
+    expect(item?.currentStageMaxLevel).toBe(2);
+    expect(item?.maxLevel).toBe(10);
+  });
+
+  it('精工防御模组达到大本营阶段上限时显示满级', () => {
+    const item = projectCraftTableModule({ level: 2, townHallLevel: 12 });
+
+    expect(item?.status).toBe('maxed');
+    expect(item?.currentStageMaxLevel).toBe(2);
+  });
+
+  it('精工防御模组全局满级但超过大本营阶段上限时保持未知', () => {
+    const item = projectCraftTableModule({ level: 10, townHallLevel: 12 });
+
+    expect(item?.status).toBe('unknown');
+    expect(item?.currentStageMaxLevel).toBe(2);
+    expect(item?.missingReason).toContain('高于当前大本营');
+  });
+
+  it('缺少大本营等级时不确认精工防御模组状态', () => {
+    const item = projectCraftTableModule({ level: 1 });
+    const globalMaxedWithoutTownHall = projectCraftTableModule({ level: 10 });
+
+    expect(item?.status).toBe('unknown');
+    expect(item?.missingReason).toContain('缺少大本营等级');
+    expect(globalMaxedWithoutTownHall?.status).toBe('unknown');
+    expect(globalMaxedWithoutTownHall?.missingReason).toContain('缺少大本营等级');
+  });
+
+  it('精工防御模组目录等级缺失或账号等级越界时保持未知', () => {
+    const missingLevels = projectCraftTableModule({
+      level: 1,
+      townHallLevel: 12,
+      moduleLevels: [],
+    });
+    const invalidLevels = projectCraftTableModule({
+      level: 1,
+      townHallLevel: 12,
+      moduleLevels: CRAFT_MODULE_LEVELS.map((level, index) =>
+        index === 0 ? { ...level, requiredTownHallLevel: null } : level,
+      ),
+    });
+    const invalidLevel = projectCraftTableModule({ level: 11, townHallLevel: 18 });
+
+    expect(missingLevels?.status).toBe('unknown');
+    expect(missingLevels?.missingReason).toContain('验证当前大本营等级');
+    expect(invalidLevels?.status).toBe('unknown');
+    expect(invalidLevels?.missingReason).toContain('验证当前大本营等级');
+    expect(invalidLevel?.status).toBe('unknown');
+    expect(invalidLevel?.missingReason).toContain('目录上限');
+  });
+
+  it('正在升级的精工防御模组保留升级状态', () => {
+    const item = projectCraftTableModule({
+      level: 1,
+      timerSeconds: 300n,
+      remainingSeconds: 200n,
+    });
+
+    expect(item?.status).toBe('upgrading');
+  });
+
+  it('其他建筑下同 ID 的嵌套项不套用精工防御模组目录', () => {
+    const item = projectCraftTableModule({
+      level: 1,
+      townHallLevel: 12,
+      rootDataID: 1_000_100n,
+    });
+
+    expect(item?.status).toBe('unknown');
+    expect(item?.missingReason).toContain('嵌套模块/类型');
   });
 
   it('真实 effective projection：globalMaxed 清除 raw 回退时长', () => {

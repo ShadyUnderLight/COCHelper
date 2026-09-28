@@ -295,7 +295,7 @@ function craftTableOverviewItem(
 
   const defense = catalog.defense(item.dataID);
   if (defense !== undefined) {
-    return { ...item, name: `${defense.name} (#${item.dataID})` };
+    return { ...item, name: defense.name };
   }
 
   const module = catalog.module(item.dataID);
@@ -305,13 +305,13 @@ function craftTableOverviewItem(
 
   const owner = catalog.defenses.find((candidate) => candidate.moduleIDs.includes(item.dataID));
   if (owner === undefined) {
-    return { ...item, name: `${module.name} (#${item.dataID})` };
+    return { ...item, name: module.name };
   }
 
   const moduleLabel = module.statTypes
     .map((statType, index) => module.displayTitles[index] ?? statType)
     .join('、');
-  return { ...item, name: `${owner.name} › ${moduleLabel} (#${item.dataID})` };
+  return { ...item, name: `${owner.name} › ${moduleLabel}` };
 }
 
 function upgradeOverviewStateCore(input: {

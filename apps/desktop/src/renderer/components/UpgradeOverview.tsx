@@ -659,6 +659,11 @@ function RecordList(props: {
             );
           }
           const { record } = entry;
+          const hasCraftTableDataID =
+            record.item.displayCategory === 'craftTable' && record.item.isNested;
+          const itemTitle = hasCraftTableDataID
+            ? `${record.item.name} (#${record.item.dataID})`
+            : record.item.name;
           return (
             <li key={entry.key}>
               <button
@@ -683,7 +688,12 @@ function RecordList(props: {
                     </span>
                   }
                 />
-                <span className="overview-item-name">{record.item.name}</span>
+                <span className="overview-item-heading" title={itemTitle}>
+                  <span className="overview-item-name">{record.item.name}</span>
+                  {hasCraftTableDataID ? (
+                    <code className="overview-item-data-id">#{record.item.dataID}</code>
+                  ) : null}
+                </span>
                 <span className="level-pill">
                   {levelTransitionText(
                     record.item.effectiveCurrentLevel,

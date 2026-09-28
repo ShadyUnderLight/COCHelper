@@ -268,18 +268,50 @@ function allUpgradeOverviewRecords(input: {
       const tracked = projection.items.filter((item) => item.status !== 'unavailable');
       const displayRecords = tracked.filter((item) => item.status !== 'available');
       const metrics = projection.progressMetrics as VillageProgressMetrics;
-      return displayRecords.map((item) => ({
-        id: `${village.id}:${base}:${item.id}`,
-        villageID: village.id,
-        villageName: village.name,
-        villageTag: village.tag ?? village.accountSnapshot?.tag ?? null,
-        base,
-        item,
-        catalogVersion: projection.catalogVersion,
-        villageMetrics: metrics,
-      }));
+      return displayRecords.map((item) => {
+        const displayItem = craftTableOverviewItem(item, input.craftTableCatalog);
+        return {
+          id: `${village.id}:${base}:${item.id}`,
+          villageID: village.id,
+          villageName: village.name,
+          villageTag: village.tag ?? village.accountSnapshot?.tag ?? null,
+          base,
+          item: displayItem,
+          catalogVersion: projection.catalogVersion,
+          villageMetrics: metrics,
+        };
+      });
     }),
   );
+}
+
+function craftTableOverviewItem(
+  item: VillageItemState,
+  catalog: CraftTableCatalog | null | undefined,
+): VillageItemState {
+  if (!item.isNested || catalog === null || catalog === undefined) {
+    return item;
+  }
+
+  const defense = catalog.defense(item.dataID);
+  if (defense !== undefined) {
+    return { ...item, name: `${defense.name} (#${item.dataID})` };
+  }
+
+  const module = catalog.module(item.dataID);
+  if (module === undefined) {
+    return item;
+  }
+
+  const owner = catalog.defenses.find((candidate) => candidate.moduleIDs.includes(item.dataID));
+  if (owner === undefined) {
+    return { ...item, name: `${module.name} (#${item.dataID})` };
+  }
+
+  const moduleLabel = module.name.startsWith(owner.name)
+    ? module.name.slice(owner.name.length)
+    : module.name;
+  return { ...item, name: `${owner.name} › ${moduleLabel} (#${item.dataID})` };
 }
 
 function upgradeOverviewStateCore(input: {

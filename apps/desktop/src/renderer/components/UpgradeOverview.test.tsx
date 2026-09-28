@@ -503,11 +503,42 @@ describe('UpgradeOverview', () => {
     expect(screen.getByLabelText('近期完成').textContent).toContain('分村（#BBB）');
   });
 
-  it('升级记录行保持四个元素的完整子树，将箭头作为 CSS 装饰绘制', () => {
+  it('升级记录行保留标题包装层，箭头继续作为 CSS 装饰绘制', () => {
     const rec = recordFixture({ id: 'r-flat-row' });
     render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />);
     const row = screen.getByRole('button', { name: /加农炮/ });
-    expect(row.querySelectorAll('*')).toHaveLength(4);
+    const headingName = row
+      .querySelector('.overview-item-heading')
+      ?.querySelector('.overview-item-name');
+    expect(headingName).toBeTruthy();
+    expect(row.children).toHaveLength(4);
+    expect(row.querySelectorAll('*')).toHaveLength(5);
+  });
+
+  it('精工防御记录将编号独立显示并保留完整标题提示', () => {
+    const base = recordFixture();
+    const rec = recordFixture({
+      id: 'r-craft-table-module',
+      item: {
+        ...base.item,
+        dataID: 102_000_034,
+        name: '火热蜡烛 › 每秒伤害模组',
+        isNested: true,
+        displayCategory: 'craftTable',
+      },
+    });
+    render(<UpgradeOverview {...propsOf(applyOverviewSuccess(stateShape({ active: [rec] })))} />);
+    const row = screen.getByRole('button', { name: /火热蜡烛 › 每秒伤害模组/ });
+    const heading = row.querySelector('.overview-item-heading');
+    const name = heading?.querySelector('.overview-item-name');
+    const dataID = heading?.querySelector('.overview-item-data-id');
+
+    expect(heading?.getAttribute('title')).toBe('火热蜡烛 › 每秒伤害模组 (#102000034)');
+    expect(dataID?.tagName).toBe('CODE');
+    expect(dataID?.textContent).toBe('#102000034');
+    expect(dataID?.previousElementSibling).toBe(name);
+    expect(row.children).toHaveLength(4);
+    expect(row.querySelectorAll('*')).toHaveLength(6);
   });
 
   it('catalogIsUsable=false 显示不可用横幅且仍列出记录', () => {

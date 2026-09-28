@@ -161,10 +161,17 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
       return;
     }
     setState((prev) => ({ ...prev, busy: true, lastError: null }));
-    const result = await bridge.prepareImport({
-      text,
-      villageId: snapshot.selectedVillageId,
-    });
+    // 普通导入按 JSON Tag 自动匹配；已有数据的当前村庄不能成为强制目标。
+    // 只有首次安装留下的空档案才显式复用，避免额外创建一个空村庄。
+    // 快捷导入另有显式 targetVillageId，仍然只更新详情页当前村庄。
+    const selectedVillage = snapshot.villages.find(
+      (village) => village.id === snapshot.selectedVillageId,
+    );
+    const reusableEmptyVillageId =
+      selectedVillage?.hasImportedData === false ? selectedVillage.id : undefined;
+    const result = await bridge.prepareImport(
+      reusableEmptyVillageId === undefined ? { text } : { text, villageId: reusableEmptyVillageId },
+    );
     if (!isCurrentEpoch(requestEpoch, epochRef.current)) {
       return;
     }

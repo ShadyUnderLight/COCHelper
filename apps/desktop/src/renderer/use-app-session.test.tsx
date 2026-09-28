@@ -142,7 +142,128 @@ afterEach(() => {
   cleanup();
 });
 
-describe('useAppSession prepare/commit race', () => {
+describe('useAppSession import behavior', () => {
+  it('普通账号导入不锁定当前村庄，允许新 Tag 创建档案', async () => {
+    const currentVillages = [
+      { id: 'v-current', name: '旧村庄', tag: '#OLD', hasImportedData: true },
+    ];
+    const harness = createBridge(
+      snapshot({
+        selectedVillageId: 'v-current',
+        villages: currentVillages,
+      }),
+    );
+    const { result } = renderHook(() => useAppSession(harness.bridge));
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+
+    act(() => {
+      result.current.setPasteText('{"tag":"#NEW"}');
+    });
+
+    let preparePromise: Promise<void>;
+    act(() => {
+      preparePromise = result.current.prepareImport();
+    });
+
+    expect(harness.bridge.prepareImport).toHaveBeenCalledWith({ text: '{"tag":"#NEW"}' });
+
+    harness.setPostPrepareSnapshot(
+      ok(
+        snapshot({
+          generation: 2,
+          selectedVillageId: 'v-current',
+          villages: currentVillages,
+          pendingImport: { targetKind: 'create', snapshotTag: '#NEW' },
+        }),
+      ),
+    );
+    act(() => {
+      harness.resolvePrepare({
+        generation: 2,
+        pending: { targetKind: 'create', snapshotTag: '#NEW' },
+        preview: {
+          snapshot: {
+            importedAt: 1,
+            originalText: '{"tag":"#NEW"}',
+            objectSections: {},
+            numericSections: {},
+            boosts: {},
+            unknownTopLevelKeys: [],
+            diagnostics: [],
+          },
+          targetKind: 'create',
+        },
+      });
+    });
+
+    await act(async () => {
+      await preparePromise!;
+    });
+
+    expect(result.current.state.preview?.preview.targetKind).toBe('create');
+  });
+
+  it('首次普通账号导入复用尚未导入数据的当前档案', async () => {
+    const harness = createBridge(
+      snapshot({
+        selectedVillageId: 'v-empty',
+        villages: [{ id: 'v-empty', name: '我的村庄', tag: null, hasImportedData: false }],
+      }),
+    );
+    const { result } = renderHook(() => useAppSession(harness.bridge));
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+
+    act(() => {
+      result.current.setPasteText('{"tag":"#FIRST"}');
+    });
+
+    let preparePromise: Promise<void>;
+    act(() => {
+      preparePromise = result.current.prepareImport();
+    });
+
+    expect(harness.bridge.prepareImport).toHaveBeenCalledWith({
+      text: '{"tag":"#FIRST"}',
+      villageId: 'v-empty',
+    });
+
+    act(() => {
+      harness.resolvePrepare({
+        generation: 2,
+        pending: {
+          targetKind: 'existing',
+          targetVillageId: 'v-empty',
+          targetVillageName: '我的村庄',
+          snapshotTag: '#FIRST',
+        },
+        preview: {
+          snapshot: {
+            importedAt: 1,
+            originalText: '{"tag":"#FIRST"}',
+            objectSections: {},
+            numericSections: {},
+            boosts: {},
+            unknownTopLevelKeys: [],
+            diagnostics: [],
+          },
+          targetKind: 'existing',
+          targetVillageId: 'v-empty',
+          targetVillageName: '我的村庄',
+        },
+      });
+    });
+
+    await act(async () => {
+      await preparePromise!;
+    });
+  });
+
   it('prepare 后权威态已推进且 follow-up snapshot 被拒时清空 preview，且 commit 不发送', async () => {
     const harness = createBridge(snapshot({ generation: 10 }));
     const { result } = renderHook(() => useAppSession(harness.bridge));

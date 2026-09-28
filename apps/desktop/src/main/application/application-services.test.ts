@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   bootstrapPersistence,
   createVillageProfile,
+  parseAccountSnapshot,
   PERSISTENCE_FILE_NAMES,
   type ElectronPersistencePaths,
 } from '@coc-helper/domain';
@@ -41,6 +42,14 @@ function pathsFor(root: string): ElectronPersistencePaths {
     trackedClans: join(root, PERSISTENCE_FILE_NAMES.trackedClans),
     apiTokenEncrypted: join(root, PERSISTENCE_FILE_NAMES.apiTokenEncrypted),
   };
+}
+
+function accountSnapshot(text: string) {
+  const result = parseAccountSnapshot(text, { clock: new FakeClock(0) });
+  if (!result.ok) {
+    throw new Error(`unexpected account snapshot parse failure: ${result.error.kind}`);
+  }
+  return result.value;
 }
 
 function bootServices() {
@@ -142,6 +151,37 @@ describe('ApplicationServices（#276 首片）', () => {
       false,
     );
     expect(store.getSelectedVillageId()).toBe(b.id);
+  });
+
+  it('普通导入按 Tag 新建、无 Tag 回退当前村庄', () => {
+    const services = bootServices();
+    const store = services.state.getVillageStore();
+    const existing = createVillageProfile({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Selected',
+      accountSnapshot: accountSnapshot('{"tag":"#OLD","buildings":[]}'),
+    });
+    store.saveVillages([existing]);
+    store.setSelectedVillageId(existing.id);
+
+    const newTag = services.imports.prepare({
+      text: '{"tag":"#NEW","buildings":[]}',
+      villageId: existing.id,
+    });
+    expect(newTag.pending.targetKind).toBe('create');
+    const newTagCommit = services.imports.commit(newTag.generation);
+    expect(newTagCommit.selectedVillageId).not.toBe(existing.id);
+    expect(store.listVillages()).toHaveLength(2);
+    expect(store.listVillages().find((village) => village.id === existing.id)?.tag).toBe('#OLD');
+
+    const withoutTag = services.imports.prepare({
+      text: '{"buildings":[]}',
+      villageId: existing.id,
+    });
+    expect(withoutTag.pending.targetKind).toBe('existing');
+    expect(withoutTag.pending.targetVillageId).toBe(existing.id);
+    services.imports.commit(withoutTag.generation);
+    expect(store.listVillages().find((village) => village.id === existing.id)?.tag).toBeNull();
   });
 
   it('stale commit/discard 不匹配 expectedGeneration 时 conflict，且不改新 pending', () => {

@@ -120,6 +120,34 @@ describe('import routing', () => {
     ).toEqual({ kind: 'existing', villageId: 'v-b' });
   });
 
+  it('无 Tag 时回退当前村庄，即使没有强制当前选项', () => {
+    const village = createVillageProfile({
+      id: 'v-current',
+      name: '当前村庄',
+      accountSnapshot: emptySnapshot('{"tag":"#OLD","buildings":[]}'),
+    });
+    expect(
+      resolvePendingTarget(emptySnapshot('{"buildings":[]}'), [village], {
+        selectedVillageId: village.id,
+        importIntoCurrentVillage: false,
+      }),
+    ).toEqual({ kind: 'existing', villageId: village.id });
+  });
+
+  it('新 Tag 不回退到已有数据的当前村庄', () => {
+    const village = createVillageProfile({
+      id: 'v-current',
+      name: '当前村庄',
+      accountSnapshot: emptySnapshot('{"tag":"#OLD","buildings":[]}'),
+    });
+    expect(
+      resolvePendingTarget(emptySnapshot('{"tag":"#NEW","buildings":[]}'), [village], {
+        selectedVillageId: village.id,
+        importIntoCurrentVillage: false,
+      }),
+    ).toEqual({ kind: 'create' });
+  });
+
   it('applySnapshotToVillage 在 tag 变化时清空 officialAPIState', () => {
     const village = createVillageProfile({
       id: '1',

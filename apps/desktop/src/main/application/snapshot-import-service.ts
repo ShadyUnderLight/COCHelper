@@ -93,7 +93,7 @@ export class SnapshotImportService {
       throw new AppServiceError('unavailable', '当前处于恢复或只读状态，无法导入。');
     }
     const villages = this.state.listVillages();
-    /** 显式目标：只用请求 villageId，不读 store selected。 */
+    /** 当前目标由请求显式传入；Main 不读取 store selected。 */
     const explicitVillageId = request.villageId ?? null;
     if (explicitVillageId !== null) {
       const exists = villages.some((village) => village.id === explicitVillageId);
@@ -107,7 +107,8 @@ export class SnapshotImportService {
         text: request.text,
         villages,
         selectedVillageId: explicitVillageId,
-        importIntoCurrentVillage: explicitVillageId !== null,
+        // 普通导入由已解析快照决定：新 Tag 创建，缺少 Tag 才回退当前村庄。
+        importIntoCurrentVillage: false,
         clock: this.clock,
       }),
     );

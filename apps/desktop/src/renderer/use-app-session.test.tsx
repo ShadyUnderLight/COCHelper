@@ -143,7 +143,7 @@ afterEach(() => {
 });
 
 describe('useAppSession import behavior', () => {
-  it('普通账号导入不锁定当前村庄，允许新 Tag 创建档案', async () => {
+  it('普通账号导入把当前村庄交给 Main 做无 Tag 回退', async () => {
     const currentVillages = [
       { id: 'v-current', name: '旧村庄', tag: '#OLD', hasImportedData: true },
     ];
@@ -168,7 +168,10 @@ describe('useAppSession import behavior', () => {
       preparePromise = result.current.prepareImport();
     });
 
-    expect(harness.bridge.prepareImport).toHaveBeenCalledWith({ text: '{"tag":"#NEW"}' });
+    expect(harness.bridge.prepareImport).toHaveBeenCalledWith({
+      text: '{"tag":"#NEW"}',
+      villageId: 'v-current',
+    });
 
     harness.setPostPrepareSnapshot(
       ok(

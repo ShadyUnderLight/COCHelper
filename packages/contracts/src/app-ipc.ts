@@ -79,8 +79,9 @@ export type VillageSelectResponse = Result<VillageSelectPayload>;
 
 /**
  * import.prepare：目标必须显式。
- * - villageId 为 string：强制以该村为「当前村」候选（仍允许 tag 唯一匹配优先）；
- * - villageId 为 null/省略：绝不读取权威 selected，只按 tag 匹配或创建。
+ * - villageId 为 string：作为缺少 Tag 快照的当前村庄回退目标；有 Tag 时优先按 Tag 匹配，
+ *   未匹配时创建新村庄（首次空白档案仍可复用）；
+ * - villageId 为 null/省略：不提供无 Tag 回退目标，只按 Tag 匹配或创建。
  */
 export type ImportPrepareRequest = {
   readonly text: string;

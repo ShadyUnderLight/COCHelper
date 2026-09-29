@@ -17,7 +17,11 @@ function itemWith(overrides: Partial<ReturnType<typeof recordFixture>['item']> =
 describe('LevelDetailSheet（#277-C2）', () => {
   it('渲染名称/等级跃迁/状态（权威单状态：importedActive → 正在升级）', () => {
     render(
-      <LevelDetailSheet item={itemWith()} catalogVersion="18.400.13" onClose={() => undefined} />,
+      <LevelDetailSheet
+        item={itemWith({ remainingSeconds: 200 })}
+        catalogVersion="18.400.13"
+        onClose={() => undefined}
+      />,
     );
     expect(screen.getByRole('dialog', { name: '加农炮等级详情' })).toBeTruthy();
     expect(screen.getByText('加农炮')).toBeTruthy();

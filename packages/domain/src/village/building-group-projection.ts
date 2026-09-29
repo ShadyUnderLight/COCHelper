@@ -818,7 +818,10 @@ function isEffectivelyUpgrading(item: VillageItemState): boolean {
   if (state === undefined) {
     return (item.remainingSeconds ?? 0n) > 0n;
   }
-  return state.status === 'manualActive' || state.status === 'importedActive';
+  return (
+    state.status === 'manualActive' ||
+    (state.status === 'importedActive' && (item.remainingSeconds ?? 0n) > 0n)
+  );
 }
 
 function uniqueStrings(values: readonly string[]): string[] {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { projectBuildingGroupsFromProjection } from './building-group-projection';
 import {
   aggregateVillageItems,
   liveRemainingSeconds,
@@ -7,6 +8,7 @@ import {
   refreshTimerDelta,
   refreshingTimers,
 } from './catalog-projection';
+import { createGameCatalog } from '../catalog/game-catalog';
 import { createCraftTableCatalog, type CraftTableModuleLevelSpec } from '../catalog/craft-table';
 import {
   createSyntheticCatalog,
@@ -424,11 +426,36 @@ describe('VillageCatalogProjection', () => {
   });
 
   it('同 key 的导入升级不影响闲置满级实例的详情统计', () => {
+    const cannon = catalog.item('buildings', 1_000_001n)!;
+    const completeCatalog = createGameCatalog({
+      gameVersion: catalog.gameVersion,
+      items: [
+        {
+          ...cannon,
+          dataID: 1_000_002n,
+          levels: cannon.levels.map((level) => ({
+            ...level,
+            upgradeCosts:
+              level.level === 2
+                ? [
+                    {
+                      resource: 'Gold',
+                      amount: 100n,
+                      rawResource: 'Gold',
+                      rawAmount: null,
+                      parseFailed: false,
+                    },
+                  ]
+                : level.upgradeCosts,
+          })),
+        },
+      ],
+    });
     const village = makeTestVillage({
       buildings: [
         makeAccountItem({
           section: 'buildings',
-          dataID: 1_000_001n,
+          dataID: 1_000_002n,
           level: 1,
           timerSeconds: 300n,
           remainingSeconds: 200n,
@@ -436,13 +463,19 @@ describe('VillageCatalogProjection', () => {
         }),
         makeAccountItem({
           section: 'buildings',
-          dataID: 1_000_001n,
+          dataID: 1_000_002n,
           level: 2,
           path: '1',
         }),
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 2,
+          path: '2',
+        }),
       ],
     });
-    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_002n);
     const imported = createManualLevelDistributionFromPairs([
       [1, 1n],
       [2, 1n],
@@ -453,23 +486,36 @@ describe('VillageCatalogProjection', () => {
           itemKey,
           baselineReference: { revision: 'snapshot-1', lineageID: null },
           imported,
-          status: 'observed',
+          manual: createManualLevelDistributionFromPairs([[1, 2n]]),
+          status: 'manualCompleted',
           sourceTimestampMs: TEST_IMPORTED_AT_MS,
         }),
       ],
     });
     const projection = projectVillageCatalog({
       village,
-      catalog,
+      catalog: completeCatalog,
       base: 'home',
       nowMs: TEST_IMPORTED_AT_MS,
       manualUpgradeCore,
     });
-    const completion = villageDetailTotalCompletion(projection.items);
+    const detailItems = projection.items.filter((item) => item.dataID === 1_000_002n);
+    const completion = villageDetailTotalCompletion(detailItems);
+    const groups = projectBuildingGroupsFromProjection({
+      projection,
+      catalog: completeCatalog,
+      base: 'home',
+      manualUpgradeCore,
+    });
+    const group = groups.find((candidate) => candidate.dataID === 1_000_002n)!;
 
-    expect(projection.items).toHaveLength(2);
+    expect(detailItems).toHaveLength(2);
+    expect(detailItems[0]?.effectiveState).toMatchObject({ status: 'importedActive' });
+    expect(detailItems[1]?.effectiveState).toMatchObject({ status: 'importedActive' });
     expect(completion.knownCount).toBe(2);
     expect(completion.completedCount).toBe(1);
+    expect(group.trackerState.status).toBe('importedActive');
+    expect(group.summary.completeness).toBe('complete');
   });
 
   it('未知 dataID 保留诊断', () => {

@@ -336,8 +336,15 @@ export function authoritativeLevelStatus(item: VillageItemStateDto): string {
   if (effective !== null) {
     switch (effective) {
       case 'manualActive':
-      case 'importedActive':
         return '正在升级';
+      case 'importedActive':
+        if ((item.remainingSeconds ?? 0) > 0) {
+          return '正在升级';
+        }
+        if (item.effectiveIsMaxed) {
+          return stageMaxedText(item.currentStageMaxLevel, item.maxLevel);
+        }
+        return '已记录';
       case 'needsReimport':
         return '待重新导入确认';
       case 'conflict':

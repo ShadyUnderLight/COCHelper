@@ -1,5 +1,5 @@
 import { decodeCatalogManifest, decodeJsonFile } from './json-decode';
-import type { CatalogManifest } from './types';
+import { UNIVERSE_TOWN_HALL_COUNT, type CatalogManifest } from './types';
 
 export type CraftTableDefenseSpec = {
   readonly dataID: bigint;
@@ -11,14 +11,128 @@ export type CraftTableDefenseSpec = {
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
 
+export type CraftTableModuleLevelSpec = {
+  readonly level: number;
+  readonly requiredTownHallLevel: number | null;
+};
+
 export type CraftTableModuleSpec = {
   readonly dataID: bigint;
   readonly name: string;
   readonly sourceName: string;
   readonly statTypes: readonly string[];
   readonly displayTitles: readonly string[];
+  readonly maxLevel: number;
+  readonly levels: readonly CraftTableModuleLevelSpec[];
   readonly lifecycle: 'permanent' | 'seasonalCandidate' | null;
 };
+
+export type CraftTableModuleLevelAssessment = {
+  readonly currentStageMaxLevel: number | null;
+  readonly status: 'complete' | 'maxed' | 'unknown';
+  readonly missingReason: string | null;
+};
+
+function isValidTownHallLevel(level: number): boolean {
+  return Number.isSafeInteger(level) && level >= 1 && level <= UNIVERSE_TOWN_HALL_COUNT;
+}
+
+export function craftTableModuleStageMaxLevel(
+  module: CraftTableModuleSpec,
+  townHallLevel: number | null,
+): number | null {
+  if (
+    townHallLevel === null ||
+    !isValidTownHallLevel(townHallLevel) ||
+    !Number.isSafeInteger(module.maxLevel) ||
+    module.maxLevel < 1 ||
+    module.levels.length !== module.maxLevel
+  ) {
+    return null;
+  }
+
+  const levels = [...module.levels].sort((left, right) => left.level - right.level);
+  let previousRequiredTownHallLevel = 0;
+  for (const [index, level] of levels.entries()) {
+    const requiredTownHallLevel = level.requiredTownHallLevel;
+    if (
+      level.level !== index + 1 ||
+      requiredTownHallLevel === null ||
+      !Number.isSafeInteger(requiredTownHallLevel) ||
+      requiredTownHallLevel < 1 ||
+      requiredTownHallLevel > UNIVERSE_TOWN_HALL_COUNT ||
+      requiredTownHallLevel < previousRequiredTownHallLevel
+    ) {
+      return null;
+    }
+    previousRequiredTownHallLevel = requiredTownHallLevel;
+  }
+
+  let highest: number | null = null;
+  for (const level of levels) {
+    const requiredTownHallLevel = level.requiredTownHallLevel;
+    if (requiredTownHallLevel === null || requiredTownHallLevel > townHallLevel) {
+      break;
+    }
+    highest = level.level;
+  }
+  return highest;
+}
+
+export function assessCraftTableModuleLevel(
+  module: CraftTableModuleSpec,
+  currentLevel: number | null,
+  townHallLevel: number | null,
+): CraftTableModuleLevelAssessment {
+  const currentStageMaxLevel = craftTableModuleStageMaxLevel(module, townHallLevel);
+  if (
+    !Number.isSafeInteger(module.maxLevel) ||
+    module.maxLevel < 1 ||
+    currentLevel === null ||
+    !Number.isSafeInteger(currentLevel) ||
+    currentLevel < 1 ||
+    currentLevel > module.maxLevel
+  ) {
+    return {
+      currentStageMaxLevel,
+      status: 'unknown',
+      missingReason: '精工防御模组等级与目录上限不匹配。',
+    };
+  }
+
+  if (townHallLevel === null) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '快照缺少大本营等级，无法验证精工防御模组的当前阶段上限。',
+    };
+  }
+  if (!isValidTownHallLevel(townHallLevel)) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '快照中的大本营等级无效，无法验证精工防御模组的当前阶段上限。',
+    };
+  }
+  if (currentStageMaxLevel === null) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '无法从精工防御目录验证当前大本营等级对应的模组上限。',
+    };
+  }
+  if (currentLevel > currentStageMaxLevel) {
+    return {
+      currentStageMaxLevel,
+      status: 'unknown',
+      missingReason: '快照中的精工防御模组等级高于当前大本营允许的目录上限。',
+    };
+  }
+  if (currentLevel === currentStageMaxLevel) {
+    return { currentStageMaxLevel, status: 'maxed', missingReason: null };
+  }
+  return { currentStageMaxLevel, status: 'complete', missingReason: null };
+}
 
 export type CraftTableCatalog = {
   readonly schemaVersion: number;
@@ -94,14 +208,55 @@ function decodeDefense(raw: Record<string, unknown>): CraftTableDefenseSpec {
 }
 
 function decodeModule(raw: Record<string, unknown>): CraftTableModuleSpec {
+  const maxLevel = requireCatalogInteger(raw.maxLevel, 'maxLevel', 1, Number.MAX_SAFE_INTEGER);
+  const levels = (raw.levels as Array<Record<string, unknown>>).map((level) => ({
+    level: requireCatalogInteger(level.level, 'level', 1, maxLevel),
+    requiredTownHallLevel: requireCatalogInteger(
+      level.requiredTownHallLevel,
+      'requiredTownHallLevel',
+      1,
+      UNIVERSE_TOWN_HALL_COUNT,
+    ),
+  }));
+  const orderedLevels = [...levels].sort((left, right) => left.level - right.level);
+  let previousRequiredTownHallLevel = 0;
+  if (orderedLevels.length !== maxLevel) {
+    throw new TypeError('精工防御模组等级或大本营门槛目录不合法。');
+  }
+  for (const [index, level] of orderedLevels.entries()) {
+    if (level.level !== index + 1 || level.requiredTownHallLevel < previousRequiredTownHallLevel) {
+      throw new TypeError('精工防御模组等级或大本营门槛目录不合法。');
+    }
+    previousRequiredTownHallLevel = level.requiredTownHallLevel;
+  }
+
   return {
     dataID: BigInt(raw.dataID as number | string | bigint),
     name: String(raw.name),
     sourceName: String(raw.sourceName),
     statTypes: (raw.statTypes as string[]).map(String),
     displayTitles: (raw.displayTitles as string[]).map(String),
+    maxLevel,
+    levels,
     lifecycle: decodeLifecycle(raw.lifecycle),
   };
+}
+
+function requireCatalogInteger(
+  value: unknown,
+  field: string,
+  minimum: number,
+  maximum: number,
+): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new TypeError(`精工防御目录字段 ${field} 必须是范围内的安全整数。`);
+  }
+  return value;
 }
 
 function decodeLifecycle(value: unknown): 'permanent' | 'seasonalCandidate' | null {

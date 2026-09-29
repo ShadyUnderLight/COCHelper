@@ -202,15 +202,15 @@ export function toVillageItemStateDto(
     base: item.base,
     name: item.name,
     category: item.category,
-    currentLevel: item.currentLevel,
-    count: item.count,
+    currentLevel: safeIntegerOrNull(item.currentLevel),
+    count: safeIntegerOrNull(item.count),
     timerSeconds: optionalBigintToNumber(item.timerSeconds),
     remainingSeconds: optionalBigintToNumber(item.remainingSeconds),
-    nextLevel: item.nextLevel,
+    nextLevel: safeIntegerOrNull(item.nextLevel),
     nextLevelDurationSeconds: optionalBigintToNumber(item.nextLevelDurationSeconds),
     nextLevelDurationState: optionalDurationState(item.nextLevelDurationState),
-    maxLevel: item.maxLevel,
-    currentStageMaxLevel: item.currentStageMaxLevel,
+    maxLevel: safeIntegerOrNull(item.maxLevel),
+    currentStageMaxLevel: safeIntegerOrNull(item.currentStageMaxLevel),
     nextUpgrade: optionalNextUpgrade(item.nextUpgrade),
     status: item.status,
     missingReason: item.missingReason,
@@ -234,6 +234,10 @@ export function toVillageItemStateDto(
     trackerItemKey,
     manualRowStart,
   };
+}
+
+function safeIntegerOrNull(value: number | null): number | null {
+  return value !== null && Number.isSafeInteger(value) ? value : null;
 }
 
 function trackerItemKeyForItem(item: VillageItemState): TrackerItemKey {

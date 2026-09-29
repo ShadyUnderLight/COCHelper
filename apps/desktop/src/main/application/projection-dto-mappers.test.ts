@@ -6,6 +6,8 @@ import {
   createManualUpgradeCoreState,
   createVillageProfile,
   projectVillageCatalog,
+  createCraftTableCatalog,
+  loadCraftTableCatalog,
   trackerItemKeyRoot,
   upgradeOverviewRender,
   type AccountItem,
@@ -18,12 +20,14 @@ import {
 } from '@coc-helper/domain';
 import { parseUuid } from '@coc-helper/wire';
 import { describe, expect, it } from 'vitest';
-import { upgradeOverviewPayloadSchema } from '@coc-helper/contracts';
+import { upgradeOverviewPayloadSchema, villageDetailPayloadSchema } from '@coc-helper/contracts';
 
 import { toUpgradeOverviewPayload, toVillageItemStateDto } from './projection-dto-mappers';
 
 const IMPORTED_AT_MS = 1_700_000_000_000;
 const ITEM_DATA_ID = 1_000_001n;
+const CRAFT_TABLE_DATA_ID = 1_000_097n;
+const CRAFT_MODULE_DATA_ID = 102_000_033n;
 const GOLD_COST: CatalogUpgradeCost = {
   resource: 'gold',
   amount: 1_000n,
@@ -123,6 +127,130 @@ function snapshot(item: AccountItem = accountItem()): AccountSnapshot {
     boosts: {},
     unknownTopLevelKeys: [],
     diagnostics: [],
+  };
+}
+
+function craftTableVillage(townHallLevel = 12): ReturnType<typeof createVillageProfile> {
+  const module = {
+    ...accountItem(),
+    id: 'buildings:0.types.0.modules.0',
+    dataID: CRAFT_MODULE_DATA_ID,
+    timerSeconds: null,
+    remainingSeconds: null,
+  };
+  const defense = {
+    ...accountItem(),
+    id: 'buildings:0.types.0',
+    dataID: 103_000_000n,
+    modules: [module],
+  };
+  const craftTable = {
+    ...accountItem(),
+    id: 'buildings:0',
+    dataID: CRAFT_TABLE_DATA_ID,
+    types: [defense],
+  };
+  const townHall = {
+    ...accountItem(),
+    id: 'buildings:1',
+    dataID: ITEM_DATA_ID,
+    level: townHallLevel,
+    timerSeconds: null,
+    remainingSeconds: null,
+  };
+  return createVillageProfile({
+    id: '00000000-0000-0000-0000-0000000000ab',
+    name: '目录异常测试村',
+    accountSnapshot: {
+      ...snapshot(craftTable),
+      objectSections: { buildings: [craftTable, townHall] },
+    },
+  });
+}
+
+function craftTableCatalogText(): { manifestText: string; craftText: string } {
+  const gameVersion = '18.400.13';
+  const buildTag = 'test-build';
+  return {
+    manifestText: JSON.stringify({ schemaVersion: 3, gameVersion, buildTag, locale: 'zh-CN' }),
+    craftText: JSON.stringify({
+      schemaVersion: 1,
+      gameVersion,
+      buildTag,
+      locale: 'zh-CN',
+      source: 'test fixture',
+      defenses: [],
+      modules: [
+        {
+          dataID: Number(CRAFT_MODULE_DATA_ID),
+          name: '火热蜡烛模组',
+          sourceName: 'RoasterHealth',
+          statTypes: ['Hitpoints'],
+          displayTitles: ['生命值'],
+          maxLevel: 2,
+          levels: [
+            { level: 1, requiredTownHallLevel: 12 },
+            { level: 2, requiredTownHallLevel: 13 },
+          ],
+          lifecycle: null,
+        },
+      ],
+    }),
+  };
+}
+
+function mutateCraftTableCatalog(mutate: (module: Record<string, unknown>) => void): string {
+  const { craftText } = craftTableCatalogText();
+  const payload = JSON.parse(craftText) as { modules: Array<Record<string, unknown>> };
+  mutate(payload.modules[0]!);
+  return JSON.stringify(payload);
+}
+
+function villageDetailWithItem(item: ReturnType<typeof toVillageItemStateDto>) {
+  const metric = {
+    kind: 'test',
+    numerator: 0,
+    denominator: 0,
+    state: 'unknown' as const,
+    saturated: false,
+    units: '',
+    degradedReason: null,
+    ratio: null,
+  };
+  return {
+    generation: 1,
+    nowMs: IMPORTED_AT_MS,
+    villageId: '00000000-0000-0000-0000-0000000000ab',
+    villageName: '目录异常测试村',
+    villageTag: '#DTO',
+    base: 'home' as const,
+    catalogVersion: '18.400.13',
+    catalogIsUsable: true,
+    compatibility: { kind: 'verified' as const, gameVersion: '18.400.13' },
+    items: [item],
+    instanceItems: [],
+    groups: [],
+    completion: [],
+    totalCompletion: {
+      id: 'total',
+      category: null,
+      displayCategory: null,
+      knownCount: 0,
+      completedCount: 0,
+      unknownCount: 0,
+      saturated: false,
+      completionRatio: null,
+      isFullyMaxed: false,
+    },
+    metrics: {
+      currentStageProgress: metric,
+      globalProgress: metric,
+      snapshotCoverage: metric,
+      instanceProgress: metric,
+      effectiveTrackerProgress: metric,
+    },
+    buildingGroups: [],
+    flatRows: [],
   };
 }
 
@@ -341,5 +469,112 @@ describe('projection DTO effective state mapping', () => {
       durationSeconds: 900,
     });
     expect(dto.effectiveNextLevelDurationState).toEqual({ kind: 'timed', seconds: 900 });
+  });
+
+  it.each([
+    ['缺少 maxLevel', mutateCraftTableCatalog((module) => delete module.maxLevel)],
+    ['maxLevel 为 NaN', craftTableCatalogText().craftText.replace(/("maxLevel":)2/, '$1NaN')],
+    ['maxLevel 为字符串', mutateCraftTableCatalog((module) => (module.maxLevel = '2'))],
+    ['maxLevel 为布尔值', mutateCraftTableCatalog((module) => (module.maxLevel = true))],
+    [
+      '模组等级非整数',
+      mutateCraftTableCatalog((module) => {
+        (module.levels as Array<Record<string, unknown>>)[0]!.level = 1.5;
+      }),
+    ],
+    [
+      '大本营门槛不单调',
+      mutateCraftTableCatalog((module) => {
+        (module.levels as Array<Record<string, unknown>>)[1]!.requiredTownHallLevel = 11;
+      }),
+    ],
+  ])('异常目录沿加载、Village 投影、DTO 到 IPC schema 都保持 unknown：%s', (_name, craftText) => {
+    const text = craftTableCatalogText();
+    const craftTableCatalog = loadCraftTableCatalog({
+      version: '18.400.13',
+      manifestText: text.manifestText,
+      craftText,
+    });
+    expect(craftTableCatalog).toBeNull();
+
+    const projection = projectVillageCatalog({
+      village: craftTableVillage(),
+      catalog: catalog(),
+      craftTableCatalog,
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+    });
+    const module = projection.items.find((item) => item.dataID === CRAFT_MODULE_DATA_ID)!;
+    expect(module.status).toBe('unknown');
+    expect(module.maxLevel).toBeNull();
+
+    const dto = toVillageItemStateDto({ ...module, currentStageMaxLevel: Number.NaN });
+    expect(dto.maxLevel).toBeNull();
+    expect(dto.currentStageMaxLevel).toBeNull();
+    expect(villageDetailPayloadSchema.safeParse(villageDetailWithItem(dto)).success).toBe(true);
+  });
+
+  it.each([
+    ['超出游戏范围', 19],
+    ['零级', 0],
+    ['负数', -1],
+    ['小数', 1.5],
+    ['NaN', Number.NaN],
+    ['超出安全整数范围', Number.MAX_SAFE_INTEGER + 1],
+  ])('非法大本营等级沿 Village 投影和 DTO 保持 unknown：%s', (_name, townHallLevel) => {
+    const text = craftTableCatalogText();
+    const craftTableCatalog = loadCraftTableCatalog({
+      version: '18.400.13',
+      manifestText: text.manifestText,
+      craftText: text.craftText,
+    });
+    const projection = projectVillageCatalog({
+      village: craftTableVillage(townHallLevel),
+      catalog: catalog(),
+      craftTableCatalog,
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+    });
+    const module = projection.items.find((item) => item.dataID === CRAFT_MODULE_DATA_ID)!;
+
+    expect(module.status).toBe('unknown');
+    expect(module.currentStageMaxLevel).toBeNull();
+    const dto = toVillageItemStateDto(module);
+    expect(dto.status).toBe('unknown');
+    expect(dto.currentStageMaxLevel).toBeNull();
+    expect(villageDetailPayloadSchema.safeParse(villageDetailWithItem(dto)).success).toBe(true);
+  });
+
+  it('目录对象中的 NaN 等非法等级在 DTO 边界转为 null，IPC schema 仍可解析', () => {
+    const text = craftTableCatalogText();
+    const valid = loadCraftTableCatalog({
+      version: '18.400.13',
+      manifestText: text.manifestText,
+      craftText: text.craftText,
+    })!;
+    const spec = valid.module(CRAFT_MODULE_DATA_ID)!;
+    const invalidCatalog = createCraftTableCatalog({
+      schemaVersion: valid.schemaVersion,
+      gameVersion: valid.gameVersion,
+      buildTag: valid.buildTag,
+      locale: valid.locale,
+      source: valid.source,
+      defenses: valid.defenses,
+      modules: [{ ...spec, maxLevel: Number.NaN }],
+    });
+    const projection = projectVillageCatalog({
+      village: craftTableVillage(),
+      catalog: catalog(),
+      craftTableCatalog: invalidCatalog,
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+    });
+    const module = projection.items.find((item) => item.dataID === CRAFT_MODULE_DATA_ID)!;
+
+    expect(module.status).toBe('unknown');
+    expect(module.maxLevel).toBeNaN();
+    const dto = toVillageItemStateDto(module);
+    expect(dto.maxLevel).toBeNull();
+    expect(villageDetailPayloadSchema.safeParse(villageDetailWithItem(dto)).success).toBe(true);
   });
 });

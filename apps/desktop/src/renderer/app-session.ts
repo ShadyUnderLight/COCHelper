@@ -86,7 +86,7 @@ export function applyAcceptedSnapshot(
   };
 }
 
-function resolvePreviewAfterSnapshot(
+export function resolvePreviewAfterSnapshot(
   preview: ImportPreviewState | null,
   snapshot: AppSnapshotPayload,
 ): ImportPreviewState | null {

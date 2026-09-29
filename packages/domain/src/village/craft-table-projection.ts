@@ -1,10 +1,11 @@
 import type { AccountItem, AccountSnapshot } from '../account';
-import type { CraftTableCatalog } from '../catalog/craft-table';
+import { assessCraftTableModuleLevel, type CraftTableCatalog } from '../catalog/craft-table';
 import type { CatalogAvailability, SeasonalPhaseTable } from '../catalog/seasonal-phase';
 import { CRAFT_TABLE_DATA_ID } from './display-category';
 import { liveRemainingSeconds, refreshTimerDelta } from './catalog-projection';
 import type { TrackerBase } from './tracker';
 import type { VillageProfile } from '../import/types';
+import { playerUnlockLevelsFromSnapshot } from './player-unlock-levels';
 
 export type CraftTableModuleStatus = 'recorded' | 'upgrading' | 'maxed' | 'unknown';
 
@@ -16,6 +17,7 @@ export type CraftTableModuleState = {
   readonly displayTitles: readonly string[];
   readonly currentLevel: number | null;
   readonly maxLevel: number | null;
+  readonly currentStageMaxLevel: number | null;
   readonly status: CraftTableModuleStatus;
   readonly timerSeconds: bigint | null;
   readonly remainingSeconds: bigint | null;
@@ -51,6 +53,7 @@ export function projectCraftTable(input: {
   if (craftTable === undefined) {
     return [];
   }
+  const townHallLevel = playerUnlockLevelsFromSnapshot(snapshot).townHall;
 
   return craftTable.types.map((defense) => {
     const defenseSpec = input.catalog?.defense(defense.dataID);
@@ -61,6 +64,7 @@ export function projectCraftTable(input: {
         snapshot,
         catalog: input.catalog,
         nowMs: input.nowMs,
+        townHallLevel,
       }),
     );
     const observedIDs = new Set(defense.modules.map((module) => module.dataID));
@@ -130,14 +134,21 @@ function makeCraftTableModule(input: {
   readonly snapshot: AccountSnapshot;
   readonly catalog: CraftTableCatalog | null | undefined;
   readonly nowMs: number;
+  readonly townHallLevel: number | null;
 }): CraftTableModuleState {
   const spec = input.catalog?.module(input.item.dataID);
   const remaining = liveRemainingSeconds(input.item, input.snapshot, input.nowMs);
+  const assessment =
+    spec === undefined
+      ? null
+      : assessCraftTableModuleLevel(spec, input.item.level, input.townHallLevel);
   let status: CraftTableModuleStatus;
   if ((remaining ?? 0n) > 0n) {
     status = 'upgrading';
-  } else if (spec !== undefined) {
+  } else if (assessment?.status === 'complete') {
     status = 'recorded';
+  } else if (assessment?.status === 'maxed') {
+    status = 'maxed';
   } else {
     status = 'unknown';
   }
@@ -145,14 +156,20 @@ function makeCraftTableModule(input: {
     id: input.item.id,
     dataID: input.item.dataID,
     name: spec?.name ?? accountItemName(input.item),
-    statTypes: [],
-    displayTitles: [],
+    statTypes: spec?.statTypes ?? [],
+    displayTitles: spec?.displayTitles ?? [],
     currentLevel: input.item.level,
-    maxLevel: null,
+    maxLevel: spec?.maxLevel ?? null,
+    currentStageMaxLevel: assessment?.currentStageMaxLevel ?? null,
     status,
     timerSeconds: input.item.timerSeconds,
     remainingSeconds: remaining,
-    missingReason: spec === undefined ? '版本化精制台目录未收录该模组' : null,
+    missingReason:
+      spec === undefined
+        ? '版本化精制台目录未收录该模组'
+        : status === 'unknown'
+          ? (assessment?.missingReason ?? null)
+          : null,
   };
 }
 
@@ -170,6 +187,7 @@ function makeMissingCraftTableModule(input: {
     displayTitles: [],
     currentLevel: null,
     maxLevel: null,
+    currentStageMaxLevel: null,
     status: 'unknown',
     timerSeconds: null,
     remainingSeconds: null,

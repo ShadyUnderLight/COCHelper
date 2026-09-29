@@ -267,6 +267,71 @@ describe('useAppSession import behavior', () => {
     });
   });
 
+  it('重复到达的 prepared state.changed 不会让可见预览失去 commit 引用', async () => {
+    const harness = createBridge(
+      snapshot({
+        selectedVillageId: 'v-empty',
+        villages: [{ id: 'v-empty', name: '我的村庄', tag: null, hasImportedData: false }],
+      }),
+    );
+    const { result } = renderHook(() => useAppSession(harness.bridge));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+    act(() => result.current.setPasteText('{"tag":"#FIRST"}'));
+
+    let preparePromise: Promise<void>;
+    act(() => {
+      preparePromise = result.current.prepareImport();
+    });
+    const preparedSnapshot = snapshot({
+      generation: 2,
+      selectedVillageId: 'v-empty',
+      villages: [{ id: 'v-empty', name: '我的村庄', tag: null, hasImportedData: false }],
+      pendingImport: { targetKind: 'existing', targetVillageId: 'v-empty', snapshotTag: '#FIRST' },
+    });
+    harness.setPostPrepareSnapshot(ok(preparedSnapshot));
+    act(() => {
+      harness.resolvePrepare({
+        generation: 2,
+        pending: {
+          targetKind: 'existing',
+          targetVillageId: 'v-empty',
+          snapshotTag: '#FIRST',
+        },
+        preview: {
+          snapshot: {
+            importedAt: 1,
+            originalText: '{"tag":"#FIRST"}',
+            objectSections: {},
+            numericSections: {},
+            boosts: {},
+            unknownTopLevelKeys: [],
+            diagnostics: [],
+          },
+          targetKind: 'existing',
+          targetVillageId: 'v-empty',
+          targetVillageName: '我的村庄',
+        },
+      });
+    });
+    await act(async () => await preparePromise!);
+    expect(result.current.state.preview).not.toBeNull();
+
+    act(() => harness.push(preparedSnapshot));
+    vi.mocked(harness.bridge.commitImport).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: 'validation',
+        code: 'conflict',
+        messageKey: 'conflict',
+        message: '导入状态已过期，请刷新后重试。',
+      },
+    });
+    await act(async () => await result.current.commitImport());
+
+    expect(harness.bridge.commitImport).toHaveBeenCalledWith({ expectedGeneration: 2 });
+    expect(result.current.state.lastError).toContain('导入状态已过期');
+  });
+
   it('prepare 后权威态已推进且 follow-up snapshot 被拒时清空 preview，且 commit 不发送', async () => {
     const harness = createBridge(snapshot({ generation: 10 }));
     const { result } = renderHook(() => useAppSession(harness.bridge));

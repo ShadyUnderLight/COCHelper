@@ -1,7 +1,11 @@
 import { generateUuid } from '@coc-helper/wire';
 
 import type { AccountDataDiagnostic, AccountItem, AccountSnapshot } from '../account';
-import type { CraftTableCatalog } from '../catalog/craft-table';
+import {
+  assessCraftTableModuleLevel,
+  type CraftTableCatalog,
+  type CraftTableModuleLevelAssessment,
+} from '../catalog/craft-table';
 import { catalogDurationState, type CatalogDurationState } from '../catalog/duration-state';
 import {
   catalogCompatibilityIsUsable,
@@ -13,7 +17,7 @@ import type { CatalogItem, CatalogLevel } from '../catalog/types';
 import { UNIVERSE_TOWN_HALL_COUNT } from '../catalog/types';
 import type { ManualUpgradeCore } from '../manual/types';
 import { flattenAccountItems } from './account-items';
-import { resolveDisplayCategory, rootIdOfItemId } from './display-category';
+import { CRAFT_TABLE_DATA_ID, resolveDisplayCategory, rootIdOfItemId } from './display-category';
 import {
   buildEffectiveVillageProjection,
   effectiveVillageItemWithImportedRemainingSeconds,
@@ -610,12 +614,25 @@ function mapItem(input: {
   const nested = isNestedItem(item);
   const itemKey = `${item.section}:${item.dataID.toString()}`;
   const catalogItem = nested ? undefined : catalog?.item(item.section, item.dataID);
+  const rootParentDataID = nested ? (rootParentDataIDs.get(rootIdOfItemId(item.id)) ?? null) : null;
+  const craftTableModule =
+    nested &&
+    item.section === 'buildings' &&
+    item.id.includes('.modules.') &&
+    rootParentDataID === CRAFT_TABLE_DATA_ID
+      ? craftTableCatalog?.module(item.dataID)
+      : undefined;
+  const craftTableModuleAssessment =
+    craftTableModule === undefined
+      ? null
+      : assessCraftTableModuleLevel(craftTableModule, item.level, unlocks.townHall);
 
   let lifecycle: 'permanent' | 'seasonalCandidate' | null | undefined;
   if (catalogItem !== undefined) {
     lifecycle = catalogItem.lifecycle;
   } else if (nested) {
-    lifecycle = craftTableCatalog?.defense(item.dataID)?.lifecycle ?? null;
+    lifecycle =
+      craftTableCatalog?.defense(item.dataID)?.lifecycle ?? craftTableModule?.lifecycle ?? null;
   } else {
     lifecycle = null;
   }
@@ -628,7 +645,7 @@ function mapItem(input: {
     section: item.section,
     dataID: item.dataID,
     base,
-    rootParentDataID: nested ? (rootParentDataIDs.get(rootIdOfItemId(item.id)) ?? null) : null,
+    rootParentDataID,
     catalog,
   });
 
@@ -669,9 +686,11 @@ function mapItem(input: {
     upgrading && item.level !== null && item.level !== undefined ? item.level + 1 : null;
 
   const stageMax =
-    baseMatches && catalogItem !== undefined && catalogIsUsable
-      ? currentStageMaxLevel(catalogItem, unlocks)
-      : null;
+    craftTableModuleAssessment !== null
+      ? craftTableModuleAssessment.currentStageMaxLevel
+      : baseMatches && catalogItem !== undefined && catalogIsUsable
+        ? currentStageMaxLevel(catalogItem, unlocks)
+        : null;
 
   const realNext = resolveRealNextLevel({
     baseMatches,
@@ -711,6 +730,7 @@ function mapItem(input: {
     catalog,
     catalogIsUsable,
     stageMax,
+    craftTableModuleAssessment,
     item,
   });
 
@@ -725,7 +745,7 @@ function mapItem(input: {
     section: item.section,
     dataID: item.dataID,
     base,
-    name: catalogItem?.name ?? accountItemNameLabel(item),
+    name: catalogItem?.name ?? craftTableModule?.name ?? accountItemNameLabel(item),
     category,
     currentLevel: item.level,
     count: item.count,
@@ -734,7 +754,7 @@ function mapItem(input: {
     nextLevel,
     nextLevelDurationSeconds: durationProjection.seconds,
     nextLevelDurationState: durationProjection.state,
-    maxLevel: baseMatches ? (catalogItem?.maxLevel ?? null) : null,
+    maxLevel: craftTableModule?.maxLevel ?? (baseMatches ? (catalogItem?.maxLevel ?? null) : null),
     currentStageMaxLevel: stageMax,
     nextUpgrade,
     status,
@@ -912,12 +932,25 @@ function resolveStatusAndMissingReason(input: {
   readonly catalog: GameCatalog | null;
   readonly catalogIsUsable: boolean;
   readonly stageMax: number | null;
+  readonly craftTableModuleAssessment: CraftTableModuleLevelAssessment | null;
   readonly item: AccountItem;
 }): { readonly status: VillageItemState['status']; readonly missingReason: string | null } {
-  const { upgrading, nested, baseMatches, catalogItem, catalog, catalogIsUsable, stageMax, item } =
-    input;
+  const {
+    upgrading,
+    nested,
+    baseMatches,
+    catalogItem,
+    catalog,
+    catalogIsUsable,
+    stageMax,
+    craftTableModuleAssessment,
+    item,
+  } = input;
 
   if (upgrading) {
+    if (craftTableModuleAssessment !== null) {
+      return { status: 'upgrading', missingReason: null };
+    }
     if (nested) {
       return {
         status: 'upgrading',
@@ -938,6 +971,13 @@ function resolveStatusAndMissingReason(input: {
         catalogAvailable: catalog !== null,
         item,
       }),
+    };
+  }
+
+  if (craftTableModuleAssessment !== null) {
+    return {
+      status: craftTableModuleAssessment.status,
+      missingReason: craftTableModuleAssessment.missingReason,
     };
   }
 

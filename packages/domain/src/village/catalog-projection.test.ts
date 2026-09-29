@@ -45,7 +45,35 @@ function craftTableCatalog(moduleLevels = CRAFT_MODULE_LEVELS) {
     buildTag: '18_400_7',
     locale: 'zh-CN',
     source: 'test fixture',
-    defenses: [],
+    defenses: [
+      {
+        dataID: 103_000_011n,
+        name: '火热蜡烛',
+        sourceName: 'Roaster',
+        specialAbility: 'SeasonalDefenseRoaster',
+        moduleIDs: [102_000_033n, 102_000_034n, 102_000_035n],
+        totalModuleLevelThresholds: [9, 18, 27],
+        lifecycle: null,
+      },
+      {
+        dataID: 103_000_012n,
+        name: '英雄猎台',
+        sourceName: 'HeroHunter',
+        specialAbility: 'SeasonalDefenseHeroHunter',
+        moduleIDs: [102_000_036n, 102_000_037n, 102_000_038n],
+        totalModuleLevelThresholds: [9, 18, 27],
+        lifecycle: null,
+      },
+      {
+        dataID: 103_000_013n,
+        name: '蛋糕投掷器',
+        sourceName: 'CakeThrower',
+        specialAbility: 'SeasonalDefenseCakeThrower',
+        moduleIDs: [102_000_039n, 102_000_040n, 102_000_041n],
+        totalModuleLevelThresholds: [9, 18, 27],
+        lifecycle: null,
+      },
+    ],
     modules: [
       {
         dataID: CRAFT_MODULE_DATA_ID,
@@ -57,6 +85,20 @@ function craftTableCatalog(moduleLevels = CRAFT_MODULE_LEVELS) {
         levels: moduleLevels,
         lifecycle: null,
       },
+      ...[
+        { dataID: 102_000_036n, name: '英雄猎台生命值模组' },
+        { dataID: 102_000_039n, name: '蛋糕投掷器生命值模组' },
+      ].map(({ dataID, name }) => ({
+        dataID,
+        name,
+        sourceName: name,
+        specialAbility: 'testAbility',
+        statTypes: ['HitPoints'],
+        displayTitles: ['生命值'],
+        maxLevel: 10,
+        levels: CRAFT_MODULE_LEVELS,
+        lifecycle: null,
+      })),
     ],
   });
 }
@@ -275,6 +317,58 @@ describe('VillageCatalogProjection', () => {
     });
 
     expect(item?.status).toBe('upgrading');
+  });
+
+  it('精工台防御类型作为结构父记录排除，实际模组仍参与追踪', () => {
+    const defenseIDs: readonly bigint[] = [103_000_011n, 103_000_012n, 103_000_013n];
+    const moduleIDs: readonly bigint[] = [102_000_033n, 102_000_036n, 102_000_039n];
+    const defenseTypes = defenseIDs.map((dataID, index) =>
+      makeAccountItem({
+        section: 'buildings',
+        dataID,
+        path: `0.types.${index}`,
+        modules: [
+          makeAccountItem({
+            section: 'buildings',
+            dataID: moduleIDs[index]!,
+            level: 1,
+            path: `0.types.${index}.modules.0`,
+          }),
+        ],
+      }),
+    );
+    defenseTypes.push(
+      makeAccountItem({
+        section: 'buildings',
+        dataID: 103_000_099n,
+        level: 1,
+        path: '0.types.3',
+      }),
+    );
+    const projection = projectVillageCatalog({
+      village: makeTestVillage({
+        buildings: [
+          makeAccountItem({
+            section: 'buildings',
+            dataID: CRAFT_TABLE_DATA_ID,
+            level: 1,
+            path: '0',
+            types: defenseTypes,
+          }),
+          makeAccountItem({ section: 'buildings', dataID: 1_000_001n, level: 12, path: '1' }),
+        ],
+      }),
+      catalog,
+      craftTableCatalog: craftTableCatalog(),
+      base: 'home',
+      nowMs: TEST_IMPORTED_AT_MS,
+    });
+
+    expect(projection.items.some((item) => defenseIDs.includes(item.dataID))).toBe(false);
+    const projectedModules = projection.items.filter((item) => moduleIDs.includes(item.dataID));
+    expect(projectedModules).toHaveLength(3);
+    expect(projectedModules.every((item) => item.status === 'complete')).toBe(true);
+    expect(projection.items.find((item) => item.dataID === 103_000_099n)?.status).toBe('unknown');
   });
 
   it('其他建筑下同 ID 的嵌套项不套用精工防御模组目录', () => {

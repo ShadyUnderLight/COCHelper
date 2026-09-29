@@ -1226,6 +1226,10 @@
       "lifecycle": "permanent",
       "note": null
     },
+    "equipment:90000061": {
+      "lifecycle": "permanent",
+      "note": null
+    },
     "guardians:107000000": {
       "lifecycle": "permanent",
       "note": null

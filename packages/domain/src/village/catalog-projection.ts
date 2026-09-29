@@ -615,6 +615,16 @@ function mapItem(input: {
   const itemKey = `${item.section}:${item.dataID.toString()}`;
   const catalogItem = nested ? undefined : catalog?.item(item.section, item.dataID);
   const rootParentDataID = nested ? (rootParentDataIDs.get(rootIdOfItemId(item.id)) ?? null) : null;
+  if (
+    nested &&
+    item.section === 'buildings' &&
+    item.id.includes('.types.') &&
+    !item.id.includes('.modules.') &&
+    rootParentDataID === CRAFT_TABLE_DATA_ID &&
+    craftTableCatalog?.defense(item.dataID) !== undefined
+  ) {
+    return null;
+  }
   const craftTableModule =
     nested &&
     item.section === 'buildings' &&

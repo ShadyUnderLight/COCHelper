@@ -21,6 +21,7 @@ import {
 } from '../manual/core';
 import { trackerItemKeyRoot } from '../manual/types';
 import type { EffectiveVillageItemState } from './effective-projection';
+import { villageDetailTotalCompletion } from './village-detail-projection';
 import { CRAFT_TABLE_DATA_ID } from './display-category';
 
 const catalog = createSyntheticCatalog();
@@ -420,6 +421,55 @@ describe('VillageCatalogProjection', () => {
     expect(effective?.status).toBe('manualCompleted');
     expect(effective?.catalogNextUpgrade).toEqual({ kind: 'globalMaxed' });
     expect(effective?.catalogDurationState).toBeNull();
+  });
+
+  it('同 key 的导入升级不影响闲置满级实例的详情统计', () => {
+    const village = makeTestVillage({
+      buildings: [
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+          path: '0',
+        }),
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 2,
+          path: '1',
+        }),
+      ],
+    });
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+    const imported = createManualLevelDistributionFromPairs([
+      [1, 1n],
+      [2, 1n],
+    ]);
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: { revision: 'snapshot-1', lineageID: null },
+          imported,
+          status: 'observed',
+          sourceTimestampMs: TEST_IMPORTED_AT_MS,
+        }),
+      ],
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog,
+      base: 'home',
+      nowMs: TEST_IMPORTED_AT_MS,
+      manualUpgradeCore,
+    });
+    const completion = villageDetailTotalCompletion(projection.items);
+
+    expect(projection.items).toHaveLength(2);
+    expect(completion.knownCount).toBe(2);
+    expect(completion.completedCount).toBe(1);
   });
 
   it('未知 dataID 保留诊断', () => {

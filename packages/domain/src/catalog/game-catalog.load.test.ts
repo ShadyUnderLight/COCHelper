@@ -10,6 +10,8 @@ import {
   isCatalogAssetRenderable,
   resolveCatalogBundleRoot,
 } from './index';
+import { projectVillageCatalog } from '../village/catalog-projection';
+import { makeAccountItem, makeTestVillage, TEST_IMPORTED_AT_MS } from '../village/test-fixtures';
 
 const repoRoot = resolveCatalogBundleRoot(process.cwd());
 const describeIfBundle = repoRoot === null ? describe.skip : describe;
@@ -27,6 +29,29 @@ describeIfBundle('GameCatalog bundled load', () => {
     expect(bundle.gameCatalog!.manifest).not.toBeNull();
     expect(bundle.gameCatalog!.itemsInSection('buildings').length).toBeGreaterThan(0);
     expect(bundle.gameCatalog!.item('units', 4_000_000n)?.name).toBe('野蛮人');
+    const cosmicPortal = bundle.gameCatalog!.item('equipment', 90_000_061n);
+    expect(cosmicPortal?.name).toBe('传送吊坠');
+    expect(cosmicPortal?.maxLevel).toBe(27);
+    expect(cosmicPortal?.levels).toHaveLength(27);
+    expect(bundle.accountNameCatalog.nameFor('equipment', 90_000_061n)).toBe('传送吊坠');
+    const portalProjection = projectVillageCatalog({
+      village: makeTestVillage({
+        buildings: [
+          makeAccountItem({ section: 'buildings', dataID: 1_000_001n, level: 18, path: '0' }),
+          makeAccountItem({ section: 'buildings', dataID: 1_000_070n, level: 9, path: '1' }),
+        ],
+        equipment: [
+          makeAccountItem({ section: 'equipment', dataID: 90_000_061n, level: 1, path: '0' }),
+        ],
+      }),
+      catalog: bundle.gameCatalog!,
+      craftTableCatalog: bundle.craftTableCatalog,
+      base: 'home',
+      nowMs: TEST_IMPORTED_AT_MS,
+    });
+    const portalState = portalProjection.items.find((item) => item.dataID === 90_000_061n);
+    expect(portalState?.name).toBe('传送吊坠');
+    expect(portalState?.status).toBe('complete');
     expect(bundle.craftTableCatalog).not.toBeNull();
     expect(bundle.leagueTierCatalog).not.toBeNull();
     expect(bundle.accountNameCatalog.count).toBeGreaterThan(0);

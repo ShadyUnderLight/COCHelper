@@ -7,12 +7,14 @@ import zipfile
 
 from .errors import CatalogError
 
-# 现有 generate_account_name_catalog.py 的解包技巧（独立实现，不 import 旧脚本）
-# Supercell 存储格式头 = 5B LZMA props + 4B usz（小端）+ 数据，共 9 字节；
+# APK 逻辑表和本地化 CSV 的统一解码入口。
+# Supercell LZMA 存储格式头 = 5B LZMA props + 4B usz（小端）+ 数据，共 9 字节；
 # 标准 LZMA_ALONE 头 = 5B props + 8B usz。解包 = 在 usz 后补 4 个 0 字节。
 # 注意不能用 packed[:8] + b"\0"*4 + packed[8:]：usz ≥ 2^24（16MB）时
 # usz 第 4 字节会被错位进数据流（LZMAError）。
 _SUPERCELL_HEADER = 9
+_SIGNED_HEADER_PREFIX = b"Sig:"
+_SIGNED_HEADER_SIZE = len(_SIGNED_HEADER_PREFIX) + 64
 _MAX_ASSET_BYTES = 256 * 1024 * 1024  # 解压输出上限，防 zip bomb
 # 头里 usz 的预检上限（独立常量：正常 usz == 实际解压大小，预检即等于输出上限；
 # 拆开便于测试分别覆盖预检与解压后兜底两条路径）
@@ -24,6 +26,12 @@ def decode_asset(archive: zipfile.ZipFile, path: str) -> str:
         packed = archive.read(path)
     except KeyError as exc:
         raise CatalogError(f"APK 缺少资源: {path}") from exc
+    # 新版逻辑表在压缩数据前增加 `Sig:` + 64B 签名；本地目录读取只需跳过
+    # 此前缀。旧版 localization CSV 仍直接以 9B Supercell LZMA 头开始。
+    if packed.startswith(_SIGNED_HEADER_PREFIX):
+        if len(packed) < _SIGNED_HEADER_SIZE + _SUPERCELL_HEADER:
+            raise CatalogError(f"资源头不完整: {path}")
+        packed = packed[_SIGNED_HEADER_SIZE:]
     # 先按头里的 usz 预检：超限直接拒绝，不解压（真 zip bomb 会先吃满内存）
     if len(packed) >= _SUPERCELL_HEADER:
         usz = int.from_bytes(packed[5:9], "little")

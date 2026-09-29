@@ -37,6 +37,19 @@ def test_decode_asset_roundtrip():
         assert decode_asset(z, "assets/logic/buildings.csv") == "a,b\n1,2\n"
 
 
+def test_decode_asset_signed_header_roundtrip():
+    """新版逻辑表的 Sig: + 64B 签名前缀位于 Supercell LZMA 数据之前。"""
+    packed = b"Sig:" + bytes(range(64)) + _packed("Name,Level\nCosmic Portal,1\n")
+    with zipfile.ZipFile(_zip_with("assets/logic/character_items.csv", packed)) as z:
+        assert decode_asset(z, "assets/logic/character_items.csv") == "Name,Level\nCosmic Portal,1\n"
+
+
+def test_decode_asset_truncated_signed_header_raises():
+    with zipfile.ZipFile(_zip_with("assets/logic/character_items.csv", b"Sig:" + bytes(20))) as z:
+        with pytest.raises(CatalogError, match="资源头不完整"):
+            decode_asset(z, "assets/logic/character_items.csv")
+
+
 def test_decode_asset_large_over_16mb_roundtrip():
     """I6 回归：usz ≥ 2^24（16MB）时，9B 头的第 4 字节不再被错位进数据流。
     旧实现 packed[:8] + b"\0"*4 + packed[8:] 对 ≥16MB 资源会 LZMAError。"""

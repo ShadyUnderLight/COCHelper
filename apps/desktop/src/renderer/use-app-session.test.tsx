@@ -319,7 +319,12 @@ describe('useAppSession import behavior', () => {
     act(() => harness.push(preparedSnapshot));
     vi.mocked(harness.bridge.commitImport).mockResolvedValueOnce({
       ok: false,
-      error: { code: 'conflict', message: '导入状态已过期，请刷新后重试。' },
+      error: {
+        kind: 'validation',
+        code: 'conflict',
+        messageKey: 'conflict',
+        message: '导入状态已过期，请刷新后重试。',
+      },
     });
     await act(async () => await result.current.commitImport());
 

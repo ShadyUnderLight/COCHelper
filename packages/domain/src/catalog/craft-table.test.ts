@@ -131,6 +131,28 @@ describeIfBundle('CraftTableCatalog', () => {
     expect(craftTableModuleStageMaxLevel(nonMonotonicSpec, 18)).toBeNull();
     expect(assessCraftTableModuleLevel(nonMonotonicSpec, 1, 18).status).toBe('unknown');
   });
+
+  it.each([
+    ['超出游戏范围', 19],
+    ['零级', 0],
+    ['负数', -1],
+    ['小数', 1.5],
+    ['NaN', Number.NaN],
+    ['超出安全整数范围', Number.MAX_SAFE_INTEGER + 1],
+  ])('非法大本营等级不计算阶段上限：%s', (_name, townHallLevel) => {
+    const catalog = loadCraftTableCatalog({
+      version: '18.400.13',
+      manifestText,
+      craftText,
+    });
+    const module = catalog!.module(102_000_033n)!;
+
+    expect(craftTableModuleStageMaxLevel(module, townHallLevel)).toBeNull();
+    expect(assessCraftTableModuleLevel(module, module.maxLevel, townHallLevel)).toMatchObject({
+      currentStageMaxLevel: null,
+      status: 'unknown',
+    });
+  });
 });
 
 function setFirstLevel(module: Record<string, unknown>, key: string, value: unknown): void {

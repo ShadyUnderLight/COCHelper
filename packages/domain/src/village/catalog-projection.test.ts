@@ -230,6 +230,20 @@ describe('VillageCatalogProjection', () => {
     expect(globalMaxedWithoutTownHall?.missingReason).toContain('缺少大本营等级');
   });
 
+  it.each([
+    ['超出游戏范围', 19],
+    ['零级', 0],
+    ['负数', -1],
+    ['小数', 1.5],
+    ['NaN', Number.NaN],
+    ['超出安全整数范围', Number.MAX_SAFE_INTEGER + 1],
+  ])('非法大本营等级不确认精工防御模组满级状态：%s', (_name, townHallLevel) => {
+    const item = projectCraftTableModule({ level: 10, townHallLevel });
+
+    expect(item?.status).toBe('unknown');
+    expect(item?.currentStageMaxLevel).toBeNull();
+  });
+
   it('精工防御模组目录等级缺失或账号等级越界时保持未知', () => {
     const missingLevels = projectCraftTableModule({
       level: 1,

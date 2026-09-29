@@ -33,12 +33,17 @@ export type CraftTableModuleLevelAssessment = {
   readonly missingReason: string | null;
 };
 
+function isValidTownHallLevel(level: number): boolean {
+  return Number.isSafeInteger(level) && level >= 1 && level <= UNIVERSE_TOWN_HALL_COUNT;
+}
+
 export function craftTableModuleStageMaxLevel(
   module: CraftTableModuleSpec,
   townHallLevel: number | null,
 ): number | null {
   if (
     townHallLevel === null ||
+    !isValidTownHallLevel(townHallLevel) ||
     !Number.isSafeInteger(module.maxLevel) ||
     module.maxLevel < 1 ||
     module.levels.length !== module.maxLevel
@@ -100,6 +105,13 @@ export function assessCraftTableModuleLevel(
       currentStageMaxLevel: null,
       status: 'unknown',
       missingReason: '快照缺少大本营等级，无法验证精工防御模组的当前阶段上限。',
+    };
+  }
+  if (!isValidTownHallLevel(townHallLevel)) {
+    return {
+      currentStageMaxLevel: null,
+      status: 'unknown',
+      missingReason: '快照中的大本营等级无效，无法验证精工防御模组的当前阶段上限。',
     };
   }
   if (currentStageMaxLevel === null) {

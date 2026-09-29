@@ -97,6 +97,20 @@ describe('CraftTableProjection', () => {
     expect(module?.missingReason).toContain('缺少大本营等级');
   });
 
+  it.each([
+    ['超出游戏范围', 19],
+    ['零级', 0],
+    ['负数', -1],
+    ['小数', 1.5],
+    ['NaN', Number.NaN],
+    ['超出安全整数范围', Number.MAX_SAFE_INTEGER + 1],
+  ])('公开模组投影拒绝非法大本营等级：%s', (_name, townHallLevel) => {
+    const module = projectModule(3, townHallLevel);
+
+    expect(module?.status).toBe('unknown');
+    expect(module?.currentStageMaxLevel).toBeNull();
+  });
+
   it('公开模组投影拒绝非单调的大本营阶段门槛', () => {
     const module = projectModule(1, 3, [
       { level: 1, requiredTownHallLevel: 1 },

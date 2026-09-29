@@ -130,7 +130,7 @@ function snapshot(item: AccountItem = accountItem()): AccountSnapshot {
   };
 }
 
-function craftTableVillage(): ReturnType<typeof createVillageProfile> {
+function craftTableVillage(townHallLevel = 12): ReturnType<typeof createVillageProfile> {
   const module = {
     ...accountItem(),
     id: 'buildings:0.types.0.modules.0',
@@ -154,7 +154,7 @@ function craftTableVillage(): ReturnType<typeof createVillageProfile> {
     ...accountItem(),
     id: 'buildings:1',
     dataID: ITEM_DATA_ID,
-    level: 12,
+    level: townHallLevel,
     timerSeconds: null,
     remainingSeconds: null,
   };
@@ -510,6 +510,37 @@ describe('projection DTO effective state mapping', () => {
 
     const dto = toVillageItemStateDto({ ...module, currentStageMaxLevel: Number.NaN });
     expect(dto.maxLevel).toBeNull();
+    expect(dto.currentStageMaxLevel).toBeNull();
+    expect(villageDetailPayloadSchema.safeParse(villageDetailWithItem(dto)).success).toBe(true);
+  });
+
+  it.each([
+    ['超出游戏范围', 19],
+    ['零级', 0],
+    ['负数', -1],
+    ['小数', 1.5],
+    ['NaN', Number.NaN],
+    ['超出安全整数范围', Number.MAX_SAFE_INTEGER + 1],
+  ])('非法大本营等级沿 Village 投影和 DTO 保持 unknown：%s', (_name, townHallLevel) => {
+    const text = craftTableCatalogText();
+    const craftTableCatalog = loadCraftTableCatalog({
+      version: '18.400.13',
+      manifestText: text.manifestText,
+      craftText: text.craftText,
+    });
+    const projection = projectVillageCatalog({
+      village: craftTableVillage(townHallLevel),
+      catalog: catalog(),
+      craftTableCatalog,
+      base: 'home',
+      nowMs: IMPORTED_AT_MS,
+    });
+    const module = projection.items.find((item) => item.dataID === CRAFT_MODULE_DATA_ID)!;
+
+    expect(module.status).toBe('unknown');
+    expect(module.currentStageMaxLevel).toBeNull();
+    const dto = toVillageItemStateDto(module);
+    expect(dto.status).toBe('unknown');
     expect(dto.currentStageMaxLevel).toBeNull();
     expect(villageDetailPayloadSchema.safeParse(villageDetailWithItem(dto)).success).toBe(true);
   });

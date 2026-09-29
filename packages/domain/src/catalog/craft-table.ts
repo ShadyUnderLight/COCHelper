@@ -1,5 +1,5 @@
 import { decodeCatalogManifest, decodeJsonFile } from './json-decode';
-import type { CatalogManifest } from './types';
+import { UNIVERSE_TOWN_HALL_COUNT, type CatalogManifest } from './types';
 
 export type CraftTableDefenseSpec = {
   readonly dataID: bigint;
@@ -47,16 +47,20 @@ export function craftTableModuleStageMaxLevel(
   }
 
   const levels = [...module.levels].sort((left, right) => left.level - right.level);
-  if (
-    !levels.every(
-      (level, index) =>
-        level.level === index + 1 &&
-        level.requiredTownHallLevel !== null &&
-        Number.isSafeInteger(level.requiredTownHallLevel) &&
-        level.requiredTownHallLevel >= 1,
-    )
-  ) {
-    return null;
+  let previousRequiredTownHallLevel = 0;
+  for (const [index, level] of levels.entries()) {
+    const requiredTownHallLevel = level.requiredTownHallLevel;
+    if (
+      level.level !== index + 1 ||
+      requiredTownHallLevel === null ||
+      !Number.isSafeInteger(requiredTownHallLevel) ||
+      requiredTownHallLevel < 1 ||
+      requiredTownHallLevel > UNIVERSE_TOWN_HALL_COUNT ||
+      requiredTownHallLevel < previousRequiredTownHallLevel
+    ) {
+      return null;
+    }
+    previousRequiredTownHallLevel = requiredTownHallLevel;
   }
 
   let highest: number | null = null;
@@ -192,23 +196,55 @@ function decodeDefense(raw: Record<string, unknown>): CraftTableDefenseSpec {
 }
 
 function decodeModule(raw: Record<string, unknown>): CraftTableModuleSpec {
+  const maxLevel = requireCatalogInteger(raw.maxLevel, 'maxLevel', 1, Number.MAX_SAFE_INTEGER);
+  const levels = (raw.levels as Array<Record<string, unknown>>).map((level) => ({
+    level: requireCatalogInteger(level.level, 'level', 1, maxLevel),
+    requiredTownHallLevel: requireCatalogInteger(
+      level.requiredTownHallLevel,
+      'requiredTownHallLevel',
+      1,
+      UNIVERSE_TOWN_HALL_COUNT,
+    ),
+  }));
+  const orderedLevels = [...levels].sort((left, right) => left.level - right.level);
+  let previousRequiredTownHallLevel = 0;
+  if (orderedLevels.length !== maxLevel) {
+    throw new TypeError('精工防御模组等级或大本营门槛目录不合法。');
+  }
+  for (const [index, level] of orderedLevels.entries()) {
+    if (level.level !== index + 1 || level.requiredTownHallLevel < previousRequiredTownHallLevel) {
+      throw new TypeError('精工防御模组等级或大本营门槛目录不合法。');
+    }
+    previousRequiredTownHallLevel = level.requiredTownHallLevel;
+  }
+
   return {
     dataID: BigInt(raw.dataID as number | string | bigint),
     name: String(raw.name),
     sourceName: String(raw.sourceName),
     statTypes: (raw.statTypes as string[]).map(String),
     displayTitles: (raw.displayTitles as string[]).map(String),
-    maxLevel: Number(raw.maxLevel),
-    levels: (raw.levels as Array<Record<string, unknown>>).map((level) => ({
-      level: Number(level.level),
-      requiredTownHallLevel: nullableNumber(level.requiredTownHallLevel),
-    })),
+    maxLevel,
+    levels,
     lifecycle: decodeLifecycle(raw.lifecycle),
   };
 }
 
-function nullableNumber(value: unknown): number | null {
-  return value === null || value === undefined ? null : Number(value);
+function requireCatalogInteger(
+  value: unknown,
+  field: string,
+  minimum: number,
+  maximum: number,
+): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new TypeError(`精工防御目录字段 ${field} 必须是范围内的安全整数。`);
+  }
+  return value;
 }
 
 function decodeLifecycle(value: unknown): 'permanent' | 'seasonalCandidate' | null {

@@ -11,6 +11,7 @@ import {
   INITIAL_APP_SESSION,
   isCurrentEpoch,
   mergePrepareFollowUp,
+  resolvePreviewAfterSnapshot,
   resolveCommitGeneration,
   shouldAcceptSnapshot,
   type AppSessionState,
@@ -55,11 +56,12 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
         return;
       }
       cursorRef.current = cursorFromSnapshot(snapshot);
-      setState((prev) => {
-        const next = applyAcceptedSnapshot(prev, snapshot);
-        setPreview(next.preview);
-        return next;
-      });
+      const nextPreview = resolvePreviewAfterSnapshot(previewRef.current, snapshot);
+      setPreview(nextPreview);
+      setState((prev) => ({
+        ...applyAcceptedSnapshot(prev, snapshot),
+        preview: nextPreview,
+      }));
     },
     [setPreview],
   );
@@ -127,6 +129,7 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
         setState((prev) => applyActionError(prev, formatIpcError(result.error)));
         if (result.error.code === 'conflict') {
           await refresh();
+          setState((prev) => applyActionError(prev, formatIpcError(result.error)));
         }
         return false;
       }
@@ -219,8 +222,8 @@ export function useAppSession(bridge: BridgeSnapshotClient): AppSessionApi {
     const resolution = resolveCommitGeneration(previewRef.current, cursorRef.current);
     if (!resolution.ok) {
       setPreview(null);
-      setState((prev) => applyActionError({ ...prev, preview: null }, resolution.reason));
       await refresh();
+      setState((prev) => applyActionError({ ...prev, preview: null }, resolution.reason));
       return;
     }
     const expectedGeneration = resolution.expectedGeneration;

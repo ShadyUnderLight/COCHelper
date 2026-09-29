@@ -8,7 +8,15 @@ import { projectCraftTable } from './craft-table-projection';
 
 const MODULE_DATA_ID = 102_000_033n;
 
-function projectModule(level: number, townHallLevel: number | null) {
+function projectModule(
+  level: number,
+  townHallLevel: number | null,
+  levels = [
+    { level: 1, requiredTownHallLevel: 1 },
+    { level: 2, requiredTownHallLevel: 2 },
+    { level: 3, requiredTownHallLevel: 3 },
+  ],
+) {
   const module = makeAccountItem({
     section: 'buildings',
     dataID: MODULE_DATA_ID,
@@ -56,11 +64,7 @@ function projectModule(level: number, townHallLevel: number | null) {
         statTypes: ['Hitpoints'],
         displayTitles: ['生命值'],
         maxLevel: 3,
-        levels: [
-          { level: 1, requiredTownHallLevel: 1 },
-          { level: 2, requiredTownHallLevel: 2 },
-          { level: 3, requiredTownHallLevel: 3 },
-        ],
+        levels,
         lifecycle: null,
       },
     ],
@@ -91,5 +95,16 @@ describe('CraftTableProjection', () => {
 
     expect(module?.status).toBe('unknown');
     expect(module?.missingReason).toContain('缺少大本营等级');
+  });
+
+  it('公开模组投影拒绝非单调的大本营阶段门槛', () => {
+    const module = projectModule(1, 3, [
+      { level: 1, requiredTownHallLevel: 1 },
+      { level: 2, requiredTownHallLevel: 3 },
+      { level: 3, requiredTownHallLevel: 2 },
+    ]);
+
+    expect(module?.status).toBe('unknown');
+    expect(module?.currentStageMaxLevel).toBeNull();
   });
 });

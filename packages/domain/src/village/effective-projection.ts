@@ -397,10 +397,7 @@ function makeEffectiveState(input: {
     if (observedActiveItems.length > 0) {
       provenance.push('importedActive');
     }
-  } else if (
-    manualItem?.status === 'manualCompleted' &&
-    !importedActiveDominatesManualCompletion
-  ) {
+  } else if (manualItem?.status === 'manualCompleted' && !importedActiveDominatesManualCompletion) {
     status = 'manualCompleted';
     provenance.push('manualCompleted');
     if (observedNeedsReimport) {

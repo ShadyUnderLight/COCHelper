@@ -478,7 +478,9 @@ function isEffectivelyUpgrading(item: VillageItemState): boolean {
   if (state === undefined) {
     return isUpgrading(item);
   }
-  return state.status === 'manualActive' || state.status === 'importedActive';
+  return (
+    state.status === 'manualActive' || (state.status === 'importedActive' && isUpgrading(item))
+  );
 }
 
 function effectivelyNeedsReimport(item: VillageItemState): boolean {

@@ -327,7 +327,7 @@ describe('AppShell', () => {
     expect(screen.queryByLabelText('升级追踪')).toBeNull();
   });
 
-  it('无选中村庄时详情 tab 禁用', () => {
+  it('未选择村庄时从村庄列表选择并打开详情', async () => {
     render(
       <AppShell
         session={sessionApi({
@@ -339,11 +339,12 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    const tab = screen.getByRole('button', { name: '村庄详情' });
-    expect(tab.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: '村庄详情' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
+    await waitFor(() => expect(screen.getByLabelText('村庄详情')).toBeTruthy());
   });
 
-  it('有选中村庄可切详情', () => {
+  it('点击已选村庄可打开详情', () => {
     render(
       <AppShell
         session={sessionApi({
@@ -355,12 +356,12 @@ describe('AppShell', () => {
         detail={detailApi()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
+    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 1, name: '村庄详情' })).toBeTruthy();
   });
 
-  it('详情 route 点击当前村庄可进入升级追踪而不重复切换档案', () => {
+  it('详情 route 点击当前村庄仍显示详情且不重复切换档案', () => {
     const selectVillage = vi.fn(async () => true);
     function Shell() {
       const [route, setRoute] = useState<AppRoute>({
@@ -383,7 +384,7 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /主村/ }));
 
     expect(selectVillage).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
+    expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
 
   it('总览行点击切到详情', () => {
@@ -454,7 +455,7 @@ describe('AppShell', () => {
     });
   });
 
-  it('导入 route 下 sidebar 切换目标村庄时保留导入页面', async () => {
+  it('导入 route 下点击目标村庄后导航到该村详情', async () => {
     const onRouteChange = vi.fn();
     const selectVillage = vi.fn(async () => true);
     render(
@@ -477,9 +478,13 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /分村/ }));
 
     await waitFor(() => expect(selectVillage).toHaveBeenCalledWith('v2'));
+    expect(onRouteChange).toHaveBeenCalledWith({
+      kind: 'villageDetail',
+      villageId: 'v2',
+      base: 'home',
+    });
     expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
     expect(screen.queryByLabelText('升级追踪')).toBeNull();
-    expect(onRouteChange).not.toHaveBeenCalled();
   });
 
   it('详情 route 下 sidebar 选村失败时 route 不变', async () => {
@@ -531,7 +536,7 @@ describe('AppShell', () => {
         detail={detailApi(detailState)}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
+    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /分村/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
@@ -603,7 +608,7 @@ describe('AppShell', () => {
         detail={detailApi(detailState)}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '村庄详情' }));
+    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
     const homeTab = screen.getByRole('button', { name: '主村' });
     expect(homeTab.getAttribute('aria-pressed')).toBe('true');
   });

@@ -22,6 +22,7 @@ import {
 import { isReadOnly, type ImportPreviewState } from '../app-session';
 import {
   primaryTabOfRoute,
+  routeEquals,
   type AppRoute,
   type NavigateAction,
   type PrimaryTab,
@@ -90,23 +91,13 @@ export function AppShell({
     }
   };
 
-  const detailBaseForTab = (): TrackerBaseDto => detailRoute?.base ?? 'home';
-
-  const goToTab = (nextTab: PrimaryTab): void => {
+  const goToTab = (nextTab: Exclude<PrimaryTab, 'detail'>): void => {
     const nextRoute: AppRoute =
       nextTab === 'import'
         ? { kind: 'import' }
         : nextTab === 'overview'
           ? { kind: 'overview' }
-          : nextTab === 'info'
-            ? { kind: 'info', section: 'diagnostics' }
-            : snapshot === null || snapshot.selectedVillageId === null
-              ? activeRoute
-              : {
-                  kind: 'villageDetail',
-                  villageId: snapshot.selectedVillageId,
-                  base: detailBaseForTab(),
-                };
+          : { kind: 'info', section: 'diagnostics' };
     applyRoute(nextRoute);
   };
 
@@ -145,7 +136,6 @@ export function AppShell({
   const readOnly = isReadOnly(snapshot);
   const showRecovery = snapshot.availability === 'recovery';
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
-  const detailDisabled = snapshot.selectedVillageId === null;
   const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const canManual = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const openDetail = async (recordId: string, villageId: string) => {
@@ -175,21 +165,16 @@ export function AppShell({
   };
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
+    const routeWhenSelected = activeRouteRef.current;
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
     const currentRoute = activeRouteRef.current;
-    if (currentRoute.kind === 'villageDetail') {
-      applyRoute(
-        currentRoute.villageId === villageId
-          ? { kind: 'overview' }
-          : { kind: 'villageDetail', villageId, base: currentRoute.base },
-      );
+    if (currentRoute.kind !== 'villageDetail' && !routeEquals(currentRoute, routeWhenSelected)) {
       return;
     }
-    if (currentRoute.kind !== 'overview' && currentRoute.kind !== 'import') {
-      applyRoute({ kind: 'overview' });
-    }
+    const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
+    applyRoute({ kind: 'villageDetail', villageId, base });
   };
 
   const refreshCurrentPage = (): void => {
@@ -239,7 +224,6 @@ export function AppShell({
           <TabNav
             tab={tab}
             onChange={goToTab}
-            detailDisabled={detailDisabled}
             showDataTabs={showImport}
           />
 
@@ -584,8 +568,7 @@ function InfoPanel(props: {
 
 function TabNav(props: {
   readonly tab: PrimaryTab;
-  readonly onChange: (tab: PrimaryTab) => void;
-  readonly detailDisabled: boolean;
+  readonly onChange: (tab: Exclude<PrimaryTab, 'detail'>) => void;
   readonly showDataTabs: boolean;
 }) {
   return (
@@ -617,22 +600,6 @@ function TabNav(props: {
               </svg>
             </span>
             <span>导入</span>
-          </button>
-          <button
-            className="nav-item"
-            type="button"
-            aria-pressed={props.tab === 'detail'}
-            disabled={props.detailDisabled}
-            title={props.detailDisabled ? '先选择村庄' : undefined}
-            onClick={() => props.onChange('detail')}
-          >
-            <span className="nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M3.5 20V9.5l4-2.5 4 2.5V20M11.5 20V5.5l4-2 5 2.5V20M2.5 20h19" />
-                <path d="M6 12h3M15 9h3M15 13h3" />
-              </svg>
-            </span>
-            <span>村庄详情</span>
           </button>
         </>
       ) : null}

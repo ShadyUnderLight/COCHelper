@@ -27,6 +27,7 @@ type Props = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
   readonly villages: readonly VillageSummaryDto[];
+  readonly busy: boolean;
   readonly onSelect: (id: string) => void;
   readonly onRetry: () => void;
 };
@@ -36,6 +37,7 @@ function propsOf(state: OverviewState): Props {
     state,
     selectedId: null,
     villages: [],
+    busy: false,
     onSelect: () => undefined,
     onRetry: () => undefined,
   };

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiRefreshPayload, AppSnapshotPayload, Result } from '@coc-helper/contracts';
@@ -456,35 +456,33 @@ describe('AppShell', () => {
   });
 
   it('导入 route 下点击目标村庄后导航到该村详情', async () => {
-    const onRouteChange = vi.fn();
     const selectVillage = vi.fn(async () => true);
-    render(
-      <AppShell
-        session={{
-          ...sessionApi({
-            ...INITIAL_APP_SESSION,
-            status: 'ready',
-            snapshot: snapshot({ selectedVillageId: 'v1' }),
-          }),
-          selectVillage,
-        }}
-        overview={overviewApi()}
-        detail={detailApi()}
-        route={{ kind: 'import' }}
-        onRouteChange={onRouteChange}
-      />,
-    );
+    function ControlledRouteShell() {
+      const [route, setRoute] = useState<AppRoute>({ kind: 'import' });
+      return (
+        <AppShell
+          session={{
+            ...sessionApi({
+              ...INITIAL_APP_SESSION,
+              status: 'ready',
+              snapshot: snapshot({ selectedVillageId: 'v1' }),
+            }),
+            selectVillage,
+          }}
+          overview={overviewApi()}
+          detail={detailApi()}
+          route={route}
+          onRouteChange={setRoute}
+        />
+      );
+    }
+    render(<ControlledRouteShell />);
 
     fireEvent.click(screen.getByRole('button', { name: /分村/ }));
 
     await waitFor(() => expect(selectVillage).toHaveBeenCalledWith('v2'));
-    expect(onRouteChange).toHaveBeenCalledWith({
-      kind: 'villageDetail',
-      villageId: 'v2',
-      base: 'home',
-    });
-    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
-    expect(screen.queryByLabelText('升级追踪')).toBeNull();
+    await waitFor(() => expect(screen.getByLabelText('村庄详情')).toBeTruthy());
+    expect(screen.queryByLabelText('账号 JSON')).toBeNull();
   });
 
   it('详情 route 下 sidebar 选村失败时 route 不变', async () => {
@@ -755,6 +753,103 @@ describe('AppShell', () => {
     await act(async () => {});
     expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
+  });
+
+  it('总览选村写入 pending 时禁用其他村庄记录入口', async () => {
+    const villages = [
+      { id: 'v1', name: '主村', tag: '#AAA', hasImportedData: true },
+      { id: 'v2', name: '分村', tag: null, hasImportedData: false },
+      { id: 'v3', name: '三村', tag: null, hasImportedData: false },
+    ];
+    let updateSelection!: (busy: boolean, villageId?: string) => void;
+    let resolveSelection!: (ok: boolean) => void;
+    const selectVillage = vi.fn(
+      (villageId: string) =>
+        new Promise<boolean>((resolve) => {
+          updateSelection(true);
+          resolveSelection = (ok) => {
+            updateSelection(false, ok ? villageId : undefined);
+            resolve(ok);
+          };
+        }),
+    );
+    const overviewState = applyOverviewSuccess({
+      generation: 1,
+      nowMs: 1,
+      catalogVersion: '18.400.13',
+      catalogIsUsable: true,
+      active: [
+        recordFixture({ id: 'rec-v2', villageID: 'v2', villageName: '分村' }),
+        recordFixture({ id: 'rec-v3', villageID: 'v3', villageName: '三村' }),
+      ],
+      pending: [],
+      state: {
+        manualActiveCount: 0,
+        manualActiveRecords: [],
+        importedActiveCount: 0,
+        deduplicatedDisplayCount: 0,
+        manualCompletedCount: 0,
+        completedRecently: [],
+        activeRecords: [],
+        attentionRecords: [],
+        needsReimportRecords: [],
+      },
+    });
+
+    function ControlledShell() {
+      const [sessionState, setSessionState] = useState<AppSessionState>({
+        ...INITIAL_APP_SESSION,
+        status: 'ready',
+        snapshot: snapshot({ selectedVillageId: 'v1', villages }),
+      });
+      const [route, setRoute] = useState<AppRoute>({ kind: 'overview' });
+      updateSelection = (busy, villageId) => {
+        setSessionState((previous) => ({
+          ...previous,
+          busy,
+          snapshot:
+            previous.snapshot === null || villageId === undefined
+              ? previous.snapshot
+              : { ...previous.snapshot, selectedVillageId: villageId },
+        }));
+      };
+
+      return (
+        <>
+          <span data-testid="selected-village">{sessionState.snapshot?.selectedVillageId}</span>
+          <span data-testid="route-village">
+            {route.kind === 'villageDetail' ? route.villageId : route.kind}
+          </span>
+          <AppShell
+            session={{ ...sessionApi(sessionState), selectVillage }}
+            overview={overviewApi(overviewState)}
+            detail={detailApi()}
+            route={route}
+            onRouteChange={setRoute}
+          />
+        </>
+      );
+    }
+
+    render(<ControlledShell />);
+    const activeRecords = within(screen.getByLabelText('进行中'));
+    const v2RecordButton = activeRecords.getByRole('button', { name: /分村/ }) as HTMLButtonElement;
+    const v3RecordButton = activeRecords.getByRole('button', { name: /三村/ }) as HTMLButtonElement;
+
+    fireEvent.click(v2RecordButton);
+    expect(selectVillage).toHaveBeenCalledWith('v2');
+    expect(v3RecordButton.disabled).toBe(true);
+    fireEvent.click(v3RecordButton);
+    expect(selectVillage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSelection(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-village').textContent).toBe('v2');
+      expect(screen.getByTestId('route-village').textContent).toBe('v2');
+      expect(screen.getByLabelText('村庄详情')).toBeTruthy();
+    });
   });
 
   it('切换村庄 pending 时仍停留在总览，成功后才进详情', async () => {

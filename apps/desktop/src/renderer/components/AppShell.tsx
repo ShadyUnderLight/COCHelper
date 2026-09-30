@@ -340,6 +340,7 @@ export function AppShell({
                     state={overview.state}
                     selectedId={overview.selectedId}
                     villages={snapshot.villages}
+                    busy={state.busy}
                     onSelect={overview.select}
                     onOpenDetail={openDetail}
                     onRetry={() => void overview.refresh()}

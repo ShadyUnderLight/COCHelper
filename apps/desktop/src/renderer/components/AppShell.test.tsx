@@ -1188,7 +1188,7 @@ describe('AppShell Official 接线（#277-E1）', () => {
     });
   });
 
-  it('详情页 War Log never 状态不显示没有历史记录', async () => {
+  it('部落详情 War Log never 状态不显示没有历史记录', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
@@ -1196,7 +1196,7 @@ describe('AppShell Official 接线（#277-E1）', () => {
         overview={overviewApi()}
         detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {

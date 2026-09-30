@@ -19,7 +19,7 @@ export type BridgeOfficialClanWarClient = Pick<
   | 'cancel'
 >;
 
-/** 村庄详情页 Official 卡片所需的完整 bridge（Player/Clan + War 族）。 */
+/** 部落详情页官方卡片所需的完整 bridge（Player/Clan + War 族）。 */
 export type BridgeOfficialVillageClient = BridgeOfficialClient & BridgeOfficialClanWarClient;
 
 export type OfficialClanWarBundleApi = {

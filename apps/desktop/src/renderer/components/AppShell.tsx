@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppSnapshotPayload, TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
@@ -77,8 +77,12 @@ export function AppShell({
   const villageSelectionPendingRef = useRef(false);
   const [villageSelectionPending, setVillageSelectionPending] = useState(false);
   const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const clanDetailRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     tokenSettingsRefreshRef.current = refresh;
+  }, []);
+  const registerClanDetailRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
+    clanDetailRefreshRef.current = refresh;
   }, []);
   activeRouteRef.current = activeRoute;
   const { state, recoveryStatus } = session;
@@ -249,6 +253,8 @@ export function AppShell({
       void overview.refresh();
     } else if (tab === 'detail') {
       void detail.refresh();
+    } else if (tab === 'clan') {
+      void clanDetailRefreshRef.current?.();
     } else if (tab === 'info') {
       if (activeRoute.kind === 'info' && activeRoute.section === 'tokenSettings') {
         void tokenSettingsRefreshRef.current?.();
@@ -385,6 +391,7 @@ export function AppShell({
                     official={official}
                     officialBridge={officialBridge}
                     snapshot={snapshot}
+                    onRefreshReady={registerClanDetailRefresh}
                   />
                 ) : null}
                 {showImport && tab === 'overview' ? (
@@ -503,12 +510,19 @@ function OfficialClanDetailPage(props: {
   readonly official?: OfficialVillageApi;
   readonly officialBridge?: BridgeOfficialVillageClient;
   readonly snapshot: AppSnapshotPayload;
+  readonly onRefreshReady: (refresh: (() => Promise<void>) | null) => void;
 }) {
   const villageId = props.snapshot.selectedVillageId;
   const page = (
     official: OfficialVillageApi | undefined,
     officialWar?: OfficialClanWarBundleApi,
-  ) => <ClanDetail official={official} officialWar={officialWar} />;
+  ) => (
+    <OfficialClanDetailContent
+      official={official}
+      officialWar={officialWar}
+      onRefreshReady={props.onRefreshReady}
+    />
+  );
   if (props.officialBridge === undefined || villageId === null) {
     return page(villageId === null ? undefined : props.official);
   }
@@ -529,6 +543,36 @@ function OfficialClanDetailPage(props: {
       )}
     </OfficialVillageHost>
   );
+}
+
+function OfficialClanDetailContent(props: {
+  readonly official?: OfficialVillageApi;
+  readonly officialWar?: OfficialClanWarBundleApi;
+  readonly onRefreshReady: (refresh: (() => Promise<void>) | null) => void;
+}) {
+  const refreshRef = useRef<(() => Promise<void>) | null>(null);
+  if (props.official === undefined) {
+    refreshRef.current = null;
+  } else {
+    refreshRef.current = async () => {
+      await Promise.all([
+        props.official?.refreshClan(),
+        props.officialWar?.clanWar.refresh(),
+        props.officialWar?.warLog.refresh(),
+        props.officialWar?.capitalRaid.refresh(),
+      ]);
+    };
+  }
+  const refresh = useCallback(async () => {
+    await refreshRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    props.onRefreshReady(refresh);
+    return () => props.onRefreshReady(null);
+  }, [props.onRefreshReady, refresh]);
+
+  return <ClanDetail official={props.official} officialWar={props.officialWar} />;
 }
 
 function OfficialVillageDetail(props: {

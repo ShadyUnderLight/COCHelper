@@ -975,6 +975,13 @@ async function goToVillageDetails(page) {
   return performance.now() - start;
 }
 
+async function goToClanDetails(page) {
+  const start = performance.now();
+  await page.getByRole('button', { name: '部落详情', exact: true }).click();
+  await page.locator('section[aria-label="部落详情"]').waitFor({ state: 'visible' });
+  return performance.now() - start;
+}
+
 async function beginRendererCommitMeasure(page, kind) {
   await page.evaluate((phase) => {
     const endMark = `coc-helper:renderer:${phase}:commit`;
@@ -1841,7 +1848,7 @@ async function measureViews(session, includeOfficial) {
   if (includeOfficial) {
     const clanTag = manifest.official.clanTag;
     const officialNavigation = await measureProcessPhase(session, async () => {
-      await goToVillageDetails(page);
+      await goToClanDetails(page);
       await settleCatalogRequests(page, probe);
       return await exerciseOfficialPagination(page, session.context);
     });

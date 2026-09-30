@@ -70,12 +70,16 @@ export function useOfficialVillage(
 ): OfficialVillageApi {
   const [playerRefreshing, setPlayerRefreshing] = useState(false);
   const [clanRefreshing, setClanRefreshing] = useState(false);
+  const [playerRefreshRevision, setPlayerRefreshRevision] = useState(0);
   const [playerCommandError, setPlayerCommandError] = useState<CommandError | null>(null);
   const [clanCommandError, setClanCommandError] = useState<CommandError | null>(null);
   const playerOpRef = useRef<OfficialOp | null>(null);
   const clanOpRef = useRef<OfficialOp | null>(null);
   const playerEpochRef = useRef(0);
   const clanEpochRef = useRef(0);
+  const playerRefreshRevisionRef = useRef(0);
+  const playerRefreshWaitersRef = useRef(new Map<number, () => void>());
+  const mountedRef = useRef(false);
   const villageIdRef = useRef(villageId);
   villageIdRef.current = villageId;
   const playerSubjectRef = useRef<string | null>(null);
@@ -177,7 +181,19 @@ export function useOfficialVillage(
   }, [bridge, clanSubject]);
 
   useEffect(() => {
+    // refreshPlayer resolves after its query state is visible to route consumers.
+    for (const [revision, resolve] of playerRefreshWaitersRef.current) {
+      if (revision <= playerRefreshRevision) {
+        playerRefreshWaitersRef.current.delete(revision);
+        resolve();
+      }
+    }
+  }, [playerRefreshRevision]);
+
+  useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       playerEpochRef.current += 1;
       clanEpochRef.current += 1;
       const playerOp = playerOpRef.current;
@@ -190,6 +206,10 @@ export function useOfficialVillage(
       if (clanOp !== null) {
         bridge.cancel({ requestId: clanOp.requestId });
       }
+      for (const resolve of playerRefreshWaitersRef.current.values()) {
+        resolve();
+      }
+      playerRefreshWaitersRef.current.clear();
     };
   }, [bridge]);
 
@@ -301,6 +321,15 @@ export function useOfficialVillage(
 
   const refreshPlayer = useCallback(async () => {
     await refreshEndpoint('player');
+    if (!mountedRef.current) {
+      return;
+    }
+    const revision = playerRefreshRevisionRef.current + 1;
+    playerRefreshRevisionRef.current = revision;
+    await new Promise<void>((resolve) => {
+      playerRefreshWaitersRef.current.set(revision, resolve);
+      setPlayerRefreshRevision(revision);
+    });
   }, [refreshEndpoint]);
 
   const refreshClan = useCallback(async () => {

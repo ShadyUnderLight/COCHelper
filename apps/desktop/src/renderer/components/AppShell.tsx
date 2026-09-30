@@ -550,26 +550,40 @@ function OfficialClanDetailContent(props: {
   readonly officialWar?: OfficialClanWarBundleApi;
   readonly onRefreshReady: (refresh: (() => Promise<void>) | null) => void;
 }) {
-  const refreshRef = useRef<(() => Promise<void>) | null>(null);
-  if (props.official === undefined) {
-    refreshRef.current = null;
-  } else {
-    refreshRef.current = async () => {
-      await Promise.all([
-        props.official?.refreshClan(),
-        props.officialWar?.clanWar.refresh(),
-        props.officialWar?.warLog.refresh(),
-        props.officialWar?.capitalRaid.refresh(),
-      ]);
-    };
-  }
+  const officialRef = useRef(props.official);
+  officialRef.current = props.official;
+  const officialWarRef = useRef(props.officialWar);
+  officialWarRef.current = props.officialWar;
+  const activeRef = useRef(false);
   const refresh = useCallback(async () => {
-    await refreshRef.current?.();
+    const official = officialRef.current;
+    if (official === undefined) {
+      return;
+    }
+    await official.refreshPlayer();
+    if (!activeRef.current) {
+      return;
+    }
+    const refreshedOfficial = officialRef.current;
+    if (refreshedOfficial === undefined) {
+      return;
+    }
+    const officialWar = officialWarRef.current;
+    await Promise.all([
+      refreshedOfficial.refreshClan(),
+      officialWar?.clanWar.refresh(),
+      officialWar?.warLog.refresh(),
+      officialWar?.capitalRaid.refresh(),
+    ]);
   }, []);
 
   useEffect(() => {
+    activeRef.current = true;
     props.onRefreshReady(refresh);
-    return () => props.onRefreshReady(null);
+    return () => {
+      activeRef.current = false;
+      props.onRefreshReady(null);
+    };
   }, [props.onRefreshReady, refresh]);
 
   return <ClanDetail official={props.official} officialWar={props.officialWar} />;

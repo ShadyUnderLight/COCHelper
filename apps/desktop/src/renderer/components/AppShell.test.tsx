@@ -1131,15 +1131,15 @@ describe('AppShell Official 接线（#277-E1）', () => {
     expect(clockStore.getSnapshot()).toBe(1000);
   });
 
-  it('详情页玩家查询未完成时不显示不在部落中', async () => {
+  it('部落详情玩家查询未完成时不显示不在部落中', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
         session={readySession()}
         overview={overviewApi()}
-        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        detail={detailApi()}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {
@@ -1149,15 +1149,15 @@ describe('AppShell Official 接线（#277-E1）', () => {
     expect(screen.getAllByText('尚未确认部落归属').length).toBeGreaterThan(0);
   });
 
-  it('详情页玩家确认无部落时显示不在部落中', async () => {
+  it('部落详情玩家确认无部落时显示不在部落中', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
         session={readySession()}
         overview={overviewApi()}
-        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        detail={detailApi()}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {

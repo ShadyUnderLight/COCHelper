@@ -406,6 +406,9 @@ function makeEffectiveState(input: {
   } else if (observedNeedsReimport) {
     status = 'needsReimport';
     provenance.push('needsReimport');
+    if (observedActiveItems.length > 0) {
+      provenance.push('importedActive');
+    }
   } else if (observedActiveItems.length > 0) {
     status = 'importedActive';
     provenance.push('importedActive');
@@ -527,7 +530,14 @@ function effectiveStateForItem(
   if (key === undefined) {
     return undefined;
   }
-  return states.get(trackerItemKeyStableId(key));
+  const state = states.get(trackerItemKeyStableId(key));
+  if (state?.status !== 'needsReimport' || (item.remainingSeconds ?? 0n) <= 0n) {
+    return state;
+  }
+  return {
+    ...state,
+    status: 'importedActive',
+  };
 }
 
 function attachEffectiveState(

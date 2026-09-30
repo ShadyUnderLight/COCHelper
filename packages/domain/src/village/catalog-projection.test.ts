@@ -23,6 +23,7 @@ import {
 } from '../manual/core';
 import { trackerItemKeyRoot } from '../manual/types';
 import type { EffectiveVillageItemState } from './effective-projection';
+import { effectiveDetailMissingReason } from './effective-view';
 import { villageDetailTotalCompletion } from './village-detail-projection';
 import { CRAFT_TABLE_DATA_ID } from './display-category';
 
@@ -516,6 +517,64 @@ describe('VillageCatalogProjection', () => {
     expect(completion.completedCount).toBe(1);
     expect(group.trackerState.status).toBe('importedActive');
     expect(group.summary.completeness).toBe('complete');
+  });
+
+  it('同 key 混有到期与活动计时行时保留各自行状态和组级提醒', () => {
+    const village = makeTestVillage({
+      buildings: [
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+          path: '0',
+        }),
+        makeAccountItem({
+          section: 'buildings',
+          dataID: 1_000_001n,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 0n,
+          path: '1',
+        }),
+      ],
+    });
+    const itemKey = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
+    const distribution = createManualLevelDistributionFromPairs([[1, 2n]]);
+    const manualUpgradeCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: { revision: 'snapshot-1', lineageID: null },
+          imported: distribution,
+          manual: distribution,
+          status: 'manualCompleted',
+          sourceTimestampMs: TEST_IMPORTED_AT_MS,
+        }),
+      ],
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog,
+      base: 'home',
+      nowMs: TEST_IMPORTED_AT_MS,
+      manualUpgradeCore,
+    });
+    const activeItem = projection.items.find((item) => item.remainingSeconds === 200n);
+    const expiredItem = projection.items.find((item) => item.remainingSeconds === 0n);
+    const trackerState = projection.effectiveTrackerItems[0] as
+      EffectiveVillageItemState | undefined;
+
+    expect(projection.items).toHaveLength(2);
+    expect(trackerState?.status).toBe('needsReimport');
+    expect(trackerState?.provenance).toEqual(
+      expect.arrayContaining(['importedActive', 'needsReimport']),
+    );
+    expect(activeItem?.effectiveState).toMatchObject({ status: 'importedActive' });
+    expect(expiredItem?.effectiveState).toMatchObject({ status: 'needsReimport' });
+    expect(effectiveDetailMissingReason(activeItem!)).toBeNull();
+    expect(effectiveDetailMissingReason(expiredItem!)).toContain('重新导入快照');
   });
 
   it('未知 dataID 保留诊断', () => {

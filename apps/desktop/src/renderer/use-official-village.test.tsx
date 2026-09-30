@@ -17,6 +17,7 @@ import { clanFixture, playerFixture } from './official-session.fixtures';
 import {
   useOfficialVillage,
   type BridgeOfficialClient,
+  type OfficialPlayerRefreshResult,
   type OfficialVillageApi,
 } from './use-official-village';
 
@@ -643,7 +644,7 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('Hero');
     });
-    let pending: Promise<void> = Promise.resolve();
+    let pending!: Promise<OfficialPlayerRefreshResult>;
     act(() => {
       pending = result.current.refreshPlayer();
     });
@@ -672,6 +673,43 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.player.summary?.name).toBe('NewHero');
     });
+    expect(result.current.playerRefreshing).toBe(false);
+  });
+
+  it('玩家状态重查失败时 refreshPlayer 返回 failed', async () => {
+    const harness = createBridge();
+    const { result } = renderHook(() => useOfficialVillage(harness.bridge, snapshot(), 'v1'));
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(result.current.player.canRefresh).toBe(true);
+    });
+
+    let pending!: Promise<OfficialPlayerRefreshResult>;
+    act(() => {
+      pending = result.current.refreshPlayer();
+    });
+    await waitFor(() => {
+      expect(harness.refreshPending()).toBe(1);
+    });
+    await act(async () => {
+      harness.resolveRefresh(ok({ generation: 2, results: [] }));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(2);
+    });
+
+    const refreshResult: { current: OfficialPlayerRefreshResult | null } = { current: null };
+    await act(async () => {
+      harness.resolvePlayer(err('刷新后玩家状态读取失败'));
+      refreshResult.current = await pending;
+    });
+    expect(refreshResult.current?.status).toBe('failed');
+    expect(result.current.player.lastQueryError).toMatch(/刷新后玩家状态读取失败/);
     expect(result.current.playerRefreshing).toBe(false);
   });
 
@@ -779,7 +817,7 @@ describe('useOfficialVillage（#277-E1）', () => {
     await waitFor(() => {
       expect(result.current.player.canRefresh).toBe(true);
     });
-    let firstRefresh: Promise<void> = Promise.resolve();
+    let firstRefresh!: Promise<OfficialPlayerRefreshResult>;
     act(() => {
       firstRefresh = result.current.refreshPlayer();
     });
@@ -787,7 +825,7 @@ describe('useOfficialVillage（#277-E1）', () => {
       expect(harness.refreshPending()).toBe(1);
     });
     const firstRequestId = vi.mocked(harness.bridge.apiRefresh).mock.calls[0]?.[0]?.requestId;
-    let secondRefresh: Promise<void> = Promise.resolve();
+    let secondRefresh!: Promise<OfficialPlayerRefreshResult>;
     act(() => {
       secondRefresh = result.current.refreshPlayer();
     });

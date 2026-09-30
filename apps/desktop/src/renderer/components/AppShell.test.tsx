@@ -755,19 +755,23 @@ describe('AppShell', () => {
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
   });
 
-  it('总览选村写入 pending 时禁用其他村庄记录入口', async () => {
+  it('选村刷新 pending 且 session busy 已释放时仍禁用其他村庄入口', async () => {
     const villages = [
       { id: 'v1', name: '主村', tag: '#AAA', hasImportedData: true },
       { id: 'v2', name: '分村', tag: null, hasImportedData: false },
       { id: 'v3', name: '三村', tag: null, hasImportedData: false },
     ];
     let updateSelection!: (busy: boolean, villageId?: string) => void;
+    let releaseBusy!: () => void;
     let resolveSelection!: (ok: boolean) => void;
+    let selectionResolved = false;
     const selectVillage = vi.fn(
       (villageId: string) =>
         new Promise<boolean>((resolve) => {
           updateSelection(true);
+          releaseBusy = () => updateSelection(false, villageId);
           resolveSelection = (ok) => {
+            selectionResolved = true;
             updateSelection(false, ok ? villageId : undefined);
             resolve(ok);
           };
@@ -817,6 +821,7 @@ describe('AppShell', () => {
       return (
         <>
           <span data-testid="selected-village">{sessionState.snapshot?.selectedVillageId}</span>
+          <span data-testid="session-busy">{String(sessionState.busy)}</span>
           <span data-testid="route-village">
             {route.kind === 'villageDetail' ? route.villageId : route.kind}
           </span>
@@ -835,16 +840,32 @@ describe('AppShell', () => {
     const activeRecords = within(screen.getByLabelText('进行中'));
     const v2RecordButton = activeRecords.getByRole('button', { name: /分村/ }) as HTMLButtonElement;
     const v3RecordButton = activeRecords.getByRole('button', { name: /三村/ }) as HTMLButtonElement;
+    const villageSidebar = within(screen.getByLabelText('村庄列表'));
+    const v3SidebarButton = villageSidebar.getByRole('button', {
+      name: /三村/,
+    }) as HTMLButtonElement;
 
     fireEvent.click(v2RecordButton);
     expect(selectVillage).toHaveBeenCalledWith('v2');
+    expect(screen.getByTestId('session-busy').textContent).toBe('true');
     expect(v3RecordButton.disabled).toBe(true);
+    expect(v3SidebarButton.disabled).toBe(true);
+
+    await act(async () => {
+      releaseBusy();
+    });
+    expect(screen.getByTestId('session-busy').textContent).toBe('false');
+    expect(selectionResolved).toBe(false);
+    expect(v3RecordButton.disabled).toBe(true);
+    expect(v3SidebarButton.disabled).toBe(true);
     fireEvent.click(v3RecordButton);
+    fireEvent.click(v3SidebarButton);
     expect(selectVillage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveSelection(true);
     });
+    expect(selectionResolved).toBe(true);
     await waitFor(() => {
       expect(screen.getByTestId('selected-village').textContent).toBe('v2');
       expect(screen.getByTestId('route-village').textContent).toBe('v2');

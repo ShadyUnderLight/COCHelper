@@ -72,6 +72,9 @@ export function AppShell({
   const activeRoute = route ?? internalRoute;
   const activeRouteRef = useRef(activeRoute);
   const navigationIntentRef = useRef(0);
+  // session.busy clears before selectVillage finishes its snapshot refresh.
+  const villageSelectionPendingRef = useRef(false);
+  const [villageSelectionPending, setVillageSelectionPending] = useState(false);
   const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     tokenSettingsRefreshRef.current = refresh;
@@ -142,27 +145,50 @@ export function AppShell({
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
   const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const canManual = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
+  const villageSelectionBusy = state.busy || villageSelectionPending;
+  const isVillageSelectionLocked = (): boolean => state.busy || villageSelectionPendingRef.current;
+  const lockVillageSelection = (): void => {
+    villageSelectionPendingRef.current = true;
+    setVillageSelectionPending(true);
+  };
+  const unlockVillageSelection = (): void => {
+    villageSelectionPendingRef.current = false;
+    setVillageSelectionPending(false);
+  };
   const openDetail = async (recordId: string, villageId: string) => {
+    if (isVillageSelectionLocked()) {
+      return;
+    }
+    const needsVillageChange = villageId !== snapshot.selectedVillageId;
     const navigationIntentWhenOpened = navigationIntentRef.current;
-    overview.select(recordId);
-    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
-      return;
+    if (needsVillageChange) {
+      lockVillageSelection();
     }
-    if (navigationIntentRef.current !== navigationIntentWhenOpened) {
-      return;
-    }
-    const currentRoute = activeRouteRef.current;
-    if (currentRoute.kind === 'overview') {
-      if (navigate !== undefined) {
-        navigationIntentRef.current += 1;
-        navigate({ type: 'openVillageDetail', villageId, base: 'home' });
-      } else {
-        applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+    try {
+      overview.select(recordId);
+      if (needsVillageChange && !(await session.selectVillage(villageId))) {
+        return;
       }
-      return;
-    }
-    if (currentRoute.kind === 'villageDetail') {
-      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+      if (navigationIntentRef.current !== navigationIntentWhenOpened) {
+        return;
+      }
+      const currentRoute = activeRouteRef.current;
+      if (currentRoute.kind === 'overview') {
+        if (navigate !== undefined) {
+          navigationIntentRef.current += 1;
+          navigate({ type: 'openVillageDetail', villageId, base: 'home' });
+        } else {
+          applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+        }
+        return;
+      }
+      if (currentRoute.kind === 'villageDetail') {
+        applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+      }
+    } finally {
+      if (needsVillageChange) {
+        unlockVillageSelection();
+      }
     }
   };
 
@@ -175,23 +201,36 @@ export function AppShell({
   };
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
+    if (isVillageSelectionLocked()) {
+      return;
+    }
+    const needsVillageChange = villageId !== snapshot.selectedVillageId;
     const routeWhenSelected = activeRouteRef.current;
     const navigationIntentWhenSelected = navigationIntentRef.current;
-    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
-      return;
+    if (needsVillageChange) {
+      lockVillageSelection();
     }
-    const currentRoute = activeRouteRef.current;
-    const navigationChanged = navigationIntentRef.current !== navigationIntentWhenSelected;
-    const routeChanged = !routeEquals(currentRoute, routeWhenSelected);
-    const onlyChangedDetailBase =
-      routeWhenSelected.kind === 'villageDetail' &&
-      currentRoute.kind === 'villageDetail' &&
-      currentRoute.villageId === routeWhenSelected.villageId;
-    if (navigationChanged || (routeChanged && !onlyChangedDetailBase)) {
-      return;
+    try {
+      if (needsVillageChange && !(await session.selectVillage(villageId))) {
+        return;
+      }
+      const currentRoute = activeRouteRef.current;
+      const navigationChanged = navigationIntentRef.current !== navigationIntentWhenSelected;
+      const routeChanged = !routeEquals(currentRoute, routeWhenSelected);
+      const onlyChangedDetailBase =
+        routeWhenSelected.kind === 'villageDetail' &&
+        currentRoute.kind === 'villageDetail' &&
+        currentRoute.villageId === routeWhenSelected.villageId;
+      if (navigationChanged || (routeChanged && !onlyChangedDetailBase)) {
+        return;
+      }
+      const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
+      applyRoute({ kind: 'villageDetail', villageId, base });
+    } finally {
+      if (needsVillageChange) {
+        unlockVillageSelection();
+      }
     }
-    const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
-    applyRoute({ kind: 'villageDetail', villageId, base });
   };
 
   const refreshCurrentPage = (): void => {
@@ -243,7 +282,7 @@ export function AppShell({
           <VillageSidebar
             villages={snapshot.villages}
             selectedVillageId={snapshot.selectedVillageId}
-            disabled={state.busy || snapshot.availability !== 'available'}
+            disabled={villageSelectionBusy || snapshot.availability !== 'available'}
             onSelect={(villageId) => void onSidebarSelect(villageId)}
           />
 
@@ -340,7 +379,7 @@ export function AppShell({
                     state={overview.state}
                     selectedId={overview.selectedId}
                     villages={snapshot.villages}
-                    busy={state.busy}
+                    busy={villageSelectionBusy}
                     onSelect={overview.select}
                     onOpenDetail={openDetail}
                     onRetry={() => void overview.refresh()}

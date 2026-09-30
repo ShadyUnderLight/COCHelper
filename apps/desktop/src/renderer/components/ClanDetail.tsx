@@ -31,6 +31,16 @@ export function ClanDetail({ official, officialWar }: ClanDetailProps) {
         </section>
       ) : (
         <div className="clan-detail-cards">
+          {official.player.lastQueryError !== null ? (
+            <p className="error-text" role="alert">
+              {official.player.lastQueryError}
+            </p>
+          ) : null}
+          {official.player.commandError !== null ? (
+            <p className="error-text" role="alert">
+              {official.player.commandError}
+            </p>
+          ) : null}
           <ClanCard
             view={official.clan}
             refreshing={official.clanRefreshing}

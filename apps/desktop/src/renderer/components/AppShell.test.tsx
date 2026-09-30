@@ -987,6 +987,18 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
+function err<T>(message: string): Result<T> {
+  return {
+    ok: false,
+    error: {
+      kind: 'internal',
+      code: 'refresh-failed',
+      messageKey: 'refresh.failed',
+      message,
+    },
+  };
+}
+
 function readySession(overrides: Partial<AppSnapshotPayload> = {}) {
   return sessionApi({
     ...INITIAL_APP_SESSION,
@@ -1212,6 +1224,36 @@ describe('AppShell Official 接线（#277-E1）', () => {
       expect(screen.getByText('尚未获取部落对战日志')).toBeTruthy();
     });
     expect(screen.queryByText('没有历史部落对战记录')).toBeNull();
+  });
+
+  it('部落页顶部刷新在玩家刷新失败时停止后续刷新并显示错误', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi()}
+        officialBridge={harness.bridge}
+        route={{ kind: 'official', section: 'clan' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalledTimes(1);
+    });
+
+    const apiRefresh = vi.mocked(harness.bridge.apiRefresh);
+    apiRefresh.mockResolvedValueOnce(err<ApiRefreshPayload>('玩家刷新失败'));
+    fireEvent.click(screen.getByRole('button', { name: '刷新数据' }));
+
+    expect(await screen.findByText('玩家刷新失败')).toBeTruthy();
+    expect(apiRefresh).toHaveBeenCalledTimes(1);
+    expect(apiRefresh.mock.calls[0]?.[0].endpoints).toEqual(['player']);
   });
 
   it('pending refresh 时切走 Official 页会 cancel', async () => {

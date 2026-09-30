@@ -555,27 +555,62 @@ function OfficialClanDetailContent(props: {
   const officialWarRef = useRef(props.officialWar);
   officialWarRef.current = props.officialWar;
   const activeRef = useRef(false);
+  const [pendingPlayerRefresh, setPendingPlayerRefresh] = useState<{
+    readonly revision: number;
+    readonly clanTag: string | null;
+  } | null>(null);
   const refresh = useCallback(async () => {
     const official = officialRef.current;
     if (official === undefined) {
       return;
     }
-    await official.refreshPlayer();
+    const playerRefresh = await official.refreshPlayer();
     if (!activeRef.current) {
       return;
     }
-    const refreshedOfficial = officialRef.current;
-    if (refreshedOfficial === undefined) {
+    if (playerRefresh.status === 'success') {
+      setPendingPlayerRefresh((current) =>
+        current === null || playerRefresh.revision > current.revision
+          ? { revision: playerRefresh.revision, clanTag: playerRefresh.clanTag }
+          : current,
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const official = props.official;
+    if (
+      pendingPlayerRefresh === null ||
+      official === undefined ||
+      official.playerRefreshRevision < pendingPlayerRefresh.revision ||
+      official.player.queryStatus === 'loading'
+    ) {
+      return;
+    }
+    if (
+      official.player.queryStatus !== 'error' &&
+      official.player.currentClanTag !== pendingPlayerRefresh.clanTag
+    ) {
+      return;
+    }
+    setPendingPlayerRefresh(null);
+    if (
+      !activeRef.current ||
+      official.player.queryStatus !== 'ready' ||
+      official.player.lastQueryError !== null ||
+      official.player.commandError !== null ||
+      official.player.currentClanTag === null
+    ) {
       return;
     }
     const officialWar = officialWarRef.current;
-    await Promise.all([
-      refreshedOfficial.refreshClan(),
+    void Promise.all([
+      official.refreshClan(),
       officialWar?.clanWar.refresh(),
       officialWar?.warLog.refresh(),
       officialWar?.capitalRaid.refresh(),
     ]);
-  }, []);
+  }, [pendingPlayerRefresh, props.official, props.officialWar]);
 
   useEffect(() => {
     activeRef.current = true;

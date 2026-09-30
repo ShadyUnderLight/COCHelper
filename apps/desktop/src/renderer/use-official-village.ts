@@ -21,7 +21,7 @@ import {
   type OfficialClanView,
   type OfficialPlayerView,
 } from './official-session';
-import { resourceData } from './resource-state';
+import { resourceData, resourceLastError } from './resource-state';
 import { useResourceQuery } from './use-resource-query';
 
 export type BridgeOfficialClient = Pick<
@@ -32,10 +32,22 @@ export type BridgeOfficialClient = Pick<
 export type OfficialVillageApi = {
   readonly player: OfficialPlayerView;
   readonly clan: OfficialClanView;
-  readonly refreshPlayer: () => Promise<void>;
+  readonly playerRefreshRevision: number;
+  readonly refreshPlayer: () => Promise<OfficialPlayerRefreshResult>;
   readonly refreshClan: () => Promise<void>;
   readonly playerRefreshing: boolean;
   readonly clanRefreshing: boolean;
+};
+
+export type OfficialPlayerRefreshResult = {
+  readonly status: 'success' | 'failed' | 'cancelled';
+  readonly revision: number;
+  readonly clanTag: string | null;
+};
+
+type OfficialEndpointRefreshResult = {
+  readonly status: OfficialPlayerRefreshResult['status'];
+  readonly playerPayload: PlayerStatePayload | null;
 };
 
 type OfficialOp = {
@@ -78,7 +90,6 @@ export function useOfficialVillage(
   const playerEpochRef = useRef(0);
   const clanEpochRef = useRef(0);
   const playerRefreshRevisionRef = useRef(0);
-  const playerRefreshWaitersRef = useRef(new Map<number, () => void>());
   const mountedRef = useRef(false);
   const villageIdRef = useRef(villageId);
   villageIdRef.current = villageId;
@@ -103,7 +114,7 @@ export function useOfficialVillage(
     fetchErrorMessage: '官方玩家数据查询失败',
   });
 
-  const refreshPlayerQuery = playerQuery.refresh;
+  const refreshPlayerQueryAndRead = playerQuery.refreshAndRead;
   const rawPlayerPayload = resourceData(playerQuery.state);
   const playerPayload =
     villageId !== null && rawPlayerPayload !== null && rawPlayerPayload.villageId === villageId
@@ -181,16 +192,6 @@ export function useOfficialVillage(
   }, [bridge, clanSubject]);
 
   useEffect(() => {
-    // refreshPlayer resolves after its query state is visible to route consumers.
-    for (const [revision, resolve] of playerRefreshWaitersRef.current) {
-      if (revision <= playerRefreshRevision) {
-        playerRefreshWaitersRef.current.delete(revision);
-        resolve();
-      }
-    }
-  }, [playerRefreshRevision]);
-
-  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -206,28 +207,24 @@ export function useOfficialVillage(
       if (clanOp !== null) {
         bridge.cancel({ requestId: clanOp.requestId });
       }
-      for (const resolve of playerRefreshWaitersRef.current.values()) {
-        resolve();
-      }
-      playerRefreshWaitersRef.current.clear();
     };
   }, [bridge]);
 
   const refreshEndpoint = useCallback(
-    async (endpoint: 'player' | 'clan') => {
+    async (endpoint: 'player' | 'clan'): Promise<OfficialEndpointRefreshResult> => {
       const currentVillageId = villageIdRef.current;
       const currentClanTag = clanTagRef.current;
       const currentPlayerSubject = playerSubjectRef.current;
       const currentClanSubject = clanSubjectRef.current;
       if (snapshot === null || currentVillageId === null || currentPlayerSubject === null) {
-        return;
+        return { status: 'cancelled', playerPayload: null };
       }
       if (endpoint === 'clan' && (currentClanTag === null || currentClanSubject === null)) {
-        return;
+        return { status: 'cancelled', playerPayload: null };
       }
       const subjectKey = endpoint === 'player' ? currentPlayerSubject : currentClanSubject;
       if (subjectKey === null) {
-        return;
+        return { status: 'cancelled', playerPayload: null };
       }
       const epochRef = endpoint === 'player' ? playerEpochRef : clanEpochRef;
       const opRef = endpoint === 'player' ? playerOpRef : clanOpRef;
@@ -285,19 +282,26 @@ export function useOfficialVillage(
           clanTag: endpoint === 'clan' ? currentClanTag : null,
         });
         if (!stillCurrent()) {
-          return;
+          return { status: 'cancelled', playerPayload: null };
         }
         if (!result.ok) {
           fail(formatIpcError(result.error));
-          return;
+          return { status: 'failed', playerPayload: null };
         }
+        let playerPayload: PlayerStatePayload | null = null;
+        let playerQueryFailed = false;
         if (endpoint === 'player') {
-          await refreshPlayerQuery();
+          const refreshedPlayerState = await refreshPlayerQueryAndRead();
+          const refreshedPayload = resourceData(refreshedPlayerState);
+          playerPayload =
+            refreshedPayload?.villageId === currentVillageId ? refreshedPayload : null;
+          playerQueryFailed =
+            resourceLastError(refreshedPlayerState) !== null || playerPayload === null;
         } else {
           await refreshClanQuery();
         }
         if (!stillCurrent()) {
-          return;
+          return { status: 'cancelled', playerPayload: null };
         }
         if (endpoint === 'player') {
           if (playerOpRef.current?.requestId === requestId) {
@@ -312,24 +316,41 @@ export function useOfficialVillage(
           setClanRefreshing(false);
           setClanCommandError(null);
         }
+        return {
+          status: playerQueryFailed ? 'failed' : 'success',
+          playerPayload,
+        };
       } catch (error: unknown) {
         fail(error instanceof Error ? error.message : '官方数据刷新失败');
+        return { status: 'failed', playerPayload: null };
       }
     },
-    [bridge, snapshot, refreshPlayerQuery, refreshClanQuery],
+    [bridge, snapshot, refreshPlayerQueryAndRead, refreshClanQuery],
   );
 
-  const refreshPlayer = useCallback(async () => {
-    await refreshEndpoint('player');
+  const refreshPlayer = useCallback(async (): Promise<OfficialPlayerRefreshResult> => {
+    const result = await refreshEndpoint('player');
     if (!mountedRef.current) {
-      return;
+      return {
+        status: result.status,
+        revision: playerRefreshRevisionRef.current,
+        clanTag: null,
+      };
     }
-    const revision = playerRefreshRevisionRef.current + 1;
-    playerRefreshRevisionRef.current = revision;
-    await new Promise<void>((resolve) => {
-      playerRefreshWaitersRef.current.set(revision, resolve);
-      setPlayerRefreshRevision(revision);
-    });
+    if (result.status !== 'success') {
+      return {
+        status: result.status,
+        revision: playerRefreshRevisionRef.current,
+        clanTag: null,
+      };
+    }
+    const revision = ++playerRefreshRevisionRef.current;
+    setPlayerRefreshRevision(revision);
+    return {
+      status: result.status,
+      revision,
+      clanTag: result.playerPayload?.currentClanTag ?? null,
+    };
   }, [refreshEndpoint]);
 
   const refreshClan = useCallback(async () => {
@@ -363,6 +384,7 @@ export function useOfficialVillage(
   return {
     player,
     clan,
+    playerRefreshRevision,
     refreshPlayer,
     refreshClan,
     playerRefreshing: playerRefreshing && playerOpRef.current?.subjectKey === playerSubject,

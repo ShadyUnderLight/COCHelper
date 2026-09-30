@@ -143,8 +143,12 @@ export function AppShell({
   const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const canManual = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const openDetail = async (recordId: string, villageId: string) => {
+    const navigationIntentWhenOpened = navigationIntentRef.current;
     overview.select(recordId);
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
+      return;
+    }
+    if (navigationIntentRef.current !== navigationIntentWhenOpened) {
       return;
     }
     const currentRoute = activeRouteRef.current;

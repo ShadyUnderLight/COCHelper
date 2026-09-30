@@ -700,7 +700,7 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('村庄详情')).toBeTruthy();
   });
 
-  it('总览点击他村记录 pending 期间切到导入后，成功时不应被拉回详情', async () => {
+  it('总览点击他村记录 pending 期间离开并返回总览，成功时不应被拉回详情', async () => {
     let resolveSelect!: (ok: boolean) => void;
     const selectVillage = vi.fn(
       () =>
@@ -747,11 +747,13 @@ describe('AppShell', () => {
     expect(selectVillage).toHaveBeenCalledWith('v2');
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
     expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     act(() => {
       resolveSelect(true);
     });
     await act(async () => {});
-    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
   });
 

@@ -44,6 +44,7 @@ type UpgradeOverviewProps = {
   readonly state: OverviewState;
   readonly selectedId: string | null;
   readonly villages: readonly VillageSummaryDto[];
+  readonly busy: boolean;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly onRetry: () => void;
@@ -53,6 +54,7 @@ export function UpgradeOverview({
   state,
   selectedId,
   villages,
+  busy,
   onSelect,
   onOpenDetail,
   onRetry,
@@ -257,6 +259,7 @@ export function UpgradeOverview({
             manualGroups={activeManualGroups}
             badgeCount={activeRecordCount}
             selectedId={selectedId}
+            disabled={busy}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
             emphasis
@@ -285,6 +288,7 @@ export function UpgradeOverview({
             groups={pendingSettlementGroups}
             count={pendingSettlementCount}
             selectedId={selectedId}
+            disabled={busy}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
           />
@@ -293,6 +297,7 @@ export function UpgradeOverview({
             description="已安排，等待开工"
             records={pending}
             selectedId={selectedId}
+            disabled={busy}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
           />
@@ -301,6 +306,7 @@ export function UpgradeOverview({
             description="有数据状态需要留意"
             records={attention}
             selectedId={selectedId}
+            disabled={busy}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
           />
@@ -309,6 +315,7 @@ export function UpgradeOverview({
             description="更新快照后继续追踪"
             records={needsReimport}
             selectedId={selectedId}
+            disabled={busy}
             onSelect={onSelect}
             onOpenDetail={onOpenDetail}
             statusTextForRecord={(record) =>
@@ -339,6 +346,7 @@ function ManualSettlementList(props: {
   readonly groups: readonly ManualSettlementGroup[];
   readonly count: number;
   readonly selectedId: string | null;
+  readonly disabled: boolean;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
 }) {
@@ -366,6 +374,7 @@ function ManualSettlementList(props: {
             <li key={group.key}>
               <button
                 type="button"
+                disabled={props.disabled}
                 className={
                   record.recordID === props.selectedId ? 'overview-item selected' : 'overview-item'
                 }
@@ -572,6 +581,7 @@ function RecordList(props: {
   readonly manualGroups?: readonly ManualActiveGroup[];
   readonly badgeCount?: number;
   readonly selectedId: string | null;
+  readonly disabled: boolean;
   readonly onSelect: (id: string) => void;
   readonly onOpenDetail?: (recordId: string, villageId: string) => void;
   readonly emphasis?: boolean;
@@ -627,6 +637,7 @@ function RecordList(props: {
               <li key={entry.key}>
                 <button
                   type="button"
+                  disabled={props.disabled}
                   className={
                     record.recordID === props.selectedId
                       ? 'overview-item selected'
@@ -668,6 +679,7 @@ function RecordList(props: {
             <li key={entry.key}>
               <button
                 type="button"
+                disabled={props.disabled}
                 className={
                   record.id === props.selectedId ? 'overview-item selected' : 'overview-item'
                 }

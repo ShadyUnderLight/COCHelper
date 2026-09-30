@@ -22,6 +22,7 @@ import {
 import { isReadOnly, type ImportPreviewState } from '../app-session';
 import {
   primaryTabOfRoute,
+  routeEquals,
   type AppRoute,
   type NavigateAction,
   type PrimaryTab,
@@ -70,6 +71,10 @@ export function AppShell({
   const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
   const activeRoute = route ?? internalRoute;
   const activeRouteRef = useRef(activeRoute);
+  const navigationIntentRef = useRef(0);
+  // session.busy clears before selectVillage finishes its snapshot refresh.
+  const villageSelectionPendingRef = useRef(false);
+  const [villageSelectionPending, setVillageSelectionPending] = useState(false);
   const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     tokenSettingsRefreshRef.current = refresh;
@@ -80,7 +85,10 @@ export function AppShell({
   const tab = primaryTabOfRoute(activeRoute);
   const detailRoute = activeRoute.kind === 'villageDetail' ? activeRoute : null;
 
-  const applyRoute = (nextRoute: AppRoute): void => {
+  const applyRoute = (nextRoute: AppRoute, countsAsNavigation = true): void => {
+    if (countsAsNavigation) {
+      navigationIntentRef.current += 1;
+    }
     if (navigate !== undefined) {
       navigate({ type: 'navigate', route: nextRoute });
     } else if (onRouteChange !== undefined) {
@@ -90,23 +98,13 @@ export function AppShell({
     }
   };
 
-  const detailBaseForTab = (): TrackerBaseDto => detailRoute?.base ?? 'home';
-
-  const goToTab = (nextTab: PrimaryTab): void => {
+  const goToTab = (nextTab: Exclude<PrimaryTab, 'detail'>): void => {
     const nextRoute: AppRoute =
       nextTab === 'import'
         ? { kind: 'import' }
         : nextTab === 'overview'
           ? { kind: 'overview' }
-          : nextTab === 'info'
-            ? { kind: 'info', section: 'diagnostics' }
-            : snapshot === null || snapshot.selectedVillageId === null
-              ? activeRoute
-              : {
-                  kind: 'villageDetail',
-                  villageId: snapshot.selectedVillageId,
-                  base: detailBaseForTab(),
-                };
+          : { kind: 'info', section: 'diagnostics' };
     applyRoute(nextRoute);
   };
 
@@ -145,25 +143,52 @@ export function AppShell({
   const readOnly = isReadOnly(snapshot);
   const showRecovery = snapshot.availability === 'recovery';
   const showImport = snapshot.availability === 'available' || snapshot.availability === 'loading';
-  const detailDisabled = snapshot.selectedVillageId === null;
   const canQuick = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
   const canManual = snapshot.canWrite && snapshot.availability === 'available' && !state.busy;
+  const villageSelectionBusy = state.busy || villageSelectionPending;
+  const isVillageSelectionLocked = (): boolean => state.busy || villageSelectionPendingRef.current;
+  const lockVillageSelection = (): void => {
+    villageSelectionPendingRef.current = true;
+    setVillageSelectionPending(true);
+  };
+  const unlockVillageSelection = (): void => {
+    villageSelectionPendingRef.current = false;
+    setVillageSelectionPending(false);
+  };
   const openDetail = async (recordId: string, villageId: string) => {
-    overview.select(recordId);
-    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
+    if (isVillageSelectionLocked()) {
       return;
     }
-    const currentRoute = activeRouteRef.current;
-    if (currentRoute.kind === 'overview') {
-      if (navigate !== undefined) {
-        navigate({ type: 'openVillageDetail', villageId, base: 'home' });
-      } else {
-        applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+    const needsVillageChange = villageId !== snapshot.selectedVillageId;
+    const navigationIntentWhenOpened = navigationIntentRef.current;
+    if (needsVillageChange) {
+      lockVillageSelection();
+    }
+    try {
+      overview.select(recordId);
+      if (needsVillageChange && !(await session.selectVillage(villageId))) {
+        return;
       }
-      return;
-    }
-    if (currentRoute.kind === 'villageDetail') {
-      applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+      if (navigationIntentRef.current !== navigationIntentWhenOpened) {
+        return;
+      }
+      const currentRoute = activeRouteRef.current;
+      if (currentRoute.kind === 'overview') {
+        if (navigate !== undefined) {
+          navigationIntentRef.current += 1;
+          navigate({ type: 'openVillageDetail', villageId, base: 'home' });
+        } else {
+          applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
+        }
+        return;
+      }
+      if (currentRoute.kind === 'villageDetail') {
+        applyRoute({ kind: 'villageDetail', villageId, base: currentRoute.base });
+      }
+    } finally {
+      if (needsVillageChange) {
+        unlockVillageSelection();
+      }
     }
   };
 
@@ -171,24 +196,40 @@ export function AppShell({
     if (detailRoute === null) {
       return;
     }
-    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base });
+    // 切换详情 base 仍处于当前详情流程，不应使待处理的村庄选择失效。
+    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base }, false);
   };
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
-    if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
+    if (isVillageSelectionLocked()) {
       return;
     }
-    const currentRoute = activeRouteRef.current;
-    if (currentRoute.kind === 'villageDetail') {
-      applyRoute(
-        currentRoute.villageId === villageId
-          ? { kind: 'overview' }
-          : { kind: 'villageDetail', villageId, base: currentRoute.base },
-      );
-      return;
+    const needsVillageChange = villageId !== snapshot.selectedVillageId;
+    const routeWhenSelected = activeRouteRef.current;
+    const navigationIntentWhenSelected = navigationIntentRef.current;
+    if (needsVillageChange) {
+      lockVillageSelection();
     }
-    if (currentRoute.kind !== 'overview' && currentRoute.kind !== 'import') {
-      applyRoute({ kind: 'overview' });
+    try {
+      if (needsVillageChange && !(await session.selectVillage(villageId))) {
+        return;
+      }
+      const currentRoute = activeRouteRef.current;
+      const navigationChanged = navigationIntentRef.current !== navigationIntentWhenSelected;
+      const routeChanged = !routeEquals(currentRoute, routeWhenSelected);
+      const onlyChangedDetailBase =
+        routeWhenSelected.kind === 'villageDetail' &&
+        currentRoute.kind === 'villageDetail' &&
+        currentRoute.villageId === routeWhenSelected.villageId;
+      if (navigationChanged || (routeChanged && !onlyChangedDetailBase)) {
+        return;
+      }
+      const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
+      applyRoute({ kind: 'villageDetail', villageId, base });
+    } finally {
+      if (needsVillageChange) {
+        unlockVillageSelection();
+      }
     }
   };
 
@@ -236,17 +277,12 @@ export function AppShell({
             </span>
           </div>
 
-          <TabNav
-            tab={tab}
-            onChange={goToTab}
-            detailDisabled={detailDisabled}
-            showDataTabs={showImport}
-          />
+          <TabNav tab={tab} onChange={goToTab} showDataTabs={showImport} />
 
           <VillageSidebar
             villages={snapshot.villages}
             selectedVillageId={snapshot.selectedVillageId}
-            disabled={state.busy || snapshot.availability !== 'available'}
+            disabled={villageSelectionBusy || snapshot.availability !== 'available'}
             onSelect={(villageId) => void onSidebarSelect(villageId)}
           />
 
@@ -343,6 +379,7 @@ export function AppShell({
                     state={overview.state}
                     selectedId={overview.selectedId}
                     villages={snapshot.villages}
+                    busy={villageSelectionBusy}
                     onSelect={overview.select}
                     onOpenDetail={openDetail}
                     onRetry={() => void overview.refresh()}
@@ -584,8 +621,7 @@ function InfoPanel(props: {
 
 function TabNav(props: {
   readonly tab: PrimaryTab;
-  readonly onChange: (tab: PrimaryTab) => void;
-  readonly detailDisabled: boolean;
+  readonly onChange: (tab: Exclude<PrimaryTab, 'detail'>) => void;
   readonly showDataTabs: boolean;
 }) {
   return (
@@ -617,22 +653,6 @@ function TabNav(props: {
               </svg>
             </span>
             <span>导入</span>
-          </button>
-          <button
-            className="nav-item"
-            type="button"
-            aria-pressed={props.tab === 'detail'}
-            disabled={props.detailDisabled}
-            title={props.detailDisabled ? '先选择村庄' : undefined}
-            onClick={() => props.onChange('detail')}
-          >
-            <span className="nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M3.5 20V9.5l4-2.5 4 2.5V20M11.5 20V5.5l4-2 5 2.5V20M2.5 20h19" />
-                <path d="M6 12h3M15 9h3M15 13h3" />
-              </svg>
-            </span>
-            <span>村庄详情</span>
           </button>
         </>
       ) : null}

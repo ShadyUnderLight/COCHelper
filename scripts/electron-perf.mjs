@@ -968,6 +968,13 @@ async function goToTab(page, name, ariaLabel) {
   return performance.now() - start;
 }
 
+async function goToVillageDetails(page) {
+  const start = performance.now();
+  await page.locator('.village-list .village-item[aria-pressed="true"]').click();
+  await waitForPanel(page, '村庄详情');
+  return performance.now() - start;
+}
+
 async function beginRendererCommitMeasure(page, kind) {
   await page.evaluate((phase) => {
     const endMark = `coc-helper:renderer:${phase}:commit`;
@@ -1774,7 +1781,7 @@ async function measureViews(session, includeOfficial) {
   const detailColdMark = probe.mark();
   await beginRendererCommitMeasure(page, 'village-detail');
   const detailCold = await measureProcessPhase(session, async () => {
-    const navigationMs = await goToTab(page, '村庄详情', '村庄详情');
+    const navigationMs = await goToVillageDetails(page);
     await settleCatalogRequests(page, probe);
     return navigationMs;
   });
@@ -1787,7 +1794,7 @@ async function measureViews(session, includeOfficial) {
   for (let index = 0; index < warmupCount; index += 1) {
     await goToTab(page, '升级追踪', '升级追踪');
     await settleCatalogRequests(page, probe);
-    await goToTab(page, '村庄详情', '村庄详情');
+    await goToVillageDetails(page);
     await settleCatalogRequests(page, probe);
   }
 
@@ -1834,7 +1841,7 @@ async function measureViews(session, includeOfficial) {
   if (includeOfficial) {
     const clanTag = manifest.official.clanTag;
     const officialNavigation = await measureProcessPhase(session, async () => {
-      await goToTab(page, '村庄详情', '村庄详情');
+      await goToVillageDetails(page);
       await settleCatalogRequests(page, probe);
       return await exerciseOfficialPagination(page, session.context);
     });

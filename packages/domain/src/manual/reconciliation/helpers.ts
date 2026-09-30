@@ -37,34 +37,6 @@ export function reconciliationTimeConfidence(
   return 'reliableSourceTimestamp';
 }
 
-export function manualLevelDistributionDominates(
-  left: ManualLevelDistribution,
-  right: ManualLevelDistribution,
-): boolean {
-  if (left.totalQuantity !== right.totalQuantity) {
-    return false;
-  }
-  const levels = new Set<number>();
-  for (const entry of left.levels) {
-    levels.add(entry.level);
-  }
-  for (const entry of right.levels) {
-    levels.add(entry.level);
-  }
-  for (const threshold of levels) {
-    const leftSum = left.levels
-      .filter((entry) => entry.level >= threshold)
-      .reduce((sum, entry) => sum + entry.quantity, 0n);
-    const rightSum = right.levels
-      .filter((entry) => entry.level >= threshold)
-      .reduce((sum, entry) => sum + entry.quantity, 0n);
-    if (leftSum < rightSum) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export function effectiveReconciliationDistribution(
   state: ManualItemState | undefined,
 ): ManualLevelDistribution | null {

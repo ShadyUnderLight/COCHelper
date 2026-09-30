@@ -3,6 +3,7 @@ import { catalogDurationState, type CatalogDurationState } from '../catalog/dura
 import type { CatalogCompatibility } from '../catalog/types';
 import type { GameCatalog } from '../catalog/game-catalog';
 import type { CatalogLevel } from '../catalog/types';
+import { manualLevelDistributionDominates } from '../manual/level-distribution';
 import {
   manualActiveRecords,
   manualEffectiveItemState,
@@ -315,10 +316,22 @@ function makeEffectiveState(input: {
     : [];
   const activeTarget = manualEffective?.activeTargetDistribution ?? MANUAL_LEVEL_DISTRIBUTION_EMPTY;
 
+  const observedActiveItems = orderedObservedItems.filter((item) => {
+    const remaining = liveRemainingSeconds(item, input.snapshot, input.nowMs);
+    return remaining !== null && remaining > 0n;
+  });
+  const importedActiveDominatesManualCompletion =
+    manualItem?.status === 'manualCompleted' &&
+    activeRecords.length === 0 &&
+    observedActiveItems.length > 0 &&
+    importedDistribution !== null &&
+    manualLevelDistributionDominates(importedDistribution, manualItem.manualCompletedDistribution);
   let effectiveCompleted: ManualLevelDistribution | null;
   switch (manualItem?.status) {
     case 'manualCompleted':
-      effectiveCompleted = manualEffective?.effectiveCompletedDistribution ?? null;
+      effectiveCompleted = importedActiveDominatesManualCompletion
+        ? importedDistribution
+        : (manualEffective?.effectiveCompletedDistribution ?? null);
       break;
     case 'unknown':
     case 'conflict':
@@ -330,10 +343,6 @@ function makeEffectiveState(input: {
       break;
   }
 
-  const observedActiveItems = orderedObservedItems.filter((item) => {
-    const remaining = liveRemainingSeconds(item, input.snapshot, input.nowMs);
-    return remaining !== null && remaining > 0n;
-  });
   const observedNeedsReimport = orderedObservedItems.some((item) => {
     return (
       item.timerSeconds !== null && liveRemainingSeconds(item, input.snapshot, input.nowMs) === 0n
@@ -388,7 +397,7 @@ function makeEffectiveState(input: {
     if (observedActiveItems.length > 0) {
       provenance.push('importedActive');
     }
-  } else if (manualItem?.status === 'manualCompleted') {
+  } else if (manualItem?.status === 'manualCompleted' && !importedActiveDominatesManualCompletion) {
     status = 'manualCompleted';
     provenance.push('manualCompleted');
     if (observedNeedsReimport) {
@@ -397,6 +406,9 @@ function makeEffectiveState(input: {
   } else if (observedNeedsReimport) {
     status = 'needsReimport';
     provenance.push('needsReimport');
+    if (observedActiveItems.length > 0) {
+      provenance.push('importedActive');
+    }
   } else if (observedActiveItems.length > 0) {
     status = 'importedActive';
     provenance.push('importedActive');
@@ -518,7 +530,14 @@ function effectiveStateForItem(
   if (key === undefined) {
     return undefined;
   }
-  return states.get(trackerItemKeyStableId(key));
+  const state = states.get(trackerItemKeyStableId(key));
+  if (state?.status !== 'needsReimport' || (item.remainingSeconds ?? 0n) <= 0n) {
+    return state;
+  }
+  return {
+    ...state,
+    status: 'importedActive',
+  };
 }
 
 function attachEffectiveState(

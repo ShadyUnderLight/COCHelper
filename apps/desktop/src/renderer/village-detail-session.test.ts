@@ -408,6 +408,22 @@ describe('authoritativeLevelStatus（#277-C2 review）', () => {
     };
     expect(authoritativeLevelStatus(item)).toBe('正在升级');
   });
+  it('importedActive 只在本行仍有剩余时间时显示正在升级', () => {
+    const active = {
+      ...recordFixture().item,
+      effectiveStatus: 'importedActive' as const,
+      remainingSeconds: 200,
+    };
+    expect(authoritativeLevelStatus(active)).toBe('正在升级');
+
+    const idleMaxed = {
+      ...recordFixture().item,
+      effectiveStatus: 'importedActive' as const,
+      remainingSeconds: null,
+      effectiveIsMaxed: true,
+    };
+    expect(authoritativeLevelStatus(idleMaxed)).toBe('已满级');
+  });
   it('conflict → 本地状态冲突', () => {
     const item = { ...recordFixture().item, effectiveStatus: 'conflict' as const };
     expect(authoritativeLevelStatus(item)).toBe('本地状态冲突');

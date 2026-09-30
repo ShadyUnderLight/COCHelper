@@ -360,8 +360,9 @@ function isEffectivelyUpgrading(
 ): boolean {
   switch (effective.status) {
     case 'manualActive':
-    case 'importedActive':
       return true;
+    case 'importedActive':
+      return isUpgrading(item);
     default:
       return false;
   }
@@ -370,7 +371,7 @@ function isEffectivelyUpgrading(
 function isEffectivelyMaxedItem(item: VillageItemState): boolean {
   const effective = item.effectiveState as EffectiveVillageItemStateLike | null | undefined;
   if (effective) {
-    if (effective.status === 'manualActive' || effective.status === 'importedActive') {
+    if (isEffectivelyUpgrading(item, effective)) {
       return false;
     }
     if (!effectiveVillageItemIsKnown(effective)) {

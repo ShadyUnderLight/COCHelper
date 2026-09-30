@@ -9,7 +9,9 @@ import {
 } from '../manual';
 import { createVillageProfile } from '../import/types';
 import { trackerItemKeyRoot } from '../manual/types';
-import { upgradeOverviewState } from './upgrade-overview-projection';
+import { makeAccountItem, makeTestVillage, createSyntheticCatalog } from './test-fixtures';
+import { projectVillageCatalog } from './catalog-projection';
+import { upgradeOverviewRecords, upgradeOverviewState } from './upgrade-overview-projection';
 
 const NOW_MS = 1_700_000_000_000;
 const ITEM_KEY = trackerItemKeyRoot('home', 'buildings', 1_000_001n);
@@ -53,6 +55,142 @@ function activeRecord(recordID: string, expectedEndAtMs: number) {
 }
 
 describe('upgrade overview recent completion identity', () => {
+  it('同一 tracker key 只把自身仍有计时的导入实例列入活动列表', () => {
+    const village = makeTestVillage({
+      buildings: [
+        makeAccountItem({
+          section: 'buildings',
+          dataID: ITEM_KEY.dataID,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+          path: '0',
+        }),
+        makeAccountItem({
+          section: 'buildings',
+          dataID: ITEM_KEY.dataID,
+          level: 1,
+          path: '1',
+        }),
+      ],
+    });
+    const levelDistribution = createManualLevelDistributionFromPairs([[1, 2n]]);
+    const manualCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey: ITEM_KEY,
+          baselineReference: BASELINE_REFERENCE,
+          imported: levelDistribution,
+          manual: levelDistribution,
+          status: 'manualCompleted',
+        }),
+      ],
+    });
+    const records = upgradeOverviewRecords({
+      villages: [village],
+      catalog: createSyntheticCatalog(),
+      manualUpgradeCores: { [village.id]: manualCore },
+      nowMs: NOW_MS,
+    });
+
+    expect(records.active).toHaveLength(1);
+    expect(records.active[0]?.item.id).toBe('buildings:0');
+    expect(records.active[0]?.item.remainingSeconds).toBe(200n);
+  });
+
+  it('同 key 的到期计时显示重新导入，活动计时仍进入进行中列表', () => {
+    const village = makeTestVillage({
+      buildings: [
+        makeAccountItem({
+          section: 'buildings',
+          dataID: ITEM_KEY.dataID,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+          path: '0',
+        }),
+        makeAccountItem({
+          section: 'buildings',
+          dataID: ITEM_KEY.dataID,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 0n,
+          path: '1',
+        }),
+      ],
+    });
+    const distribution = createManualLevelDistributionFromPairs([[1, 2n]]);
+    const manualCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey: ITEM_KEY,
+          baselineReference: BASELINE_REFERENCE,
+          imported: distribution,
+          manual: distribution,
+          status: 'manualCompleted',
+        }),
+      ],
+    });
+    const records = upgradeOverviewRecords({
+      villages: [village],
+      catalog: createSyntheticCatalog(),
+      manualUpgradeCores: { [village.id]: manualCore },
+      nowMs: NOW_MS,
+    });
+
+    expect(records.active).toHaveLength(1);
+    expect(records.active[0]?.item.remainingSeconds).toBe(200n);
+    expect(records.active[0]?.item.effectiveState).toMatchObject({ status: 'importedActive' });
+    expect(records.pending).toHaveLength(1);
+    expect(records.pending[0]?.item.remainingSeconds).toBe(0n);
+    expect(records.pending[0]?.item.effectiveState).toMatchObject({ status: 'needsReimport' });
+  });
+
+  it('导入分布低于手动完成分布时仍保留手动状态', () => {
+    const village = makeTestVillage({
+      buildings2: [
+        makeAccountItem({
+          section: 'buildings2',
+          dataID: 1_000_033n,
+          level: 1,
+          timerSeconds: 300n,
+          remainingSeconds: 200n,
+          path: '0',
+        }),
+      ],
+    });
+    const itemKey = trackerItemKeyRoot('builder', 'buildings2', 1_000_033n);
+    const manualCore = createManualUpgradeCoreState({
+      itemStates: [
+        createManualItemStateForStatus({
+          itemKey,
+          baselineReference: BASELINE_REFERENCE,
+          imported: createManualLevelDistributionFromPairs([[1, 1n]]),
+          manual: createManualLevelDistributionFromPairs([[2, 1n]]),
+          status: 'manualCompleted',
+        }),
+      ],
+    });
+    const projection = projectVillageCatalog({
+      village,
+      catalog: createSyntheticCatalog(),
+      base: 'builder',
+      nowMs: NOW_MS,
+      manualUpgradeCore: manualCore,
+    });
+    const overview = upgradeOverviewRecords({
+      villages: [village],
+      catalog: createSyntheticCatalog(),
+      manualUpgradeCores: { [village.id]: manualCore },
+      nowMs: NOW_MS,
+    });
+
+    expect(projection.effectiveTrackerItems[0]).toMatchObject({ status: 'manualCompleted' });
+    expect(projection.items[0]?.effectiveState).toMatchObject({ status: 'manualCompleted' });
+    expect(overview.active).toHaveLength(0);
+    expect(overview.pending).toHaveLength(0);
+  });
+
   it('同一项目、等级和完成时间在不同村庄仍有唯一 ID', () => {
     const villages = [
       createVillageProfile({ id: 'village-a', name: '村庄 A' }),

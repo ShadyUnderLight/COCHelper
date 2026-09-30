@@ -1,12 +1,12 @@
 import type { UuidString } from '@coc-helper/wire';
 
+import { manualLevelDistributionDominates } from '../level-distribution';
 import type { ManualUpgradeRecord } from '../types';
 import type { ReconciliationObservation, RelatedChangeEvidence } from './evidence';
 import {
   confirmedReconciliationRecords,
   distributionsEqual,
   hasProtectableReconciliationLocalState,
-  manualLevelDistributionDominates,
 } from './helpers';
 import type {
   ManualReconciliationClassification,

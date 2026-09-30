@@ -513,7 +513,7 @@ describe('AppShell', () => {
     expect(onRouteChange).not.toHaveBeenCalled();
   });
 
-  it('sidebar 选村 pending 期间切到总览后不应被旧 callback 拉回详情', async () => {
+  it('选村等待期间离开再回到原页面时不应用过期详情路由', async () => {
     let resolveSelect!: (ok: boolean) => void;
     const selectVillage = vi.fn(
       () =>
@@ -536,17 +536,18 @@ describe('AppShell', () => {
         detail={detailApi(detailState)}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /主村/ }));
-    expect(screen.getByLabelText('村庄详情')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /分村/ }));
     expect(selectVillage).toHaveBeenCalledWith('v2');
     fireEvent.click(screen.getByRole('button', { name: '升级追踪' }));
     expect(screen.getByLabelText('升级追踪')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '导入' }));
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
     act(() => {
       resolveSelect(true);
     });
     await act(async () => {});
-    expect(screen.getByLabelText('升级追踪')).toBeTruthy();
+    expect(screen.getByLabelText('账号 JSON')).toBeTruthy();
+    expect(screen.queryByLabelText('升级追踪')).toBeNull();
     expect(screen.queryByLabelText('村庄详情')).toBeNull();
   });
 

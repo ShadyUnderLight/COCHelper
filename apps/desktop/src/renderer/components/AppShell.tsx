@@ -71,6 +71,7 @@ export function AppShell({
   const [internalRoute, setInternalRoute] = useState<AppRoute>({ kind: 'import' });
   const activeRoute = route ?? internalRoute;
   const activeRouteRef = useRef(activeRoute);
+  const navigationIntentRef = useRef(0);
   const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     tokenSettingsRefreshRef.current = refresh;
@@ -81,7 +82,10 @@ export function AppShell({
   const tab = primaryTabOfRoute(activeRoute);
   const detailRoute = activeRoute.kind === 'villageDetail' ? activeRoute : null;
 
-  const applyRoute = (nextRoute: AppRoute): void => {
+  const applyRoute = (nextRoute: AppRoute, countsAsNavigation = true): void => {
+    if (countsAsNavigation) {
+      navigationIntentRef.current += 1;
+    }
     if (navigate !== undefined) {
       navigate({ type: 'navigate', route: nextRoute });
     } else if (onRouteChange !== undefined) {
@@ -146,6 +150,7 @@ export function AppShell({
     const currentRoute = activeRouteRef.current;
     if (currentRoute.kind === 'overview') {
       if (navigate !== undefined) {
+        navigationIntentRef.current += 1;
         navigate({ type: 'openVillageDetail', villageId, base: 'home' });
       } else {
         applyRoute({ kind: 'villageDetail', villageId, base: 'home' });
@@ -161,16 +166,24 @@ export function AppShell({
     if (detailRoute === null) {
       return;
     }
-    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base });
+    // 切换详情 base 仍处于当前详情流程，不应使待处理的村庄选择失效。
+    applyRoute({ kind: 'villageDetail', villageId: detailRoute.villageId, base }, false);
   };
 
   const onSidebarSelect = async (villageId: string): Promise<void> => {
     const routeWhenSelected = activeRouteRef.current;
+    const navigationIntentWhenSelected = navigationIntentRef.current;
     if (villageId !== snapshot.selectedVillageId && !(await session.selectVillage(villageId))) {
       return;
     }
     const currentRoute = activeRouteRef.current;
-    if (currentRoute.kind !== 'villageDetail' && !routeEquals(currentRoute, routeWhenSelected)) {
+    const navigationChanged = navigationIntentRef.current !== navigationIntentWhenSelected;
+    const routeChanged = !routeEquals(currentRoute, routeWhenSelected);
+    const onlyChangedDetailBase =
+      routeWhenSelected.kind === 'villageDetail' &&
+      currentRoute.kind === 'villageDetail' &&
+      currentRoute.villageId === routeWhenSelected.villageId;
+    if (navigationChanged || (routeChanged && !onlyChangedDetailBase)) {
       return;
     }
     const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
@@ -221,11 +234,7 @@ export function AppShell({
             </span>
           </div>
 
-          <TabNav
-            tab={tab}
-            onChange={goToTab}
-            showDataTabs={showImport}
-          />
+          <TabNav tab={tab} onChange={goToTab} showDataTabs={showImport} />
 
           <VillageSidebar
             villages={snapshot.villages}

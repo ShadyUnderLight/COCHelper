@@ -987,6 +987,18 @@ function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
+function err<T>(message: string): Result<T> {
+  return {
+    ok: false,
+    error: {
+      kind: 'internal',
+      code: 'refresh-failed',
+      messageKey: 'refresh.failed',
+      message,
+    },
+  };
+}
+
 function readySession(overrides: Partial<AppSnapshotPayload> = {}) {
   return sessionApi({
     ...INITIAL_APP_SESSION,
@@ -1131,15 +1143,15 @@ describe('AppShell Official 接线（#277-E1）', () => {
     expect(clockStore.getSnapshot()).toBe(1000);
   });
 
-  it('详情页玩家查询未完成时不显示不在部落中', async () => {
+  it('部落详情玩家查询未完成时不显示不在部落中', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
         session={readySession()}
         overview={overviewApi()}
-        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        detail={detailApi()}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {
@@ -1149,15 +1161,15 @@ describe('AppShell Official 接线（#277-E1）', () => {
     expect(screen.getAllByText('尚未确认部落归属').length).toBeGreaterThan(0);
   });
 
-  it('详情页玩家确认无部落时显示不在部落中', async () => {
+  it('部落详情玩家确认无部落时显示不在部落中', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
         session={readySession()}
         overview={overviewApi()}
-        detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
+        detail={detailApi()}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {
@@ -1188,7 +1200,7 @@ describe('AppShell Official 接线（#277-E1）', () => {
     });
   });
 
-  it('详情页 War Log never 状态不显示没有历史记录', async () => {
+  it('部落详情 War Log never 状态不显示没有历史记录', async () => {
     const harness = createOfficialBridge();
     render(
       <AppShell
@@ -1196,7 +1208,7 @@ describe('AppShell Official 接线（#277-E1）', () => {
         overview={overviewApi()}
         detail={detailApi(applyVillageDetailSuccess(villageDetailFixture()))}
         officialBridge={harness.bridge}
-        route={{ kind: 'villageDetail', villageId: 'v1', base: 'home' }}
+        route={{ kind: 'official', section: 'clan' }}
       />,
     );
     await waitFor(() => {
@@ -1212,6 +1224,36 @@ describe('AppShell Official 接线（#277-E1）', () => {
       expect(screen.getByText('尚未获取部落对战日志')).toBeTruthy();
     });
     expect(screen.queryByText('没有历史部落对战记录')).toBeNull();
+  });
+
+  it('部落页顶部刷新在玩家刷新失败时停止后续刷新并显示错误', async () => {
+    const harness = createOfficialBridge();
+    render(
+      <AppShell
+        session={readySession()}
+        overview={overviewApi()}
+        detail={detailApi()}
+        officialBridge={harness.bridge}
+        route={{ kind: 'official', section: 'clan' }}
+      />,
+    );
+    await waitFor(() => {
+      expect(harness.bridge.playerState).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      harness.resolvePlayer(ok(playerFixture({ generation: 1 })));
+    });
+    await waitFor(() => {
+      expect(harness.bridge.clanState).toHaveBeenCalledTimes(1);
+    });
+
+    const apiRefresh = vi.mocked(harness.bridge.apiRefresh);
+    apiRefresh.mockResolvedValueOnce(err<ApiRefreshPayload>('玩家刷新失败'));
+    fireEvent.click(screen.getByRole('button', { name: '刷新数据' }));
+
+    expect(await screen.findByText('玩家刷新失败')).toBeTruthy();
+    expect(apiRefresh).toHaveBeenCalledTimes(1);
+    expect(apiRefresh.mock.calls[0]?.[0].endpoints).toEqual(['player']);
   });
 
   it('pending refresh 时切走 Official 页会 cancel', async () => {

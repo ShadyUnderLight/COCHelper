@@ -28,16 +28,12 @@ import {
 import { isManualCommandEnabled, isManualQueryStale } from '../manual-session';
 import type { QuickImportApi } from '../use-quick-import';
 import type { ManualApi } from '../use-manual';
-import type { OfficialClanWarBundleApi } from '../use-official-clan-war-bundle';
 import type { OfficialVillageApi } from '../use-official-village';
 import { ManualStatusPanel } from './ManualStatusPanel';
 import { AssetImage } from './AssetImage';
-import { CapitalRaidCard } from './CapitalRaidCard';
-import { ClanWarCard } from './ClanWarCard';
 import { LevelDetailSheet } from './LevelDetailSheet';
 import { OfficialPlayerCard } from './OfficialPlayerCard';
 import { QuickImportSheet } from './QuickImportSheet';
-import { WarLogCard } from './WarLogCard';
 
 export type VillageDetailProps = {
   readonly state: VillageDetailState;
@@ -45,7 +41,6 @@ export type VillageDetailProps = {
   readonly onBaseChange: (base: TrackerBaseDto) => void;
   readonly onRetry: () => void;
   readonly official?: OfficialVillageApi;
-  readonly officialWar?: OfficialClanWarBundleApi;
   /** 快捷导入（#277-D）：缺省时不渲染入口，保持旧测试与嵌入场景兼容。 */
   readonly quick?: QuickImportApi;
   readonly canQuick?: boolean;
@@ -61,7 +56,6 @@ export function VillageDetail({
   onBaseChange,
   onRetry,
   official,
-  officialWar,
   quick,
   canQuick,
   onNavigateToImport,
@@ -141,13 +135,6 @@ export function VillageDetail({
           refreshing={official.playerRefreshing}
           onRefresh={() => void official.refreshPlayer()}
         />
-      ) : null}
-      {officialWar !== undefined ? (
-        <>
-          <ClanWarCard api={officialWar.clanWar} />
-          <WarLogCard api={officialWar.warLog} />
-          <CapitalRaidCard api={officialWar.capitalRaid} />
-        </>
       ) : null}
       {quick !== undefined ? (
         <QuickImportEntry

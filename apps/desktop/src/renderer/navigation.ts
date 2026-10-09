@@ -19,7 +19,7 @@ export type AppRoute =
 
 export const INITIAL_ROUTE: AppRoute = { kind: 'import' };
 
-export type PrimaryTab = 'import' | 'overview' | 'detail' | 'info';
+export type PrimaryTab = 'import' | 'overview' | 'detail' | 'clan' | 'info';
 
 export type NavigateAction =
   | { readonly type: 'navigate'; readonly route: AppRoute }
@@ -35,9 +35,10 @@ export function primaryTabOfRoute(route: AppRoute): PrimaryTab {
     case 'import':
       return 'import';
     case 'overview':
-    case 'official':
     case 'manual':
       return 'overview';
+    case 'official':
+      return route.section === 'player' ? 'overview' : 'clan';
     case 'info':
       return 'info';
     case 'villageDetail':

@@ -1719,6 +1719,29 @@ button.danger {
   box-shadow: none;
 }
 
+.clan-detail-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.clan-detail-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.clan-detail-cards > .official-card {
+  min-width: 0;
+  margin: 0;
+}
+
+.clan-detail-cards > .official-card:first-child {
+  grid-column: 1 / -1;
+}
+
 .detail-header,
 .detail-section {
   min-width: 0;
@@ -2214,6 +2237,14 @@ button.danger {
 
   .tab-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .clan-detail-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clan-detail-cards > .official-card:first-child {
+    grid-column: auto;
   }
 
   .nav-item {

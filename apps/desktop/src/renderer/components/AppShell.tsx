@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppSnapshotPayload, TrackerBaseDto } from '@coc-helper/contracts';
 import type { AppSessionApi } from '../use-app-session';
 import type { OverviewApi } from '../use-upgrade-overview';
@@ -29,6 +29,7 @@ import {
 } from '../navigation';
 import type { VillageDetailState } from '../village-detail-session';
 import { ImportPanel } from './ImportPanel';
+import { ClanDetail } from './ClanDetail';
 import { RecoveryPanel } from './RecoveryPanel';
 import { StatusBanner, VillageSidebar } from './StatusBanner';
 import { UpgradeOverview } from './UpgradeOverview';
@@ -76,8 +77,12 @@ export function AppShell({
   const villageSelectionPendingRef = useRef(false);
   const [villageSelectionPending, setVillageSelectionPending] = useState(false);
   const tokenSettingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const clanDetailRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const registerTokenSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     tokenSettingsRefreshRef.current = refresh;
+  }, []);
+  const registerClanDetailRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
+    clanDetailRefreshRef.current = refresh;
   }, []);
   activeRouteRef.current = activeRoute;
   const { state, recoveryStatus } = session;
@@ -104,7 +109,9 @@ export function AppShell({
         ? { kind: 'import' }
         : nextTab === 'overview'
           ? { kind: 'overview' }
-          : { kind: 'info', section: 'diagnostics' };
+          : nextTab === 'clan'
+            ? { kind: 'official', section: 'clan' }
+            : { kind: 'info', section: 'diagnostics' };
     applyRoute(nextRoute);
   };
 
@@ -224,6 +231,9 @@ export function AppShell({
       if (navigationChanged || (routeChanged && !onlyChangedDetailBase)) {
         return;
       }
+      if (currentRoute.kind === 'official') {
+        return;
+      }
       const base = currentRoute.kind === 'villageDetail' ? currentRoute.base : 'home';
       applyRoute({ kind: 'villageDetail', villageId, base });
     } finally {
@@ -243,6 +253,8 @@ export function AppShell({
       void overview.refresh();
     } else if (tab === 'detail') {
       void detail.refresh();
+    } else if (tab === 'clan') {
+      void clanDetailRefreshRef.current?.();
     } else if (tab === 'info') {
       if (activeRoute.kind === 'info' && activeRoute.section === 'tokenSettings') {
         void tokenSettingsRefreshRef.current?.();
@@ -374,6 +386,14 @@ export function AppShell({
                     snapshot={snapshot}
                   />
                 ) : null}
+                {showImport && tab === 'clan' ? (
+                  <OfficialClanDetailPage
+                    official={official}
+                    officialBridge={officialBridge}
+                    snapshot={snapshot}
+                    onRefreshReady={registerClanDetailRefresh}
+                  />
+                ) : null}
                 {showImport && tab === 'overview' ? (
                   <UpgradeOverview
                     state={overview.state}
@@ -420,9 +440,10 @@ function pageTitle(route: AppRoute): string {
     case 'import':
       return '账号与数据';
     case 'overview':
-    case 'official':
     case 'manual':
       return '升级追踪';
+    case 'official':
+      return route.section === 'player' ? '升级追踪' : '部落详情';
     case 'villageDetail':
       return '村庄详情';
     case 'info':
@@ -485,6 +506,124 @@ function OfficialImportPanel(props: {
   );
 }
 
+function OfficialClanDetailPage(props: {
+  readonly official?: OfficialVillageApi;
+  readonly officialBridge?: BridgeOfficialVillageClient;
+  readonly snapshot: AppSnapshotPayload;
+  readonly onRefreshReady: (refresh: (() => Promise<void>) | null) => void;
+}) {
+  const villageId = props.snapshot.selectedVillageId;
+  const page = (
+    official: OfficialVillageApi | undefined,
+    officialWar?: OfficialClanWarBundleApi,
+  ) => (
+    <OfficialClanDetailContent
+      official={official}
+      officialWar={officialWar}
+      onRefreshReady={props.onRefreshReady}
+    />
+  );
+  if (props.officialBridge === undefined || villageId === null) {
+    return page(villageId === null ? undefined : props.official);
+  }
+  const bridge = props.officialBridge;
+  return (
+    <OfficialVillageHost bridge={bridge} snapshot={props.snapshot} villageId={villageId}>
+      {(official) => (
+        <OfficialClanWarHost
+          bridge={bridge}
+          snapshot={props.snapshot}
+          affiliation={official.clan.affiliation}
+          clanTag={official.clan.clanTag}
+          villageId={villageId}
+          warLogPublicity={warLogPublicityOf(official.clan)}
+        >
+          {(officialWar) => page(official, officialWar)}
+        </OfficialClanWarHost>
+      )}
+    </OfficialVillageHost>
+  );
+}
+
+function OfficialClanDetailContent(props: {
+  readonly official?: OfficialVillageApi;
+  readonly officialWar?: OfficialClanWarBundleApi;
+  readonly onRefreshReady: (refresh: (() => Promise<void>) | null) => void;
+}) {
+  const officialRef = useRef(props.official);
+  officialRef.current = props.official;
+  const officialWarRef = useRef(props.officialWar);
+  officialWarRef.current = props.officialWar;
+  const activeRef = useRef(false);
+  const [pendingPlayerRefresh, setPendingPlayerRefresh] = useState<{
+    readonly revision: number;
+    readonly clanTag: string | null;
+  } | null>(null);
+  const refresh = useCallback(async () => {
+    const official = officialRef.current;
+    if (official === undefined) {
+      return;
+    }
+    const playerRefresh = await official.refreshPlayer();
+    if (!activeRef.current) {
+      return;
+    }
+    if (playerRefresh.status === 'success') {
+      setPendingPlayerRefresh((current) =>
+        current === null || playerRefresh.revision > current.revision
+          ? { revision: playerRefresh.revision, clanTag: playerRefresh.clanTag }
+          : current,
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const official = props.official;
+    if (
+      pendingPlayerRefresh === null ||
+      official === undefined ||
+      official.playerRefreshRevision < pendingPlayerRefresh.revision ||
+      official.player.queryStatus === 'loading'
+    ) {
+      return;
+    }
+    if (
+      official.player.queryStatus !== 'error' &&
+      official.player.currentClanTag !== pendingPlayerRefresh.clanTag
+    ) {
+      return;
+    }
+    setPendingPlayerRefresh(null);
+    if (
+      !activeRef.current ||
+      official.player.queryStatus !== 'ready' ||
+      official.player.lastQueryError !== null ||
+      official.player.commandError !== null ||
+      official.player.currentClanTag === null
+    ) {
+      return;
+    }
+    const officialWar = officialWarRef.current;
+    void Promise.all([
+      official.refreshClan(),
+      officialWar?.clanWar.refresh(),
+      officialWar?.warLog.refresh(),
+      officialWar?.capitalRaid.refresh(),
+    ]);
+  }, [pendingPlayerRefresh, props.official, props.officialWar]);
+
+  useEffect(() => {
+    activeRef.current = true;
+    props.onRefreshReady(refresh);
+    return () => {
+      activeRef.current = false;
+      props.onRefreshReady(null);
+    };
+  }, [props.onRefreshReady, refresh]);
+
+  return <ClanDetail official={props.official} officialWar={props.officialWar} />;
+}
+
 function OfficialVillageDetail(props: {
   readonly state: VillageDetailState;
   readonly base: TrackerBaseDto;
@@ -500,17 +639,13 @@ function OfficialVillageDetail(props: {
   readonly manual?: ManualApi;
   readonly onNavigateToImport: () => void;
 }) {
-  const detail = (
-    official: OfficialVillageApi | undefined,
-    officialWar: OfficialClanWarBundleApi | undefined,
-  ) => (
+  const detail = (official: OfficialVillageApi | undefined) => (
     <VillageDetail
       state={props.state}
       base={props.base}
       onBaseChange={props.onBaseChange}
       onRetry={props.onRetry}
       official={official}
-      officialWar={officialWar}
       quick={props.quick}
       canQuick={props.canQuick}
       canManual={props.canManual}
@@ -519,23 +654,15 @@ function OfficialVillageDetail(props: {
     />
   );
   if (props.officialBridge === undefined) {
-    return detail(props.official, undefined);
+    return detail(props.official);
   }
-  const bridge = props.officialBridge;
   return (
-    <OfficialVillageHost bridge={bridge} snapshot={props.snapshot} villageId={props.villageId}>
-      {(official) => (
-        <OfficialClanWarHost
-          bridge={bridge}
-          snapshot={props.snapshot}
-          affiliation={official.clan.affiliation}
-          clanTag={official.clan.clanTag}
-          villageId={props.villageId}
-          warLogPublicity={warLogPublicityOf(official.clan)}
-        >
-          {(officialWar) => detail(official, officialWar)}
-        </OfficialClanWarHost>
-      )}
+    <OfficialVillageHost
+      bridge={props.officialBridge}
+      snapshot={props.snapshot}
+      villageId={props.villageId}
+    >
+      {detail}
     </OfficialVillageHost>
   );
 }
@@ -653,6 +780,20 @@ function TabNav(props: {
               </svg>
             </span>
             <span>导入</span>
+          </button>
+          <button
+            className="nav-item"
+            type="button"
+            aria-pressed={props.tab === 'clan'}
+            onClick={() => props.onChange('clan')}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3.5 20 7v5.2c0 4.7-3.1 7.3-8 8.8-4.9-1.5-8-4.1-8-8.8V7l8-3.5Z" />
+                <path d="M8.5 12h7M12 8.5v7" />
+              </svg>
+            </span>
+            <span>部落详情</span>
           </button>
         </>
       ) : null}

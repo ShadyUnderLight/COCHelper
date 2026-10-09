@@ -32,6 +32,7 @@ export type ResourceQueryOptions<T> = {
 export type ResourceQueryApi<T> = {
   readonly state: ResourceState<T>;
   readonly refresh: () => Promise<void>;
+  readonly refreshAndRead: () => Promise<ResourceState<T>>;
 };
 
 /**
@@ -66,23 +67,27 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   const onSessionResetRef = useRef(onSessionReset);
   onSessionResetRef.current = onSessionReset;
   const prevSubjectKeyRef = useRef<string | null>(subjectKey);
-  const refreshWaitersRef = useRef(new Map<number, { readonly resolve: () => void }>());
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const refreshWaitersRef = useRef(
+    new Map<number, { readonly resolve: (nextState: ResourceState<T>) => void }>(),
+  );
 
-  const settleRefreshWaiter = useCallback((seq: number): void => {
+  const settleRefreshWaiter = useCallback((seq: number, nextState = stateRef.current): void => {
     const waiter = refreshWaitersRef.current.get(seq);
     if (waiter === undefined) {
       return;
     }
     refreshWaitersRef.current.delete(seq);
-    waiter.resolve();
+    waiter.resolve(nextState);
   }, []);
 
   /** seq=K 的 fetch 完成/取消时，同时满足所有 seq<=K 的 batched refresh 请求。 */
   const settleRefreshWaitersUpTo = useCallback(
-    (seq: number): void => {
+    (seq: number, nextState = stateRef.current): void => {
       for (const key of [...refreshWaitersRef.current.keys()]) {
         if (key <= seq) {
-          settleRefreshWaiter(key);
+          settleRefreshWaiter(key, nextState);
         }
       }
     },
@@ -91,7 +96,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
   const settleAllRefreshWaiters = useCallback((): void => {
     for (const seq of refreshWaitersRef.current.keys()) {
-      settleRefreshWaiter(seq);
+      settleRefreshWaiter(seq, stateRef.current);
     }
   }, [settleRefreshWaiter]);
 
@@ -201,9 +206,12 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
         ) {
           return;
         }
-        setState((prev) => resourceFailure(prev, message));
+        const previousState = payloadSubjectRef.current === subjectKey ? stateRef.current : null;
+        const failedState = resourceFailure(previousState, message);
+        stateRef.current = failedState;
+        setState(failedState);
         stateSubjectRef.current = subjectKey;
-        settleRefreshWaitersUpTo(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq, failedState);
         return;
       }
 
@@ -226,9 +234,12 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       }
 
       if (!result.ok) {
-        setState((prev) => resourceFailure(prev, formatIpcError(result.error)));
+        const previousState = payloadSubjectRef.current === subjectKey ? stateRef.current : null;
+        const failedState = resourceFailure(previousState, formatIpcError(result.error));
+        stateRef.current = failedState;
+        setState(failedState);
         stateSubjectRef.current = subjectKey;
-        settleRefreshWaitersUpTo(refreshSeq);
+        settleRefreshWaitersUpTo(refreshSeq, failedState);
         return;
       }
 
@@ -236,8 +247,10 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       completedCursorRef.current = { sessionId: requestSession, generation };
       payloadSubjectRef.current = subjectKey;
       stateSubjectRef.current = subjectKey;
-      setState(resourceSuccess(result.value));
-      settleRefreshWaitersUpTo(refreshSeq);
+      const successfulState = resourceSuccess(result.value);
+      stateRef.current = successfulState;
+      setState(successfulState);
+      settleRefreshWaitersUpTo(refreshSeq, successfulState);
     })();
   }, [snapshot, subjectKey, refreshSeq, settleAllRefreshWaiters, settleRefreshWaitersUpTo]);
 
@@ -248,8 +261,8 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     };
   }, [settleAllRefreshWaiters]);
 
-  const refresh = useCallback((): Promise<void> => {
-    return new Promise<void>((resolve) => {
+  const refreshAndRead = useCallback((): Promise<ResourceState<T>> => {
+    return new Promise<ResourceState<T>>((resolve) => {
       setRefreshSeq((current) => {
         const next = current + 1;
         refreshWaitersRef.current.set(next, { resolve });
@@ -257,9 +270,13 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
       });
     });
   }, []);
+  const refresh = useCallback(async (): Promise<void> => {
+    await refreshAndRead();
+  }, [refreshAndRead]);
 
   return {
     state: fencedResourceState(state, stateSubjectRef.current, subjectKey),
     refresh,
+    refreshAndRead,
   };
 }

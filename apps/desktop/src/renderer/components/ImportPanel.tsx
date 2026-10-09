@@ -2,7 +2,6 @@ import type { PendingImportPreviewWire } from '@coc-helper/contracts';
 
 import type { ImportPreviewState } from '../app-session';
 import type { OfficialVillageApi } from '../use-official-village';
-import { ClanCard } from './ClanCard';
 import { OfficialPlayerCard } from './OfficialPlayerCard';
 
 type ImportPanelProps = {
@@ -168,18 +167,13 @@ export function ImportPanel({
       {official !== undefined ? (
         <div className="import-official">
           <div className="subsection-heading">
-            <span className="section-eyebrow">OFFICIAL PROFILE</span>
-            <h3>官方资料</h3>
+            <span className="section-eyebrow">OFFICIAL PLAYER</span>
+            <h3>玩家资料</h3>
           </div>
           <OfficialPlayerCard
             view={official.player}
             refreshing={official.playerRefreshing}
             onRefresh={() => void official.refreshPlayer()}
-          />
-          <ClanCard
-            view={official.clan}
-            refreshing={official.clanRefreshing}
-            onRefresh={() => void official.refreshClan()}
           />
         </div>
       ) : null}

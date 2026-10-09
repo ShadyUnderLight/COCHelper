@@ -30,7 +30,7 @@ export function ClanDetail({ official, officialWar }: ClanDetailProps) {
           <p className="muted">选择村庄并启用官方数据接口后，可查看部落详情。</p>
         </section>
       ) : (
-        <div className="clan-detail-cards">
+        <>
           {official.player.lastQueryError !== null ? (
             <p className="error-text" role="alert">
               {official.player.lastQueryError}
@@ -41,19 +41,21 @@ export function ClanDetail({ official, officialWar }: ClanDetailProps) {
               {official.player.commandError}
             </p>
           ) : null}
-          <ClanCard
-            view={official.clan}
-            refreshing={official.clanRefreshing}
-            onRefresh={() => void official.refreshClan()}
-          />
-          {officialWar !== undefined ? (
-            <>
-              <ClanWarCard api={officialWar.clanWar} />
-              <WarLogCard api={officialWar.warLog} />
-              <CapitalRaidCard api={officialWar.capitalRaid} />
-            </>
-          ) : null}
-        </div>
+          <div className="clan-detail-cards">
+            <ClanCard
+              view={official.clan}
+              refreshing={official.clanRefreshing}
+              onRefresh={() => void official.refreshClan()}
+            />
+            {officialWar !== undefined ? (
+              <>
+                <ClanWarCard api={officialWar.clanWar} />
+                <WarLogCard api={officialWar.warLog} />
+                <CapitalRaidCard api={officialWar.capitalRaid} />
+              </>
+            ) : null}
+          </div>
+        </>
       )}
     </section>
   );
